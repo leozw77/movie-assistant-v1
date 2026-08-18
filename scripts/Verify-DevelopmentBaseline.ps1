@@ -36,7 +36,9 @@ Assert-FileHash 'Canonical stable EXE' (Resolve-FullPath $manifest.canonicalStab
 if ($manifest.canonicalStable.zipPath -and $manifest.canonicalStable.zipSha256) {
     Assert-FileHash 'Canonical stable ZIP' (Resolve-FullPath $manifest.canonicalStable.zipPath) $manifest.canonicalStable.zipSha256
 }
-Assert-FileHash 'Rollback EXE' (Resolve-FullPath $manifest.rollback.exePath) $manifest.rollback.exeSha256
+if ($manifest.rollback -and $manifest.rollback.exePath -and $manifest.rollback.exeSha256) {
+    Assert-FileHash 'Rollback EXE' (Resolve-FullPath $manifest.rollback.exePath) $manifest.rollback.exeSha256
+}
 
 $promotionRecord = Resolve-FullPath $manifest.canonicalStable.promotionRecord
 if (-not (Test-Path -LiteralPath $promotionRecord -PathType Leaf)) {
@@ -62,4 +64,9 @@ foreach ($property in $manifest.pairedSource.stableAssetHashes.PSObject.Properti
 Write-Output 'BASELINE PASS'
 Write-Output "Stable EXE: $($manifest.canonicalStable.exePath)"
 Write-Output "Paired source: $canonicalSource"
-Write-Output "Rollback EXE: $($manifest.rollback.exePath)"
+if ($manifest.rollback -and $manifest.rollback.exePath) {
+    Write-Output "Rollback EXE: $($manifest.rollback.exePath)"
+}
+else {
+    Write-Output 'Rollback EXE: none; clean v1.0.0 baseline'
+}

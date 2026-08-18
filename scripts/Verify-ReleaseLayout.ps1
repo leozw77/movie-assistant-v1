@@ -42,7 +42,6 @@ Assert-True ($zipPath.StartsWith((Join-Path $projectRoot '发布版本'), [Syste
 
 Assert-FileHash 'Stable EXE' (Resolve-FullPath $baseline.canonicalStable.exePath) $baseline.canonicalStable.exeSha256
 Assert-FileHash 'Stable ZIP' $zipPath $baseline.canonicalStable.zipSha256
-Assert-FileHash 'Rollback EXE' (Resolve-FullPath $baseline.rollback.exePath) $baseline.rollback.exeSha256
 
 $packageVersionPath = Join-Path $packageRoot 'VERSION.json'
 Assert-True (Test-Path -LiteralPath $packageVersionPath -PathType Leaf) "Package VERSION.json is missing."
@@ -57,7 +56,7 @@ $releaseManifest = Get-Content -LiteralPath $releaseManifestPath -Raw -Encoding 
 Assert-True ([string]$releaseManifest.releaseName -eq $releaseName) "Release manifest releaseName mismatch."
 Assert-True ([string]$releaseManifest.exeSha256.ToUpperInvariant() -eq [string]$baseline.canonicalStable.exeSha256.ToUpperInvariant()) "Release manifest EXE hash mismatch."
 Assert-True ([string]$releaseManifest.zipSha256.ToUpperInvariant() -eq [string]$baseline.canonicalStable.zipSha256.ToUpperInvariant()) "Release manifest ZIP hash mismatch."
-Assert-True ([string]$releaseManifest.rollbackExeSha256.ToUpperInvariant() -eq [string]$baseline.rollback.exeSha256.ToUpperInvariant()) "Release manifest rollback hash mismatch."
+Assert-True ($null -eq $releaseManifest.rollback -or [string]::IsNullOrWhiteSpace([string]$releaseManifest.rollback)) "Clean v1.0.0 release must not include a rollback package."
 
 $artifactsRoot = Join-Path $sourceFull 'artifacts'
 if (Test-Path -LiteralPath $artifactsRoot -PathType Container) {
@@ -67,7 +66,7 @@ if (Test-Path -LiteralPath $artifactsRoot -PathType Container) {
 $governanceFiles = @(
     (Join-Path $devRoot 'DEVELOPMENT_BASELINE.json'),
     (Join-Path $devRoot 'DEVELOPMENT_DIRECTORY_INDEX.md'),
-    (Join-Path $sourceFull 'STABLE_PROMOTION_20260816.md')
+    (Join-Path $sourceFull 'STABLE_PROMOTION_V1.0.0_20260818.md')
 )
 foreach ($file in $governanceFiles) {
     Assert-True (Test-Path -LiteralPath $file -PathType Leaf) "Governance file is missing: $file"
