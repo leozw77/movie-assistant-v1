@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
 
@@ -1987,6 +1987,7 @@ internal sealed class HtmlMediaLibraryForm : Form
             items,
             filters = root.TryGetProperty("filters", out var filtersValue) ? filtersValue.Clone() : JsonSerializer.SerializeToElement(new { }),
             paging = root.TryGetProperty("paging", out var pagingValue) ? pagingValue.Clone() : JsonSerializer.SerializeToElement(new { hasMore = false }),
+            dom = root.TryGetProperty("dom", out var shellDomValue) ? shellDomValue.Clone() : JsonSerializer.SerializeToElement(new { }),
             searchPageLinks = root.TryGetProperty("searchPageLinks", out var searchPageLinksValue) ? searchPageLinksValue.Clone() : JsonSerializer.SerializeToElement(Array.Empty<object>()),
             operation,
             error

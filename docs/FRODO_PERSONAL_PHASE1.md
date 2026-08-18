@@ -102,3 +102,21 @@ v11 曾尝试用 `RawCount` 推进游标，但真实账号再次测试后出现�
 6. 目标体验：用户连续向下滚动时，下一批在真正触底前开始读取；已有海报与卡片不被重建，视觉上接近连续无限列表。
 
 验收时除分页日志外，重点观察旧 20/40/60 卡是否保持稳定、不出现整页闪一下；poster fallback 不应因每次个人页分页而对全部旧卡再次触发。
+## v13.1 append 协议修正（2026-08-19）
+
+v13 实机日志确认两个事实：
+
+1. personal 1200px IntersectionObserver 已经提前触发，首屏完成后约 0.7 秒即可开始下一批，因此“没有无感接上”不是因为预触发没有运行。
+2. 加载 40/60 后，第一页已经显示过的 SubjectId 又重复触发 poster fallback，证明 personal paging 仍在重建旧卡片。
+
+根因位于 C# 到 Shell 的转发层：Provider payload 的 `dom.source = "frodo-api"` 只被写进诊断日志，没有进入真正的 `doubanShellData`。而 v13 的 append 条件正是依赖 `message.dom.source === "frodo-api"`，所以条件始终为 false。
+
+修正规则：
+
+1. `ForwardDoubanSourceResultToShellAsync()` 必须原样转发 payload 的 `dom` 对象；没有 `dom` 时发送空对象。
+2. v13 的前端 append 条件保持不变，只让真正的 Frodo personal paging append。
+3. DOM fallback 保持旧行为；不为了修 Frodo 闪烁而扩大到所有 personal 分页。
+4. personal 预触发仍为 1200px；本轮不引入更复杂的数据/海报双预取。
+5. 分页仍为固定 `0/20/40...` 槽位游标 + pending 补齐 20 卡，不重新讨论已通过实机的分页算法。
+
+验收：20 -> 40 -> 60 连续滚动时，旧卡 DOM 与旧海报保持不动；日志中的 poster fallback 应主要对应新增加的 SubjectId，不再整批重复第一页/前几页。

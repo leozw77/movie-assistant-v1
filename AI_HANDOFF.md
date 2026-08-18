@@ -1,4 +1,17 @@
-# 2026-08-19：Phase 1 个人页无限滚动（Frodo append + 1200px 提前加载）
+# 2026-08-19：v13.1 修正——Shell 转发保留 Frodo dom.source
+
+v13 的方向正确，但实机日志证明 append 条件没有真正命中：加载 40/60/80 时第一页旧 SubjectId 又重复触发 poster fallback。检查消息链路后确认，`FrodoPersonalProvider.BuildPayload()` 已包含 `dom.source = "frodo-api"`，但 `HtmlMediaLibraryForm.ForwardDoubanSourceResultToShellAsync()` 重新组装 `doubanShellData` 时没有转发 `dom`，因此 `douban-shell.js` 的 `message.dom.source === "frodo-api"` 永远取不到值。
+
+v13.1 只做协议补全：
+
+- C# Shell forwarding 增加 `dom = root.dom.Clone()`，缺失时为 `{}`。
+- 保留 v13 的前端条件判断与 SubjectId append 去重，不把所有 personal/DOM fallback 都强制改成 append。
+- 保留 personal 1200px IntersectionObserver 提前触发。
+- 不改 FrodoClient、Mapper、Provider 分页、个人筛选 fallback、详情和评价链路。
+
+实机验收重点：加载 20 -> 40 -> 60 后，旧第一页 SubjectId 不应再次出现 poster fallback；只有新追加的 20 张可能触发新海报 fallback。若仍有轻微的新卡海报显现，再单独评估“海报预取”，不要重新修改分页规则。
+
+---# 2026-08-19：Phase 1 个人页无限滚动（Frodo append + 1200px 提前加载）
 
 分页数据本身已经通过真实账号验证：Frodo 使用固定 `0/20/40/60...` 槽位游标，Provider 把 underfilled 窗口补成 20 卡可见批次。剩余的“到底部闪一下”来自 Shell 渲染方式，而不是 API 分页。
 

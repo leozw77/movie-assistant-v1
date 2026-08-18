@@ -1,3 +1,10 @@
+# Phase 1 v13.1：修复 Frodo append 来源标记丢失 - 2026-08-19
+
+- v13 实机日志确认：1200px 提前触发已经生效，但个人页分页仍会重画旧卡片并重新触发旧海报 fallback。
+- 根因不是 `render()` 或 Frodo 分页，而是 C# `ForwardDoubanSourceResultToShellAsync()` 重新组装 Shell 消息时漏掉了 Provider 原始 payload 的 `dom` 字段。
+- v13 前端 append 条件要求 `message.dom.source === "frodo-api"`；由于 `dom` 被宿主层剥离，该条件永远为 false，个人页继续走 replace/rebuild。
+- 本轮只把 `dom` 原样 Clone 转发给 Shell，使既有 v13 append 条件真正生效；非默认个人筛选的 DOM fallback 仍不会被错误强制 append。
+- 1200px 提前加载、固定 `0/20/40...` Frodo 游标、Provider pending 缓冲、筛选 fallback、详情、评价写入和官方回读均保持不变。
 # Phase 1 个人页无限滚动修正：追加渲染 + 提前加载 - 2026-08-19
 
 - 实机确认 Frodo 固定 20 槽位分页与 20 卡可见批次正确后，修复个人页加载更多仍整网格重绘的问题。
