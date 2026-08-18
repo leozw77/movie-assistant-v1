@@ -1,4 +1,15 @@
-# 2026-08-19：API 迁移 Phase 1 交接（个人页 Frodo）
+# 2026-08-19：Phase 1 实机修正（Frodo 行诊断 + 日志轮转）
+
+Phase 1 已在真实账号 `collect` 列表确认 `Source=Frodo`，总数 1062 且连续分页到 `nextStart=360` 正常。实测同时发现 Shell 累计数并不总等于 API 游标（首屏 `nextStart=20` 时 Items=16，`nextStart=300` 时 Items=295），因此本轮只增加可观测性，不先猜测为数据丢失。
+
+- `FrodoPersonalPage` 记录 `RawCount` 和逐条 `Skipped` 原因。
+- Provider 每页记录 `Raw / Mapped / Skipped / Duplicates / Added / ShellItems / Total / NextStart`。
+- 只有实际无法映射的行才记录 `Frodo personal row skipped`；跨页或页内重复 ID 记录 `Frodo personal duplicate skipped`。
+- 下一轮实机判断：若 `Raw < ApiCount`，属于 Frodo 本页实际少返回；若 `Skipped > 0`，按 reason 修 Mapper；若 `Duplicates > 0`，核查 Frodo 是否重复同一 SubjectId。
+- `diagnostic.log` 改为 10 MiB × 当前文件 + 3 个归档，并限制单条 16384 字符，避免再次出现近 1 GB 单日志。
+- 不修改 `ReviewWriteCoordinator.cs`、`ReviewWriteVerifier.cs`、`ReviewTargetResolver.cs`、`ReviewWriteModels.cs`。
+
+---# 2026-08-19：API 迁移 Phase 1 交接（个人页 Frodo）
 
 当前 API 迁移基线固定为 GitHub `main` commit `25e199bd1cc5f70e44f1caf6a3c5b294849d5a90`。本阶段只替换个人页默认列表读取：Frodo 为首选，旧 DOM 为 fallback；Explore、详情和写入不在本阶段范围。
 

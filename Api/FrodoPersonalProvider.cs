@@ -78,10 +78,28 @@ internal sealed class FrodoPersonalProvider
             _status = shellStatus;
             _canonicalUrl = BasePersonalUrl(profileId, shellStatus);
             _items.Clear();
-            _items.AddRange(page.Items.GroupBy(item => item.SubjectId, StringComparer.Ordinal).Select(group => group.First()));
+
+            var known = new HashSet<string>(StringComparer.Ordinal);
+            var duplicateIds = new List<string>();
+            var added = 0;
+            foreach (var item in page.Items)
+            {
+                if (known.Add(item.SubjectId))
+                {
+                    _items.Add(item);
+                    added++;
+                }
+                else
+                {
+                    duplicateIds.Add(item.SubjectId);
+                }
+            }
+
             _total = Math.Max(page.Total, _items.Count);
-            _nextStart = Math.Max(page.Start + Math.Max(page.Count, page.Items.Count), _items.Count);
-            _hasMore = page.Items.Count > 0 && _nextStart < _total;
+            var advance = PageAdvance(page);
+            _nextStart = Math.Max(page.Start + advance, _items.Count);
+            _hasMore = page.RawCount > 0 && _nextStart < _total;
+            LogPageDiagnostics("initial", 0, page, duplicateIds, added);
             return BuildPayload(requestId, generation);
         }
         finally
@@ -99,15 +117,30 @@ internal sealed class FrodoPersonalProvider
                 throw new InvalidOperationException("Frodo 个人页尚未初始化。");
             if (!_hasMore) return BuildPayload(requestId, generation);
 
-            var raw = await _client.GetInterestsAsync(_profileId, _status, _nextStart, _options.PageSize, cancellationToken).ConfigureAwait(false);
+            var requestedStart = _nextStart;
+            var raw = await _client.GetInterestsAsync(_profileId, _status, requestedStart, _options.PageSize, cancellationToken).ConfigureAwait(false);
             var page = FrodoPersonalMapper.Map(raw, _status);
             var known = new HashSet<string>(_items.Select(item => item.SubjectId), StringComparer.Ordinal);
+            var duplicateIds = new List<string>();
+            var added = 0;
             foreach (var item in page.Items)
-                if (known.Add(item.SubjectId)) _items.Add(item);
+            {
+                if (known.Add(item.SubjectId))
+                {
+                    _items.Add(item);
+                    added++;
+                }
+                else
+                {
+                    duplicateIds.Add(item.SubjectId);
+                }
+            }
+
             _total = Math.Max(page.Total, _items.Count);
-            var advance = Math.Max(page.Count, page.Items.Count);
-            _nextStart = Math.Max(_nextStart + Math.Max(advance, 1), page.Start + Math.Max(advance, 1));
-            _hasMore = page.Items.Count > 0 && _nextStart < _total;
+            var advance = PageAdvance(page);
+            _nextStart = Math.Max(requestedStart + advance, page.Start + advance);
+            _hasMore = page.RawCount > 0 && _nextStart < _total;
+            LogPageDiagnostics("load-more", requestedStart, page, duplicateIds, added);
             return BuildPayload(requestId, generation);
         }
         finally
@@ -125,6 +158,36 @@ internal sealed class FrodoPersonalProvider
         _nextStart = 0;
         _total = 0;
         _hasMore = false;
+    }
+
+    private static int PageAdvance(FrodoPersonalPage page)
+    {
+        var advance = Math.Max(page.Count, page.RawCount);
+        if (advance <= 0) advance = page.Items.Count;
+        return Math.Max(advance, 1);
+    }
+
+    private void LogPageDiagnostics(
+        string operation,
+        int requestedStart,
+        FrodoPersonalPage page,
+        IReadOnlyList<string> duplicateIds,
+        int added)
+    {
+        DiagnosticLogger.Write(
+            $"Frodo personal page mapped; Operation={operation}; Status={_status}; RequestedStart={requestedStart}; ResponseStart={page.Start}; ApiCount={page.Count}; Raw={page.RawCount}; Mapped={page.Items.Count}; Skipped={page.Skipped.Count}; Duplicates={duplicateIds.Count}; Added={added}; ShellItems={_items.Count}; Total={_total}; NextStart={_nextStart}; HasMore={_hasMore}");
+
+        foreach (var skip in page.Skipped)
+        {
+            DiagnosticLogger.Write(
+                $"Frodo personal row skipped; Operation={operation}; Start={page.Start}; Index={skip.Index}; SubjectId={skip.SubjectId}; Status={skip.FrodoStatus}; Reason={skip.Reason}");
+        }
+
+        foreach (var subjectId in duplicateIds.Distinct(StringComparer.Ordinal))
+        {
+            DiagnosticLogger.Write(
+                $"Frodo personal duplicate skipped; Operation={operation}; Start={page.Start}; SubjectId={subjectId}");
+        }
     }
 
     private JsonElement BuildPayload(string requestId, int generation)

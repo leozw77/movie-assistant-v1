@@ -1,3 +1,10 @@
+# Phase 1 实机修正：Frodo 映射诊断与日志上限 - 2026-08-19
+
+- 实机已确认个人页 `Source=Frodo` 与连续分页可用；新增每页 `Raw / Mapped / Skipped / Duplicates / Added` 统计，区分 API 实际少返回、Mapper 跳过和 SubjectId 去重。
+- Mapper 不再静默吞掉异常记录；仅记录索引、SubjectId、Frodo 状态和短原因，不写整条 API JSON。
+- `diagnostic.log` 单文件限制 10 MiB，最多保留 3 个轮转归档；历史超大日志在升级后首次写入时直接丢弃，避免继续保留数百 MB 旧文件。
+- 单条诊断消息限制 16384 字符，现有 `Payload=` / `ReadResult=` 等超长日志自动截断，避免完整 JSON 持续膨胀日志。
+- 本轮不改 Explore、详情、评价写入、Shell UI 或 DOM fallback；仍在同一 Phase 1 分支上继续实机验收。
 # v1.0 API 迁移 Phase 1：个人页 Frodo 读取 - 2026-08-19
 
 - 个人页默认 `看过 / 想看 / 在看` 改为 Frodo `/api/v2/user/{uid}/interests` 首选读取，不再为首屏等待个人网页 DOM。

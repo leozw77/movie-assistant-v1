@@ -47,3 +47,14 @@
 - 点击“电影/电视”“可播放/有视频”“按评价/按标题”任一非默认筛选，确认日志出现 `Fallback=DOM` 且功能仍可用。
 - 暂时断网或人为提供错误 `DOUBAN_FRODO_API_SECRET`，确认首屏自动回退 DOM，不出现空列表冒充成功。
 - 修改/删除评价回归一轮，确认 `ReviewWriteCoordinator` 及官方回读链路未受影响。
+## 实机诊断补充（2026-08-19）
+
+真实账号 `collect` 已确认 Frodo 首屏与连续分页生效。为解释 API 游标与 Shell 卡片累计数的差异，后续日志必须优先查看：
+
+- `Frodo personal page mapped`：包含 `ApiCount / Raw / Mapped / Skipped / Duplicates / Added / ShellItems / Total / NextStart`。
+- `Frodo personal row skipped`：仅记录无法映射的单条原因，不记录原始完整 JSON。
+- `Frodo personal duplicate skipped`：表示该 SubjectId 在当前累计列表中已经存在。
+
+判断顺序：`Raw < ApiCount` 先视为 API 本页实际返回数量不足；`Raw == Mapped + Skipped` 用于核对 Mapper；`Duplicates` 单独解释累计数减少。未确认原因前，不得把 `nextStart - ShellItems` 直接等同于“丢数据”。
+
+诊断日志保护：`diagnostic.log` 上限 10 MiB，保留 `diagnostic.1.log`～`diagnostic.3.log`；单条消息最多 16384 字符。历史版本遗留的超大 current/archive 日志不会继续保留。

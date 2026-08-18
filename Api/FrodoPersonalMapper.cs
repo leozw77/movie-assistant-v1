@@ -11,40 +11,84 @@ internal static class FrodoPersonalMapper
         var count = ReadInt(root, "count") ?? 0;
         var total = ReadInt(root, "total") ?? 0;
         var items = new List<FrodoPersonalItem>();
+        var skipped = new List<FrodoPersonalSkip>();
         if (!root.TryGetProperty("interests", out var interests) || interests.ValueKind != JsonValueKind.Array)
-            return new FrodoPersonalPage(start, count, total, items);
+            return new FrodoPersonalPage(start, count, total, 0, items, skipped);
 
         var rawInterestCount = interests.GetArrayLength();
+        var index = 0;
         foreach (var interest in interests.EnumerateArray())
         {
+            var subjectId = "";
+            var frodoStatus = "";
             try
             {
-                var mapped = MapItem(interest, expectedShellStatus);
-                if (mapped is not null) items.Add(mapped);
+                if (interest.ValueKind != JsonValueKind.Object)
+                {
+                    skipped.Add(new FrodoPersonalSkip(index, subjectId, frodoStatus, "interest-not-object"));
+                    continue;
+                }
+
+                frodoStatus = ReadString(interest, "status");
+                if (!interest.TryGetProperty("subject", out var subject) || subject.ValueKind != JsonValueKind.Object)
+                {
+                    skipped.Add(new FrodoPersonalSkip(index, subjectId, frodoStatus, "missing-subject"));
+                    continue;
+                }
+
+                subjectId = ReadStringLike(subject, "id");
+                if (subjectId.Length == 0 || !subjectId.All(char.IsDigit))
+                {
+                    skipped.Add(new FrodoPersonalSkip(index, subjectId, frodoStatus, "invalid-subject-id"));
+                    continue;
+                }
+
+                if (frodoStatus.Length == 0)
+                {
+                    skipped.Add(new FrodoPersonalSkip(index, subjectId, frodoStatus, "missing-status"));
+                    continue;
+                }
+
+                string status;
+                try
+                {
+                    status = DoubanStatusMapper.ToShell(frodoStatus);
+                }
+                catch (InvalidDataException)
+                {
+                    skipped.Add(new FrodoPersonalSkip(index, subjectId, frodoStatus, $"unknown-status:{CompactReason(frodoStatus)}"));
+                    continue;
+                }
+
+                if (!string.Equals(status, expectedShellStatus, StringComparison.Ordinal))
+                {
+                    skipped.Add(new FrodoPersonalSkip(index, subjectId, frodoStatus, $"status-mismatch:{CompactReason(frodoStatus)}->{status}"));
+                    continue;
+                }
+
+                items.Add(MapKnownItem(interest, subject, subjectId, status));
             }
-            catch (InvalidDataException)
+            catch (InvalidDataException ex)
             {
-                // A malformed row must not poison the entire personal page. Unknown
-                // status rows are ignored instead of leaking Frodo vocabulary to Shell.
+                skipped.Add(new FrodoPersonalSkip(index, subjectId, frodoStatus, $"invalid-data:{CompactReason(ex.Message)}"));
+            }
+            finally
+            {
+                index++;
             }
         }
+
         if (rawInterestCount > 0 && items.Count == 0)
             throw new InvalidDataException("Frodo interests 返回了记录，但没有一条能映射到当前个人页；已交给 DOM fallback。");
-        return new FrodoPersonalPage(start, count, total, items);
+        return new FrodoPersonalPage(start, count, total, rawInterestCount, items, skipped);
     }
 
-    private static FrodoPersonalItem? MapItem(JsonElement interest, string expectedShellStatus)
+    private static FrodoPersonalItem MapKnownItem(
+        JsonElement interest,
+        JsonElement subject,
+        string subjectId,
+        string status)
     {
-        if (interest.ValueKind != JsonValueKind.Object ||
-            !interest.TryGetProperty("subject", out var subject) || subject.ValueKind != JsonValueKind.Object)
-            return null;
-
-        var subjectId = ReadStringLike(subject, "id");
-        if (subjectId.Length == 0 || !subjectId.All(char.IsDigit)) return null;
-        var frodoStatus = ReadString(interest, "status");
-        var status = DoubanStatusMapper.ToShell(frodoStatus);
-        if (!string.Equals(status, expectedShellStatus, StringComparison.Ordinal)) return null;
-
         var title = ReadString(subject, "title");
         if (title.Length == 0) title = $"豆瓣条目 {subjectId}";
         var year = ReadStringLike(subject, "year");
@@ -161,6 +205,12 @@ internal static class FrodoPersonalMapper
             if (value.Length > 0 && !result.Contains(value, StringComparer.OrdinalIgnoreCase)) result.Add(value);
         }
         return result;
+    }
+
+    private static string CompactReason(string value)
+    {
+        var compact = (value ?? "").Replace('\r', ' ').Replace('\n', ' ').Trim();
+        return compact.Length <= 160 ? compact : compact[..160];
     }
 
     private static string ReadString(JsonElement owner, string name) =>

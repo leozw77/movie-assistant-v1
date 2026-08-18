@@ -1,10 +1,18 @@
 namespace QbPotDoubanAi;
 
+internal sealed record FrodoPersonalSkip(
+    int Index,
+    string SubjectId,
+    string FrodoStatus,
+    string Reason);
+
 internal sealed record FrodoPersonalPage(
     int Start,
     int Count,
     int Total,
-    IReadOnlyList<FrodoPersonalItem> Items);
+    int RawCount,
+    IReadOnlyList<FrodoPersonalItem> Items,
+    IReadOnlyList<FrodoPersonalSkip> Skipped);
 
 internal sealed record FrodoPersonalItem(
     string SubjectId,
