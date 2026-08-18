@@ -163,24 +163,18 @@ internal sealed class FrodoPersonalProvider
             }
             _total = Math.Max(page.Total, _items.Count + _pendingItems.Count);
 
-            // Frodo's count is a requested window size, not a guarantee that the
-            // interests array has that many rows. Advance by the rows actually
-            // returned. Advancing by count silently skips rows after underfilled
-            // pages (for example count=20, Raw=16).
-            if (page.RawCount <= 0)
-            {
-                _apiHasMore = false;
-            }
-            else
-            {
-                var responseStart = Math.Max(page.Start, requestedStart);
-                _nextStart = checked(responseStart + page.RawCount);
-                _apiHasMore = _nextStart < _total;
-            }
+            // Frodo paginates over fixed source slots. The response may contain
+            // fewer visible interests than count because unavailable/delisted
+            // subjects are omitted, but the next source window still advances by
+            // the API count (for example start 0 -> 20 even when Raw=16).
+            var responseStart = Math.Max(page.Start, requestedStart);
+            var cursorAdvance = page.Count > 0 ? page.Count : _options.PageSize;
+            _nextStart = checked(responseStart + cursorAdvance);
+            _apiHasMore = _nextStart < _total;
 
             var published = PublishPending(targetVisibleCount);
             _hasMore = _pendingItems.Count > 0 || _apiHasMore;
-            LogPageDiagnostics(operation, internalRequest, requestedStart, page, duplicateIds, buffered, published);
+            LogPageDiagnostics(operation, internalRequest, requestedStart, page, duplicateIds, buffered, published, cursorAdvance);
         }
 
         _hasMore = _pendingItems.Count > 0 || _apiHasMore;
@@ -212,10 +206,11 @@ internal sealed class FrodoPersonalProvider
         FrodoPersonalPage page,
         IReadOnlyList<string> duplicateIds,
         int buffered,
-        int published)
+        int published,
+        int cursorAdvance)
     {
         DiagnosticLogger.Write(
-            $"Frodo personal page mapped; Operation={operation}; InternalRequest={internalRequest}; Status={_status}; RequestedStart={requestedStart}; ResponseStart={page.Start}; ApiCount={page.Count}; Raw={page.RawCount}; Mapped={page.Items.Count}; Skipped={page.Skipped.Count}; Duplicates={duplicateIds.Count}; Buffered={buffered}; Published={published}; Pending={_pendingItems.Count}; ShellItems={_items.Count}; Total={_total}; NextStart={_nextStart}; ApiHasMore={_apiHasMore}; HasMore={_hasMore}");
+            $"Frodo personal page mapped; Operation={operation}; InternalRequest={internalRequest}; Status={_status}; RequestedStart={requestedStart}; ResponseStart={page.Start}; ApiCount={page.Count}; Raw={page.RawCount}; Mapped={page.Items.Count}; Skipped={page.Skipped.Count}; Duplicates={duplicateIds.Count}; Buffered={buffered}; Published={published}; Pending={_pendingItems.Count}; ShellItems={_items.Count}; Total={_total}; CursorAdvance={cursorAdvance}; NextStart={_nextStart}; ApiHasMore={_apiHasMore}; HasMore={_hasMore}");
 
         foreach (var skip in page.Skipped)
         {

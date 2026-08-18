@@ -1,4 +1,21 @@
-# 2026-08-19：Phase 1 Frodo underfilled-page 分页修正
+# 2026-08-19：Phase 1 Frodo 分页最终结论（固定 20 槽位游标）
+
+真实账号二次实测已经推翻 v11 的 `start += RawCount`：
+
+- `collect`：首段 `start=0,count=20 -> Raw=16`；若错误地从 `start=16` 继续，下一段立即出现 `Duplicates=3`。
+- `wish`：首段 `start=0,count=20 -> Raw=19`；若错误地从 `start=19` 继续，下一段立即出现 `Duplicates=1`。
+
+因此 `start` 是 Frodo 原始列表的固定槽位偏移。某个 20 槽位窗口可能因下架/不可见条目只返回 16/19 个 interests，但下一窗口仍应从 20/40/60… 开始。最终实现：
+
+- 请求保持 `count=20`。
+- 游标按 `ApiCount`/请求窗口推进，不按 `RawCount` 推进。
+- 保留 v11 的 pending 缓冲，只负责把不足 20 个可见条目的 API 窗口与后续窗口拼成 20 卡 Shell 批次。
+- 已显示 + pending 继续统一 SubjectId 去重；正常固定窗口分页不应再因重叠产生重复。
+- 非默认筛选、Frodo 失败 DOM fallback、评价写入与官方回读边界保持不变。
+
+下一轮实机验收只需确认：`RequestedStart` 为 `0 -> 20 -> 40 -> 60...`，同时最终返回给 Shell 的 `ShellItems` 为 `20 -> 40 -> 60...`（真实尾页除外），且正常分页 `Duplicates=0`。
+
+---# 2026-08-19：Phase 1 Frodo underfilled-page 分页修正（v11 试验，已被后续实机纠正）
 
 真实账号已经证实：`collect` 首次请求 `count=20` 时 API 响应为 `ApiCount=20 / Raw=16 / Mapped=16 / Skipped=0 / Duplicates=0`。公开 Frodo 实机导出项目记录了同类行为：已下架/删除的条目仍会影响 collection 总量，但 API 返回的 `interests` 会少于请求 `count`；正确分页方式是按本次实际返回的 `len(interests)` 推进 `start`。
 

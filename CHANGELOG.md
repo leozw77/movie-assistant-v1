@@ -1,4 +1,12 @@
-# Phase 1 分页修正：按 Frodo 实际返回推进 + 20 卡可见批次 - 2026-08-19
+# Phase 1 分页最终修正：固定 20 槽位游标 + 20 卡可见批次 - 2026-08-19
+
+- v11 实机反证了“按 RawCount 推进”：`collect start=16` 立即出现 3 个重复，`wish start=19` 立即出现 1 个重复，说明 `start` 指向固定源槽位而不是“已实际返回多少条”。
+- 最终规则：Frodo 仍请求 `count=20`，下一段按 API 窗口推进；`nextStart = responseStart + ApiCount`，当响应 count 缺失时才回退配置的 PageSize。
+- underfilled 页仍可能只有 16/19 个可见 interests；这类空槽不回退游标、不重复读取，Provider 用 pending 缓冲从后续 20 槽位窗口补齐用户可见批次。
+- Shell 每次仍尽量新增 20 个唯一影片，匹配当前 5 列 × 4 行；真实尾页除外。
+- v11 的 RawCount 游标结论保留为历史试验记录但明确标记已被后续实机纠正。
+- 不修改 Shell UI、Douban Plus、Explore、详情、评价写入、官方回读或 DOM fallback。
+# Phase 1 分页修正（v11 试验，已被后续实机纠正）：按实际返回推进 - 2026-08-19
 
 - 实机确认 `count=20` 时 Frodo 首屏可能只有 `Raw=16`，且 Mapper `Skipped=0 / Duplicates=0`；这不是前端或 Mapper 丢数据。
 - 参考已验证的 Frodo 导出实现：个人 interests 页可能因已下架/删除条目而少于请求 `count`，分页游标必须按实际 `interests` 数量推进，不能按请求 count 跳过。

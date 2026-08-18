@@ -58,7 +58,7 @@
 判断顺序：`Raw < ApiCount` 先视为 API 本页实际返回数量不足；`Raw == Mapped + Skipped` 用于核对 Mapper；`Duplicates` 单独解释累计数减少。未确认原因前，不得把 `nextStart - ShellItems` 直接等同于“丢数据”。
 
 诊断日志保护：`diagnostic.log` 上限 10 MiB，保留 `diagnostic.1.log`～`diagnostic.3.log`；单条消息最多 16384 字符。历史版本遗留的超大 current/archive 日志不会继续保留。
-## Underfilled page 分页规则（2026-08-19 实机确认）
+## Underfilled page 分页规则（v11 试验，已被后续实机纠正）
 
 真实 `collect` 日志：`count=20`，Frodo 返回 `Raw=16`，同时 `Mapped=16 / Skipped=0 / Duplicates=0`。因此 16 不是 Mapper 或 Shell 丢失，而是 API 本页本身 underfilled。
 
@@ -74,3 +74,17 @@ Frodo 社区实机实现记录：个人 interests 可能因已下架/删除条�
 6. 最终真实尾页允许少于 20，其余加载应尽量保持完整 20 卡。
 
 诊断字段：`Raw` 决定 API 游标推进；`Buffered` 表示本页进入 pending 的新唯一条目；`Published` 表示本页实际发布到 Shell 的数量；`Pending` 表示留给下一次可见批次的数量。
+## Underfilled page 最终分页规则（固定槽位窗口，2026-08-19）
+
+v11 曾尝试用 `RawCount` 推进游标，但真实账号再次测试后出现稳定重叠：`collect start=16` 有 3 个重复，`wish start=19` 有 1 个重复。这证明 `start` 不是“已返回条数”，而是固定源槽位位置。
+
+最终规则：
+
+1. API 请求保持 `count=20`。
+2. `nextStart = max(responseStart, requestedStart) + ApiCount`；若响应 `count<=0`，使用配置 PageSize 作为窗口宽度。
+3. `RawCount` 只表示该 20 槽位窗口实际可返回多少个 interests，不再参与游标推进。
+4. API 窗口按 `0,20,40,60...` 前进；underfilled 窗口缺少的可见卡片由 Provider 继续读取后续窗口并通过 pending 缓冲补齐。
+5. Shell 用户可见批次仍尽量为 20 个唯一影片（5 列 × 4 行）；只有真实列表尾部允许不足 20。
+6. 正常固定窗口分页应不再因窗口重叠出现 SubjectId duplicate；若仍有 duplicate，保留诊断并单独调查服务端重复。
+
+验收日志重点：`CursorAdvance=20`、`RequestedStart=0/20/40...`、最终 `ShellItems=20/40/60...`，并观察 `Duplicates=0`。
