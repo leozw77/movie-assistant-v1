@@ -64,6 +64,8 @@ internal sealed class HtmlMediaLibraryForm : Form
     private DoubanWebView2Connector _workerConnector = null!;
     private DoubanConnectorRouter _connector = null!;
     private readonly WorkerJobQueue _workerQueue;
+    private readonly FrodoPersonalProvider _frodoPersonalProvider;
+    private bool _frodoPersonalActive;
     private bool _initialized;
     private bool _closing;
     private bool _doubanRecovering;
@@ -118,6 +120,7 @@ internal sealed class HtmlMediaLibraryForm : Form
         _initialOpenTarget = initialOpenTarget;
         _searchCache = new();
         _environments = new WebView2EnvironmentProvider(_store.DataDirectory);
+        _frodoPersonalProvider = new FrodoPersonalProvider(FrodoOptions.CreateDefault());
         CreateDoubanConnectors();
         _workerQueue = new WorkerJobQueue(this);
 
@@ -329,6 +332,12 @@ internal sealed class HtmlMediaLibraryForm : Form
             return;
         }
 
+        if (_doubanPlusView.Visible && _frodoPersonalActive && IsAllowedDoubanPersonalUrl(_activeDoubanSourceNavigationUrl))
+        {
+            _ = RefreshFrodoPersonalAsync("overlay-refresh");
+            return;
+        }
+
         if (_doubanPlusView.Visible && _doubanSourceView.CoreWebView2 is not null &&
             _doubanSourceNavigationCompleted && IsAllowedDoubanSourceUrl(_activeDoubanSourceNavigationUrl))
         {
@@ -536,10 +545,14 @@ internal sealed class HtmlMediaLibraryForm : Form
                 _doubanPlusView.BringToFront();
                 DiagnosticLogger.Write($"Unified Shell recovery restored visible Shell; FormerListUrl={activeDoubanPlusNavigationUrl}");
             }
-            if (DoubanWebView2Connector.IsAllowedDoubanTopLevel(activeDoubanSourceNavigationUrl))
+            if (!_frodoPersonalActive && DoubanWebView2Connector.IsAllowedDoubanTopLevel(activeDoubanSourceNavigationUrl))
             {
                 _activeDoubanSourceNavigationUrl = activeDoubanSourceNavigationUrl;
                 _doubanSourceView.CoreWebView2.Navigate(activeDoubanSourceNavigationUrl);
+            }
+            else if (_frodoPersonalActive)
+            {
+                DiagnosticLogger.Write($"Frodo personal source preserved across WebView2 recovery; Url={_activeDoubanSourceNavigationUrl}");
             }
             if (wasDoubanSubjectVisible && DoubanWebView2Connector.IsAllowedSubjectUrl(activeDoubanSubjectNavigationUrl))
             {
@@ -896,6 +909,8 @@ internal sealed class HtmlMediaLibraryForm : Form
             }
         }
 
+        _frodoPersonalActive = false;
+        _frodoPersonalProvider.Reset();
         const string url = "https://movie.douban.com/explore";
         _activeDoubanPlusNavigationUrl = url;
         _activeDoubanSourceNavigationUrl = url;
@@ -1608,6 +1623,12 @@ internal sealed class HtmlMediaLibraryForm : Form
         core.NavigationCompleted += async (_, e) =>
         {
             DiagnosticLogger.Write($"WebView=DoubanSource; NavigationCompleted; IsSuccess={e.IsSuccess}; WebErrorStatus={e.WebErrorStatus}; TargetUrl={core.Source}");
+            if (_frodoPersonalActive)
+            {
+                _doubanSourceNavigationCompleted = false;
+                DiagnosticLogger.Write($"WebView=DoubanSource; NavigationCompleted ignored; Reason=FrodoPersonalActive; TargetUrl={core.Source}");
+                return;
+            }
             _doubanSourceNavigationCompleted = e.IsSuccess && IsAllowedDoubanSourceUrl(core.Source);
             if (_doubanSourceNavigationCompleted)
                 await RequestDoubanSourceReadAsync("navigation-completed").ConfigureAwait(true);
@@ -1837,7 +1858,7 @@ internal sealed class HtmlMediaLibraryForm : Form
         await _doubanSourceReadGate.WaitAsync().ConfigureAwait(true);
         try
         {
-            if (_doubanSourceView.CoreWebView2 is null || !_doubanSourceNavigationCompleted ||
+            if (_frodoPersonalActive || _doubanSourceView.CoreWebView2 is null || !_doubanSourceNavigationCompleted ||
                 !IsAllowedDoubanSourceUrl(_activeDoubanSourceNavigationUrl))
             {
                 DiagnosticLogger.Write($"Unified Shell Source read skipped; Reason={reason}; NavigationCompleted={_doubanSourceNavigationCompleted}; Source={_doubanSourceView.CoreWebView2?.Source ?? "<none>"}");
@@ -2025,6 +2046,7 @@ internal sealed class HtmlMediaLibraryForm : Form
 
     private async Task HandleDoubanShellContentTypeAsync(JsonElement root)
     {
+        DeactivateFrodoPersonal("content-type");
         var contentType = ReadString(root, "contentType").Trim();
         if (contentType is not ("movie" or "tv"))
             throw new InvalidDataException("豆瓣探索内容类型无效。");
@@ -2055,6 +2077,7 @@ internal sealed class HtmlMediaLibraryForm : Form
 
     private async Task HandleDoubanShellSearchAsync(JsonElement root)
     {
+        DeactivateFrodoPersonal("search");
         var query = ReadString(root, "query").Trim();
         var requestId = ReadString(root, "requestId");
         if (query.Length is 0 or > 160) throw new InvalidDataException("搜索关键词不能为空，且不能超过 160 个字符。");
@@ -2083,6 +2106,7 @@ internal sealed class HtmlMediaLibraryForm : Form
 
     private async Task HandleDoubanShellSearchPageAsync(JsonElement root)
     {
+        DeactivateFrodoPersonal("search-page");
         var targetUrl = ReadString(root, "url").Trim();
         var requestId = ReadString(root, "requestId");
         var append = ReadBool(root, "append");
@@ -2118,30 +2142,32 @@ internal sealed class HtmlMediaLibraryForm : Form
 
         await WaitForDoubanRecoveryAsync().ConfigureAwait(true);
         var session = await _workerConnector.VerifySessionAsync().ConfigureAwait(true);
-        if (!session.IsLoggedIn || !System.Text.RegularExpressions.Regex.IsMatch(session.ProfileId ?? "", "^\\d+$", System.Text.RegularExpressions.RegexOptions.CultureInvariant))
+        var profileId = session.ProfileId?.Trim() ?? "";
+        if (!session.IsLoggedIn || !System.Text.RegularExpressions.Regex.IsMatch(profileId, "^\\d+$", System.Text.RegularExpressions.RegexOptions.CultureInvariant))
             throw new InvalidOperationException("豆瓣尚未登录，请先点击“豆瓣登录”。");
 
-        var targetUrl = $"https://movie.douban.com/people/{session.ProfileId}/{status}";
+        var targetUrl = $"https://movie.douban.com/people/{profileId}/{status}";
         var requestId = ReadString(root, "requestId");
+        var generation = Interlocked.Increment(ref _doubanSourceGeneration);
+        var resolvedRequestId = string.IsNullOrWhiteSpace(requestId) ? $"personal-{status}-{generation}" : requestId;
         PostShellMessage(new { type = "doubanShellPersonalState", busy = true, personalStatus = status, operation = "personal-status" });
-
-        if (AreEquivalentDoubanNavigationUrls(_activeDoubanSourceNavigationUrl, targetUrl) && _doubanSourceNavigationCompleted)
-        {
-            var generation = Interlocked.Increment(ref _doubanSourceGeneration);
-            var mode = DoubanSourceModeForUrl(targetUrl);
-            var page = await ReadDoubanSourcePageAsync(string.IsNullOrWhiteSpace(requestId) ? $"{mode}-{generation}" : requestId, generation).ConfigureAwait(true);
-            await ForwardDoubanSourceResultToShellAsync(page, "personal-status-noop").ConfigureAwait(true);
-            DiagnosticLogger.Write($"Unified Shell personal status no-op; Status={status}; Url={targetUrl}; Generation={generation}");
-            return;
-        }
 
         _activeDoubanPlusNavigationUrl = targetUrl;
         _activeDoubanSourceNavigationUrl = targetUrl;
         _activeDoubanPersonalPageUrl = targetUrl;
         _doubanSourceNavigationCompleted = false;
-        Interlocked.Increment(ref _doubanSourceNavigationAttempt);
-        _doubanSourceView.CoreWebView2!.Navigate(targetUrl);
-        DiagnosticLogger.Write($"Unified Shell personal status navigation; ProfileId={session.ProfileId}; Status={status}; Url={targetUrl}");
+        _frodoPersonalActive = true;
+        try
+        {
+            var page = await _frodoPersonalProvider.LoadInitialAsync(profileId, status, targetUrl, resolvedRequestId, generation).ConfigureAwait(true);
+            await ForwardDoubanSourceResultToShellAsync(page, "personal-status").ConfigureAwait(true);
+            DiagnosticLogger.Write($"Unified Shell personal status loaded; Source=Frodo; ProfileId={profileId}; Status={status}; Url={targetUrl}; Generation={generation}");
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidDataException or InvalidOperationException)
+        {
+            DiagnosticLogger.Write($"Unified Shell personal Frodo failed; ProfileId={profileId}; Status={status}; Url={targetUrl}; Fallback=DOM; Error={ex.Message}");
+            NavigatePersonalDomFallback(targetUrl, resolvedRequestId, "personal-status-fallback", "frodo-initial-failed");
+        }
     }
 
     private async Task HandleDoubanShellApplyPersonalFilterAsync(JsonElement root)
@@ -2152,21 +2178,79 @@ internal sealed class HtmlMediaLibraryForm : Form
             throw new InvalidDataException("豆瓣个人筛选地址无效，或筛选范围已离开当前状态。");
 
         var generation = Interlocked.Increment(ref _doubanSourceGeneration);
+        var resolvedRequestId = string.IsNullOrWhiteSpace(requestId) ? $"personal-filter-{generation}" : requestId;
         PostShellMessage(new { type = "doubanShellOperationState", busy = true, operation = "personal-filter" });
-        if (AreEquivalentDoubanNavigationUrls(_activeDoubanSourceNavigationUrl, targetUrl) && _doubanSourceNavigationCompleted)
+
+        if (FrodoPersonalProvider.TryReadScope(targetUrl, out var profileId, out var status) &&
+            FrodoPersonalProvider.IsDefaultPersonalUrl(targetUrl, profileId, status))
         {
-            var page = await ReadDoubanSourcePageAsync(string.IsNullOrWhiteSpace(requestId) ? $"personal-filter-{generation}" : requestId, generation).ConfigureAwait(true);
-            await ForwardDoubanSourceResultToShellAsync(page, "personal-filter-noop").ConfigureAwait(true);
-            DiagnosticLogger.Write($"Unified Shell personal filter no-op; Url={targetUrl}; Generation={generation}");
-            return;
+            _activeDoubanPlusNavigationUrl = targetUrl;
+            _activeDoubanSourceNavigationUrl = targetUrl;
+            _activeDoubanPersonalPageUrl = targetUrl;
+            _doubanSourceNavigationCompleted = false;
+            _frodoPersonalActive = true;
+            try
+            {
+                var page = await _frodoPersonalProvider.LoadInitialAsync(profileId, status, targetUrl, resolvedRequestId, generation).ConfigureAwait(true);
+                await ForwardDoubanSourceResultToShellAsync(page, "personal-filter").ConfigureAwait(true);
+                DiagnosticLogger.Write($"Unified Shell personal filter returned to default; Source=Frodo; ProfileId={profileId}; Status={status}; Url={targetUrl}; Generation={generation}");
+                return;
+            }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidDataException or InvalidOperationException)
+            {
+                DiagnosticLogger.Write($"Unified Shell personal default filter Frodo failed; Url={targetUrl}; Fallback=DOM; Error={ex.Message}");
+            }
         }
 
+        NavigatePersonalDomFallback(targetUrl, resolvedRequestId, "personal-filter", "non-default-filter-or-frodo-failed");
+        DiagnosticLogger.Write($"Unified Shell personal filter navigation; Source=DOM; Url={targetUrl}; Generation={generation}");
+    }
+
+    private void DeactivateFrodoPersonal(string reason)
+    {
+        if (_frodoPersonalActive)
+            DiagnosticLogger.Write($"Unified Shell Frodo personal deactivated; Reason={reason}; Url={_activeDoubanSourceNavigationUrl}");
+        _frodoPersonalActive = false;
+        _frodoPersonalProvider.Reset();
+    }
+
+    private void NavigatePersonalDomFallback(string targetUrl, string requestId, string operation, string reason)
+    {
+        DeactivateFrodoPersonal(reason);
+        _pendingDoubanSourceReadRequestId = requestId;
+        _pendingDoubanSourceReadOperation = operation;
         _activeDoubanPlusNavigationUrl = targetUrl;
         _activeDoubanSourceNavigationUrl = targetUrl;
         _activeDoubanPersonalPageUrl = targetUrl;
         _doubanSourceNavigationCompleted = false;
+        Interlocked.Increment(ref _doubanSourceNavigationAttempt);
         _doubanSourceView.CoreWebView2!.Navigate(targetUrl);
-        DiagnosticLogger.Write($"Unified Shell personal filter navigation; Url={targetUrl}; Generation={generation}");
+        DiagnosticLogger.Write($"Unified Shell personal source fallback; Source=DOM; Reason={reason}; Url={targetUrl}; RequestId={requestId}");
+    }
+
+    private async Task RefreshFrodoPersonalAsync(string reason)
+    {
+        if (!_frodoPersonalActive || string.IsNullOrWhiteSpace(_frodoPersonalProvider.CurrentProfileId) || string.IsNullOrWhiteSpace(_frodoPersonalProvider.CurrentStatus)) return;
+        var generation = Interlocked.Increment(ref _doubanSourceGeneration);
+        var requestId = $"personal-refresh-{generation}";
+        var targetUrl = _frodoPersonalProvider.CurrentUrl;
+        PostShellMessage(new { type = "doubanShellOperationState", busy = true, operation = "personal-refresh" });
+        try
+        {
+            var page = await _frodoPersonalProvider.LoadInitialAsync(
+                _frodoPersonalProvider.CurrentProfileId,
+                _frodoPersonalProvider.CurrentStatus,
+                targetUrl,
+                requestId,
+                generation).ConfigureAwait(true);
+            await ForwardDoubanSourceResultToShellAsync(page, "personal-refresh").ConfigureAwait(true);
+            DiagnosticLogger.Write($"Unified Shell personal refresh completed; Source=Frodo; Reason={reason}; Url={targetUrl}; Generation={generation}");
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidDataException or InvalidOperationException)
+        {
+            DiagnosticLogger.Write($"Unified Shell personal refresh Frodo failed; Reason={reason}; Url={targetUrl}; Fallback=DOM; Error={ex.Message}");
+            NavigatePersonalDomFallback(targetUrl, requestId, "personal-refresh-fallback", "frodo-refresh-failed");
+        }
     }
 
     private async Task MonitorDoubanSourceContentTypeNavigationAsync(string contentType, string targetUrl, int navigationAttempt)
@@ -2270,6 +2354,26 @@ internal sealed class HtmlMediaLibraryForm : Form
         var requestId = ReadString(root, "requestId");
         var generation = Interlocked.Increment(ref _doubanSourceGeneration);
         PostShellMessage(new { type = "doubanShellOperationState", busy = true, operation = "load-more" });
+
+        if (_frodoPersonalActive && _frodoPersonalProvider.IsActiveFor(_activeDoubanSourceNavigationUrl))
+        {
+            try
+            {
+                var page = await _frodoPersonalProvider.LoadMoreAsync(requestId, generation).ConfigureAwait(true);
+                await ForwardDoubanSourceResultToShellAsync(page, "load-more").ConfigureAwait(true);
+                PostShellMessage(new { type = "doubanShellOperationState", busy = false, operation = "load-more" });
+                DiagnosticLogger.Write($"Unified Shell Source load-more completed; Source=Frodo; RequestId={requestId}; Generation={generation}; Url={_activeDoubanSourceNavigationUrl}");
+                return;
+            }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidDataException or InvalidOperationException)
+            {
+                var fallbackUrl = _frodoPersonalProvider.CurrentUrl;
+                DiagnosticLogger.Write($"Unified Shell Source load-more failed; Source=Frodo; RequestId={requestId}; Generation={generation}; Url={fallbackUrl}; Fallback=DOM; Error={ex.Message}");
+                NavigatePersonalDomFallback(fallbackUrl, requestId, "personal-api-fallback", "frodo-load-more-failed");
+                return;
+            }
+        }
+
         var action = await ExecuteDoubanSourceBridgeAsync("loadMore").ConfigureAwait(true);
         if (!ReadBool(action, "ok"))
         {
@@ -2288,8 +2392,8 @@ internal sealed class HtmlMediaLibraryForm : Form
             DiagnosticLogger.Write($"Unified Shell Source load-more no-op; RequestId={requestId}; Generation={generation}");
             return;
         }
-        var page = await WaitForDoubanSourcePageAsync(requestId, generation, beforeSignature, "load-more").ConfigureAwait(true);
-        await ForwardDoubanSourceResultToShellAsync(page, "load-more").ConfigureAwait(true);
+        var pageDom = await WaitForDoubanSourcePageAsync(requestId, generation, beforeSignature, "load-more").ConfigureAwait(true);
+        await ForwardDoubanSourceResultToShellAsync(pageDom, "load-more").ConfigureAwait(true);
         PostShellMessage(new { type = "doubanShellOperationState", busy = false, operation = "load-more" });
     }
 

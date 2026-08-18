@@ -1,3 +1,18 @@
+# 2026-08-19：API 迁移 Phase 1 交接（个人页 Frodo）
+
+当前 API 迁移基线固定为 GitHub `main` commit `25e199bd1cc5f70e44f1caf6a3c5b294849d5a90`。本阶段只替换个人页默认列表读取：Frodo 为首选，旧 DOM 为 fallback；Explore、详情和写入不在本阶段范围。
+
+关键边界：
+
+- `done -> collect`、`mark -> wish`、`doing -> do` 只在 `DoubanStatusMapper` 内转换。
+- Shell/前端结构不改；Frodo provider 输出与 `douban-personal-source-bridge.js` 同层级 payload。
+- 非默认个人筛选明确退出 Frodo 并回到隐藏 Source WebView DOM，不删除现有筛选能力。
+- Frodo 首屏、刷新或分页失败不得返回伪成功；自动进入 DOM fallback。
+- `ReviewWriteCoordinator.cs`、`ReviewWriteVerifier.cs`、`ReviewTargetResolver.cs`、`ReviewWriteModels.cs` 未修改。
+- 真实登录态必须验收：三状态首屏、至少三页连续分页、非默认筛选 fallback、Frodo 故障 fallback、评价修改/删除官方回读回归。
+- 详细字段矩阵和验收清单见 `docs/FRODO_PERSONAL_PHASE1.md`。
+
+---
 # 观影助手 v1.0.0 基线：AI 影评问题交接
 
 日期：2026-08-16

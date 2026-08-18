@@ -1,3 +1,12 @@
+# v1.0 API 迁移 Phase 1：个人页 Frodo 读取 - 2026-08-19
+
+- 个人页默认 `看过 / 想看 / 在看` 改为 Frodo `/api/v2/user/{uid}/interests` 首选读取，不再为首屏等待个人网页 DOM。
+- 新增 `Api/FrodoOptions.cs`、`FrodoSigner.cs`、`FrodoClient.cs`、`FrodoModels.cs`、`FrodoPersonalMapper.cs`、`FrodoPersonalProvider.cs`、`DoubanStatusMapper.cs`。
+- Frodo `done / mark / doing` 在 API 边界统一映射为既有 `collect / wish / do`，不向 Shell 或评价业务泄漏移动端状态名。
+- Frodo 输出保持现有个人页 Shell item/paging/filter payload；API 分页在 C# 累积，继续兼容现有个人页“加载更多”替换式渲染。
+- 非默认个人筛选和 API 失败继续走原 `QbDoubanPersonalSourceBridge` DOM 路线；旧 Douban Plus、Source WebView 与评价写入/官方回读均保留。
+- 本阶段不修改 Explore、详情读取、评价写入或 `ReviewWriteCoordinator`。
+- 真实登录态验收仍是发布门禁；静态检查/编译通过不能替代三状态、连续分页、筛选 fallback 和评价回归实测。
 # v1.0 独立开发版：旧体系清理与头像链路移除 - 2026-08-12
 
 - 保留影片文件名识别、自动绑定缓存、人工更正和 PotPlayer/播放结束提醒入口。
