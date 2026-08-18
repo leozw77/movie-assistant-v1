@@ -1,4 +1,18 @@
-# 2026-08-19：Phase 1 Frodo 分页最终结论（固定 20 槽位游标）
+# 2026-08-19：Phase 1 个人页无限滚动（Frodo append + 1200px 提前加载）
+
+分页数据本身已经通过真实账号验证：Frodo 使用固定 `0/20/40/60...` 槽位游标，Provider 把 underfilled 窗口补成 20 卡可见批次。剩余的“到底部闪一下”来自 Shell 渲染方式，而不是 API 分页。
+
+本轮只修显示链路：
+
+- `douban-shell.js` 原本只有 Explore/Search 的 paging response 使用 `append=true`，个人页每次都会 `replaceChildren()` 后重画累计 40/60/80… 卡片。
+- Frodo personal paging 现在只追加尚未存在的 SubjectId；后端仍可继续返回累计 items，不改变 C# / Shell payload 契约。
+- 为避免改变非默认个人筛选的 DOM fallback，append 条件额外要求 `message.dom.source === "frodo-api"`。
+- personal 的 IntersectionObserver 提前加载距离从 720px 改为 1200px；Explore 仍为 720px。这样下一批通常会在用户真正触底前开始读取。
+- Provider、FrodoClient、Mapper、评价写入和官方回读均不修改。
+
+实机验收：看过/想看连续滚动 3～5 批，确认旧卡片不闪烁、不重新加载海报，卡片数量连续增加；日志仍应保持 `RequestedStart=0/20/40...`、`CursorAdvance=20`、正常 `Duplicates=0`。
+
+---# 2026-08-19：Phase 1 Frodo 分页最终结论（固定 20 槽位游标）
 
 真实账号二次实测已经推翻 v11 的 `start += RawCount`：
 

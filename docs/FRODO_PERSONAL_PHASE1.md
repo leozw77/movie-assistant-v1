@@ -88,3 +88,17 @@ v11 曾尝试用 `RawCount` 推进游标，但真实账号再次测试后出现�
 6. 正常固定窗口分页应不再因窗口重叠出现 SubjectId duplicate；若仍有 duplicate，保留诊断并单独调查服务端重复。
 
 验收日志重点：`CursorAdvance=20`、`RequestedStart=0/20/40...`、最终 `ShellItems=20/40/60...`，并观察 `Duplicates=0`。
+## 个人页无限滚动显示规则（2026-08-19）
+
+固定槽位分页与 20 卡 Provider 缓冲通过实机后，个人页仍存在滚到底部时短暂闪烁。原因是 Shell 分页渲染条件只把 Explore/Search 当作 append；personal paging 收到累计 items 后会清空网格并重建所有卡片。
+
+最终显示规则：
+
+1. Frodo personal paging response 使用 append，不清空已显示卡片。
+2. append 仅在 `message.dom.source === "frodo-api"` 时启用，避免改变非默认筛选走 DOM fallback 时的旧行为。
+3. `render()` 继续使用现有 `data-subject-id` / SubjectId 集合去重；虽然 Provider 返回累计 20/40/60… items，前端实际只创建新增卡片。
+4. personal 无限滚动 IntersectionObserver 的底部预触发距离为 1200px；Explore 仍保持 720px。
+5. API/Provider 分页规则不变：`count=20`、固定 `0/20/40...` 槽位游标、pending 补齐 20 卡可见批次。
+6. 目标体验：用户连续向下滚动时，下一批在真正触底前开始读取；已有海报与卡片不被重建，视觉上接近连续无限列表。
+
+验收时除分页日志外，重点观察旧 20/40/60 卡是否保持稳定、不出现整页闪一下；poster fallback 不应因每次个人页分页而对全部旧卡再次触发。

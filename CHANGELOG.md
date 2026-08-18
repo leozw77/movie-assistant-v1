@@ -1,3 +1,10 @@
+# Phase 1 个人页无限滚动修正：追加渲染 + 提前加载 - 2026-08-19
+
+- 实机确认 Frodo 固定 20 槽位分页与 20 卡可见批次正确后，修复个人页加载更多仍整网格重绘的问题。
+- 原 Shell 只对 Explore/Search 分页启用 append；Frodo 个人页虽然后端返回累计 20/40/60… items，前端却会清空旧卡片再重画全部内容，造成到底部时闪一下并重复触发旧海报 fallback。
+- Frodo 个人页分页改为 append：仅在 `message.dom.source == "frodo-api"` 时复用现有 SubjectId 去重追加逻辑；个人页 DOM fallback 保持原渲染语义不变。
+- 个人页无限滚动触发距离从底部 720px 提前到 1200px；Explore 继续保持 720px，减少用户真正滚到底部后才等待下一批的割裂感。
+- 不修改 Frodo API 请求、固定 20 槽位游标、Provider pending 缓冲、筛选 fallback、详情、评价写入或官方回读。
 # Phase 1 分页最终修正：固定 20 槽位游标 + 20 卡可见批次 - 2026-08-19
 
 - v11 实机反证了“按 RawCount 推进”：`collect start=16` 立即出现 3 个重复，`wish start=19` 立即出现 1 个重复，说明 `start` 指向固定源槽位而不是“已实际返回多少条”。

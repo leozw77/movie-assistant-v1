@@ -502,7 +502,11 @@
         pagingObserver = new IntersectionObserver(entries => {
           if (!entries.some(entry => entry.isIntersecting) || busy || pendingPaging) return;
           button.click();
-        }, { root: null, rootMargin: "0px 0px 720px 0px", threshold: 0.01 });
+        }, {
+          root: null,
+          rootMargin: viewKind === "personal" ? "0px 0px 1200px 0px" : "0px 0px 720px 0px",
+          threshold: 0.01
+        });
         pagingObserver.observe(sentinel);
       }
     } else {
@@ -653,7 +657,12 @@
       post("doubanShellDataApplied", { requestId: value(message.requestId), itemCount: 0, error: message.error });
       return;
     }
-    render(message.items, { append: pagingResponse && (messageViewKind === "explore" || messageViewKind === "search") });
+    const appendPaging = pagingResponse && (
+      messageViewKind === "explore" ||
+      messageViewKind === "search" ||
+      (messageViewKind === "personal" && value(message?.dom?.source) === "frodo-api")
+    );
+    render(message.items, { append: appendPaging });
     renderFilters(message.filters);
     renderPaging(message.paging, message.searchPageLinks, message.searchPageUrl);
     if (!pagingResponse) settleListSwitch();
