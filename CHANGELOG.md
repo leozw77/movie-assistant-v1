@@ -1,3 +1,12 @@
+# Phase 1 分页修正：按 Frodo 实际返回推进 + 20 卡可见批次 - 2026-08-19
+
+- 实机确认 `count=20` 时 Frodo 首屏可能只有 `Raw=16`，且 Mapper `Skipped=0 / Duplicates=0`；这不是前端或 Mapper 丢数据。
+- 参考已验证的 Frodo 导出实现：个人 interests 页可能因已下架/删除条目而少于请求 `count`，分页游标必须按实际 `interests` 数量推进，不能按请求 count 跳过。
+- API 请求大小继续保持 20；游标从 `start += ApiCount` 改为 `start += RawCount`，例如首屏 `Raw=16` 后下一次请求从 `start=16` 继续。
+- Provider 新增 pending 缓冲：内部按实际游标继续取数，Shell 每次尽量发布 20 个唯一影片，匹配当前 5 列 × 4 行界面；只有真正到列表末尾才允许不足 20。
+- 去重覆盖已显示和 pending 条目；单次可见批次最多 10 次内部请求，防止异常 API 响应造成死循环。
+- 日志保留逐页诊断，并新增 `Buffered / Published / Pending / InternalRequest / ApiHasMore`，方便确认实际游标和 UI 批次。
+- 不修改 Shell UI、Douban Plus、Explore、详情、评价写入与 DOM fallback。
 # Phase 1 实机修正：Frodo 映射诊断与日志上限 - 2026-08-19
 
 - 实机已确认个人页 `Source=Frodo` 与连续分页可用；新增每页 `Raw / Mapped / Skipped / Duplicates / Added` 统计，区分 API 实际少返回、Mapper 跳过和 SubjectId 去重。

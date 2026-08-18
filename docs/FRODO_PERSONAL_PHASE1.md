@@ -58,3 +58,19 @@
 判断顺序：`Raw < ApiCount` 先视为 API 本页实际返回数量不足；`Raw == Mapped + Skipped` 用于核对 Mapper；`Duplicates` 单独解释累计数减少。未确认原因前，不得把 `nextStart - ShellItems` 直接等同于“丢数据”。
 
 诊断日志保护：`diagnostic.log` 上限 10 MiB，保留 `diagnostic.1.log`～`diagnostic.3.log`；单条消息最多 16384 字符。历史版本遗留的超大 current/archive 日志不会继续保留。
+## Underfilled page 分页规则（2026-08-19 实机确认）
+
+真实 `collect` 日志：`count=20`，Frodo 返回 `Raw=16`，同时 `Mapped=16 / Skipped=0 / Duplicates=0`。因此 16 不是 Mapper 或 Shell 丢失，而是 API 本页本身 underfilled。
+
+Frodo 社区实机实现记录：个人 interests 可能因已下架/删除条目而少于请求 `count`；此时 `total` 仍可能包含这些历史位置。分页不得使用固定 `start += count`，应使用本次响应实际 `interests` 数量推进。
+
+本项目固定规则：
+
+1. API 仍请求 `count=20`，不为了某次 `Raw=16` 改成 16。
+2. 游标：`nextStart = responseStart + RawCount`；`RawCount=0` 视为 API 真正耗尽。
+3. Shell 可见批次目标仍为 20 个唯一影片，匹配 5 列 × 4 行。
+4. API underfilled 时 Provider 自动继续请求下一段并补齐；超过当前可见批次的条目进入 pending 缓冲。
+5. 去重范围覆盖已显示 + pending；异常情况下单个可见批次最多 10 次内部请求。
+6. 最终真实尾页允许少于 20，其余加载应尽量保持完整 20 卡。
+
+诊断字段：`Raw` 决定 API 游标推进；`Buffered` 表示本页进入 pending 的新唯一条目；`Published` 表示本页实际发布到 Shell 的数量；`Pending` 表示留给下一次可见批次的数量。

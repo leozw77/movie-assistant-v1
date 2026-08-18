@@ -1,4 +1,19 @@
-# 2026-08-19：Phase 1 实机修正（Frodo 行诊断 + 日志轮转）
+# 2026-08-19：Phase 1 Frodo underfilled-page 分页修正
+
+真实账号已经证实：`collect` 首次请求 `count=20` 时 API 响应为 `ApiCount=20 / Raw=16 / Mapped=16 / Skipped=0 / Duplicates=0`。公开 Frodo 实机导出项目记录了同类行为：已下架/删除的条目仍会影响 collection 总量，但 API 返回的 `interests` 会少于请求 `count`；正确分页方式是按本次实际返回的 `len(interests)` 推进 `start`。
+
+本轮因此修正 Provider，而不是修改 Mapper 或把 page size 改成 16：
+
+- Frodo 请求仍为 `count=20`。
+- `_nextStart` 只按 `RawCount` 前进；不再使用 `Math.Max(page.Count, page.RawCount)`。
+- 增加 `_pendingItems` 和 `_seenSubjectIds`，内部可连续请求多个 Frodo 页，Shell 每次尽量新增 20 个唯一影片。
+- 首屏若先拿到 16 个，会继续从 `start=16` 读取，补足到 20 后再发给 Shell；多余结果留在 pending，下一次“加载更多”优先消费。
+- 只有 API 真正耗尽时，最终批次才允许不足 20。
+- 非默认筛选、API 失败 fallback、评价写入与官方回读边界保持不变。
+
+实机验收重点：看过/想看连续加载 2～3 次，确认 ShellItems 以 20 为步长增长（最后一页除外），并确认日志中的 `RequestedStart` 在 underfilled 页后按 `Raw` 推进。
+
+---# 2026-08-19：Phase 1 实机修正（Frodo 行诊断 + 日志轮转）
 
 Phase 1 已在真实账号 `collect` 列表确认 `Source=Frodo`，总数 1062 且连续分页到 `nextStart=360` 正常。实测同时发现 Shell 累计数并不总等于 API 游标（首屏 `nextStart=20` 时 Items=16，`nextStart=300` 时 Items=295），因此本轮只增加可观测性，不先猜测为数据丢失。
 
