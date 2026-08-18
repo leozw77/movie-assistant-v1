@@ -1,3 +1,16 @@
+# 2026-08-19：个人库筛选 Step 1 后端基础
+
+当前开发分支继续为 `chatgpt/frodo-personal-20260819`。本轮从 v13.1（`983f9e408d43b89bcb169a3cff92a821f5adfedb`）继续：只加入日志瘦身、Frodo response 字段名探针和独立 `FrodoPersonalIndexService`。
+
+关键边界：
+
+- `FrodoPersonalProvider` 已实机通过的固定 `0/20/40...` 可见分页算法不改。
+- 新 IndexService 自己完整扫描状态库，不调用 Provider 的 `LoadMoreAsync()` 来滚完整库。
+- 完整扫描成功后才切换/写入缓存；失败不把部分索引冒充完整结果。
+- 第一版可查询字段：contentType、myRating/unrated、year、genre、country；排序：marked/myRating/Douban score/year/title。
+- tag/tags 仍未宣称支持；首次真实 non-empty response 会记录 `Frodo schema` 的 InterestKeys/SubjectKeys/HasTagLikeFields，之后根据实机日志决定。
+- Shell 本地筛选 UI 尚未接入，这是下一步；评价写入/删除/官方回读文件仍禁止修改。
+
 # 2026-08-19：v13.1 修正——Shell 转发保留 Frodo dom.source
 
 v13 的方向正确，但实机日志证明 append 条件没有真正命中：加载 40/60/80 时第一页旧 SubjectId 又重复触发 poster fallback。检查消息链路后确认，`FrodoPersonalProvider.BuildPayload()` 已包含 `dom.source = "frodo-api"`，但 `HtmlMediaLibraryForm.ForwardDoubanSourceResultToShellAsync()` 重新组装 `doubanShellData` 时没有转发 `dom`，因此 `douban-shell.js` 的 `message.dom.source === "frodo-api"` 永远取不到值。

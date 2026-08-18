@@ -35,7 +35,9 @@ public static class DiagnosticLogger
             lock (Gate)
             {
                 Directory.CreateDirectory(LogDirectory);
-                var bounded = BoundMessage(message ?? "");
+                var normalized = NormalizeMessage(message ?? "");
+                if (normalized.Length == 0) return;
+                var bounded = BoundMessage(normalized);
                 var line = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] {bounded}{Environment.NewLine}";
                 var incomingBytes = System.Text.Encoding.UTF8.GetByteCount(line);
                 RotateIfNeeded(incomingBytes);
@@ -51,6 +53,81 @@ public static class DiagnosticLogger
         var buildTime = "unknown";
         try { if (File.Exists(path)) buildTime = File.GetLastWriteTime(path).ToString("yyyy-MM-dd HH:mm:ss"); } catch { }
         Write($"========== Application Startup ==========\nApplication Version: {AppInfo.Version}\nExecutable Path: {path}\nBuild Time: {buildTime}\nRelease metadata: VERSION.json in the executable directory\n==========================================");
+    }
+
+    private static string NormalizeMessage(string message)
+    {
+        if (message.Length == 0) return "";
+
+        if (message.StartsWith("Unified Shell message posted;", StringComparison.Ordinal) &&
+            message.Contains("Type=doubanShellPosterFallback", StringComparison.Ordinal))
+            return "";
+
+        if (message.StartsWith("Unified Shell poster fallback posted;", StringComparison.Ordinal))
+            return "";
+
+        const string payloadMarker = "; Payload=";
+        if (message.StartsWith("Unified Shell data posted;", StringComparison.Ordinal))
+        {
+            var markerIndex = message.IndexOf(payloadMarker, StringComparison.Ordinal);
+            if (markerIndex >= 0)
+            {
+                var payload = message[(markerIndex + payloadMarker.Length)..];
+                try
+                {
+                    using var document = System.Text.Json.JsonDocument.Parse(payload);
+                    var root = document.RootElement;
+                    var requestId = ReadJsonString(root, "requestId");
+                    var operation = ReadJsonString(root, "operation");
+                    var error = CompactLogValue(ReadJsonString(root, "error"), 240);
+                    var generation = root.TryGetProperty("generation", out var generationValue) && generationValue.TryGetInt32(out var generationNumber)
+                        ? generationNumber
+                        : 0;
+                    var items = root.TryGetProperty("items", out var itemsValue) && itemsValue.ValueKind == System.Text.Json.JsonValueKind.Array
+                        ? itemsValue.GetArrayLength()
+                        : 0;
+                    var source = "DOM";
+                    if (root.TryGetProperty("dom", out var domValue) && domValue.ValueKind == System.Text.Json.JsonValueKind.Object &&
+                        ReadJsonString(domValue, "source").Equals("frodo-api", StringComparison.OrdinalIgnoreCase))
+                        source = "Frodo";
+                    var status = error.Length == 0 ? "ok" : "error";
+                    var bytes = System.Text.Encoding.UTF8.GetByteCount(payload);
+                    return $"Unified Shell data posted; RequestId={requestId}; Generation={generation}; Source={source}; Operation={operation}; Status={status}; Items={items}; Bytes={bytes}; Error={error}";
+                }
+                catch (Exception ex)
+                {
+                    var bytes = System.Text.Encoding.UTF8.GetByteCount(payload);
+                    return $"Unified Shell data posted; Status=unparsed; Bytes={bytes}; Error={CompactLogValue(ex.Message, 160)}";
+                }
+            }
+        }
+
+        const string readResultMarker = "; ReadResult=";
+        if (message.StartsWith("Unified Shell Source read completed;", StringComparison.Ordinal))
+        {
+            var markerIndex = message.IndexOf(readResultMarker, StringComparison.Ordinal);
+            if (markerIndex >= 0)
+            {
+                var readResult = message[(markerIndex + readResultMarker.Length)..];
+                var prefix = message[..markerIndex];
+                return $"{prefix}; ReadResultBytes={System.Text.Encoding.UTF8.GetByteCount(readResult)}";
+            }
+        }
+
+        return message;
+    }
+
+    private static string ReadJsonString(System.Text.Json.JsonElement owner, string name) =>
+        owner.ValueKind == System.Text.Json.JsonValueKind.Object &&
+        owner.TryGetProperty(name, out var value) &&
+        value.ValueKind == System.Text.Json.JsonValueKind.String
+            ? (value.GetString() ?? "").Trim()
+            : "";
+
+    private static string CompactLogValue(string value, int maxLength)
+    {
+        var compact = (value ?? "").Replace('\r', ' ').Replace('\n', ' ').Trim();
+        return compact.Length <= maxLength ? compact : compact[..maxLength] + "…";
     }
 
     private static string BoundMessage(string message)
@@ -70,9 +147,6 @@ public static class DiagnosticLogger
         catch { return; }
         if (currentBytes + incomingBytes <= MaxLogBytes) return;
 
-        // Old builds could grow diagnostic.log to hundreds of MB. Do not preserve
-        // an oversized legacy file as an archive; deleting it is what restores the
-        // new hard storage bound on the first write after upgrade.
         if (currentBytes > MaxLogBytes)
         {
             File.Delete(LogPath);

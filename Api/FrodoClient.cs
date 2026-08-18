@@ -11,6 +11,7 @@ internal sealed class FrodoClient
     {
         AutomaticDecompression = DecompressionMethods.All
     });
+    private static int _schemaLogged;
 
     private readonly FrodoOptions _options;
 
@@ -71,6 +72,7 @@ internal sealed class FrodoClient
                 !root.TryGetProperty("interests", out var interests) ||
                 interests.ValueKind != JsonValueKind.Array)
                 throw new InvalidDataException("Frodo interests 响应缺少 interests 数组。");
+            LogSchemaOnce(interests);
             return root.Clone();
         }
         catch (JsonException ex)
@@ -78,4 +80,39 @@ internal sealed class FrodoClient
             throw new InvalidDataException("Frodo interests 返回了无效 JSON。", ex);
         }
     }
+
+    private static void LogSchemaOnce(JsonElement interests)
+    {
+        JsonElement firstInterest = default;
+        foreach (var candidate in interests.EnumerateArray())
+        {
+            if (candidate.ValueKind != JsonValueKind.Object) continue;
+            firstInterest = candidate;
+            break;
+        }
+        if (firstInterest.ValueKind != JsonValueKind.Object) return;
+        if (Interlocked.CompareExchange(ref _schemaLogged, 1, 0) != 0) return;
+
+        try
+        {
+            var interestKeys = PropertyNames(firstInterest);
+            var subjectKeys = Array.Empty<string>();
+            if (firstInterest.TryGetProperty("subject", out var subject) && subject.ValueKind == JsonValueKind.Object)
+                subjectKeys = PropertyNames(subject);
+            var hasTagLikeFields = interestKeys.Concat(subjectKeys).Any(name => name.Contains("tag", StringComparison.OrdinalIgnoreCase));
+            DiagnosticLogger.Write(
+                $"Frodo schema; InterestKeys={string.Join(',', interestKeys)}; SubjectKeys={string.Join(',', subjectKeys)}; HasTagLikeFields={hasTagLikeFields}");
+        }
+        catch (Exception ex)
+        {
+            DiagnosticLogger.Write($"Frodo schema probe failed; Error={ex.Message}");
+        }
+    }
+
+    private static string[] PropertyNames(JsonElement owner) =>
+        owner.EnumerateObject()
+            .Select(property => property.Name)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ToArray();
 }

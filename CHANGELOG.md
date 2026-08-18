@@ -1,3 +1,12 @@
+# Frodo 个人库筛选 Step 1：日志瘦身 + 全库索引基础 - 2026-08-19
+
+- 诊断日志不再持续写 `Unified Shell data posted` 的完整累计 Payload，改为 RequestId / Generation / Source / Operation / Status / Items / Bytes / Error 摘要。
+- DOM Source read 的完整 `ReadResult` 不再写入日志，只保留字节数；成功的 poster fallback 高频日志静默，真实失败继续记录。
+- FrodoClient 首次拿到非空 interests 时只记录字段名 schema，不记录字段值，用于确认真实 response 是否存在 tag/tags 类字段。
+- 新增 `FrodoPersonalIndexService`：与现有可见分页 Provider 解耦，按固定 API 槽位 `0/20/40...` 完整扫描个人状态库，SubjectId 去重，成功后原子写 `frodo-personal-index-v1.json`。
+- 索引层已实现电影/剧集、我的评分/未评分、年份、Genre、国家地区筛选，以及最近标记/我的评分/豆瓣评分/年份/标题排序。
+- 本 Step 只落后端索引基础，尚未把本地筛选控件接到 Shell；现有 Frodo 首屏、pending、无限滚动、DOM fallback、详情和评价写入链路不改。
+
 # Phase 1 v13.1：修复 Frodo append 来源标记丢失 - 2026-08-19
 
 - v13 实机日志确认：1200px 提前触发已经生效，但个人页分页仍会重画旧卡片并重新触发旧海报 fallback。
