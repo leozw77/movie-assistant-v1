@@ -1,0 +1,29 @@
+﻿BuildFix12 R8 changed files
+
+Runtime/recovery:
+- DoubanWebView2Connector.cs
+- DoubanConnector.cs
+- HtmlMediaLibraryForm.cs
+- WorkerJobQueue.cs
+- WebAssets/MediaLibrary/app.js
+
+Delete performance:
+- DoubanWebView2Connector.DeleteV2.cs
+
+Validation/build/docs:
+- tests/validate_buildfix11.py
+- tests/validate_buildfix12_delete.py
+- tests/validate_buildfix12_r8.py
+- tests/validate_review_pipeline.py
+- scripts/Build-Preview.ps1
+- SelfTest.cs
+- BUILD_FIX12_R8_NOTES.txt
+- review/VALIDATION_RESULTS_BUILDFIX12_R8.txt
+- README.md
+- AI_HANDOFF.md
+- CHANGELOG.md
+- BUILD_STATUS.txt
+- BUILD_REQUIRED.txt
+- PACKAGE_VERSION.txt
+- BUILDFIX12_INTEGRATION.json
+- 先看这里.txt

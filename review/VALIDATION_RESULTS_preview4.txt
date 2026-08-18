@@ -1,0 +1,81 @@
+=== Validate-Source.py ===
+PASS: csproj XML 可解析
+PASS: VERSION 与 csproj 一致 | 0.9.0-preview.4
+PASS: HTML 只有一个统一保存按钮
+PASS: HTML 不再暴露三个旧写入按钮
+PASS: app.js 只绑定一个统一保存入口
+PASS: WebMessage 白名单不含旧写入操作
+PASS: C# 接口只保留统一保存与独立删除
+PASS: 旧独立写入执行链已删除
+PASS: 想看+评分在 C# 层拒绝
+PASS: 失败或未确认不写本地
+PASS: 结果模型包含结构化阶段、本地更新与提交稳定标志
+PASS: 等待官方表单和提交完成使用条件轮询
+PASS: 官方表单要求连续稳定采样
+PASS: 提交等待显式区分 settled 与 timeout
+PASS: 提交未稳定时不会继续官方回读
+PASS: 详情状态能力来自官方编辑表单
+PASS: 前端能力未知时不再永久隐藏在看
+PASS: 提取内嵌脚本 DoubanWriteSnapshotScript
+PASS: 提取内嵌脚本 DoubanWriteOpenCapabilityScript
+PASS: 提取内嵌脚本 DoubanWriteOpenScriptV2
+PASS: 提取内嵌脚本 DoubanWriteFormProbeScript
+PASS: 提取内嵌脚本 DoubanWriteSubmitScriptV2
+PASS: 提取内嵌脚本 DoubanWritePostSubmitProbeScript
+PASS: 提取内嵌脚本 DoubanHistoryContainsSubjectScript
+PASS: 提取内嵌脚本 DoubanDeleteControlScript
+PASS: 写入脚本不使用 fetch
+PASS: 写入脚本不读取或复制 Cookie
+PASS: 统一写入脚本只点击一次官方提交
+PASS: 统一写入限制同源和影片 ID
+PASS: 评分通过可见控件而非直接写隐藏值
+PASS: 删除脚本只选个人区域唯一控件
+PASS: app.js Node 语法检查
+PASS: DoubanWriteSnapshotScript Node 语法检查
+PASS: DoubanWriteOpenCapabilityScript Node 语法检查
+PASS: DoubanWriteOpenScriptV2 Node 语法检查
+PASS: DoubanWriteFormProbeScript Node 语法检查
+PASS: DoubanWriteSubmitScriptV2 Node 语法检查
+PASS: DoubanWritePostSubmitProbeScript Node 语法检查
+PASS: DoubanHistoryContainsSubjectScript Node 语法检查
+PASS: DoubanDeleteControlScript Node 语法检查
+PASS: DoubanConnector.cs 词法定界符平衡
+PASS: DoubanWebView2Connector.cs 词法定界符平衡
+PASS: HtmlMediaLibraryForm.cs 词法定界符平衡
+PASS: SelfTest.cs 词法定界符平衡
+PASS: CrashLogger.cs 词法定界符平衡
+SUMMARY: 45 passed, 0 failed
+
+=== Validate-Launcher.py ===
+PASS: BUILD_PREVIEW.cmd is ASCII-only, BOM-free, and CRLF-normalized
+PASS: Build-Preview.ps1 is UTF-8 BOM and CRLF-normalized
+PASS: launcher uses an explicit Windows PowerShell path and quoted script path
+
+=== Validate-Fixtures.py ===
+PASS: 详情能力探测优先打开官方通用编辑入口 | {"clicked": true, "generic": true, "selected": false, "tag": "BUTTON", "name": "pbtn-1292052", "text": "修改"}
+PASS: 官方编辑表单返回完整 wish/do/collect 能力 | {"ready": true, "captcha": false, "loginPage": false, "error": "", "actionPath": "text/html,/subject/1292052/interest", "fields": [{"tag": "INPUT", "type": "radio", "name": "interest", "checked": false, "maxLength": -1}, {"tag": "INPUT", "type": "radio", "name": "interest", "checked": true, "maxLength": -1}, {"tag": "INPUT", "type": "radio", "name": "interest", "checked": false, "maxLength": -1}, {"tag": "INPUT", "type": "hidden", "name": "rating", "checked": false, "maxLength": -1}, {"tag": "TEXTAREA", "type": "textarea", "name": "comment", "checked": false, "maxLength": -1}, {"tag": "BUTTON", "type": "submit", "name": "", "checked": false, "maxLength": 0}], "ratingControlCount": 0, "commentControlCount": 1, "interestOptions": [{"type": "radio", "value": "wish", "checked": false}, {"type": "radio", "value": "do", "checked": true}, {"type": "radio", "value": "collect", "checked": false}], "selectedInterest": "do", "rating": 3, "ratingRaw": "30", "ratingKnown": true, "comment": "旧短评", "commentKnown": true, "personalContainerFound": true, "formCount": 1}
+PASS: 官方表单能力探测 | {"ready": true, "captcha": false, "loginPage": false, "error": "", "actionPath": "text/html,/subject/1292052/interest", "fields": [{"tag": "INPUT", "type": "radio", "name": "interest", "checked": false, "maxLength": -1}, {"tag": "INPUT", "type": "radio", "name": "interest", "checked": true, "maxLength": -1}, {"tag": "INPUT", "type": "radio", "name": "interest", "checked": false, "maxLength": -1}, {"tag": "INPUT", "type": "hidden", "name": "rating", "checked": false, "maxLength": -1}, {"tag": "TEXTAREA", "type": "textarea", "name": "comment", "checked": false, "maxLength": 330}, {"tag": "BUTTON", "type": "submit", "name": "", "checked": false, "maxLength": 0}], "ratingControlCount": 6, "commentControlCount": 1, "interestOptions": [{"type": "radio", "value": "wish", "checked": false}, {"type": "radio", "value": "do", "checked": true}, {"type": "radio", "value": "collect", "checked": false}], "selectedInterest": "do", "rating": 3, "ratingRaw": "30", "ratingKnown": true, "comment": "旧短评", "commentKnown": true, "personalContainerFound": true, "formCount": 1}
+PASS: 状态评分短评统一提交 | {"submitted": true, "statusFallback": false, "actionPath": "text/html,/subject/1292052/interest", "requestedStatus": "collect", "beforeInterest": "do", "selectedBeforeSubmit": "collect", "statusChanged": true, "ratingChanged": true, "commentChanged": true}
+PASS: 官方提交按钮只点击一次
+PASS: 提交前状态为 collect
+PASS: 评分通过可见星级更新隐藏值
+PASS: 短评写入官方文本框
+PASS: 评分控件缺失时阻止提交 | {"submitted": false, "error": "官方评分控件缺失", "candidateCount": 0, "candidates": []}
+PASS: 评分控件缺失时零提交
+PASS: nullable 评分仍可统一保存
+PASS: nullable 评分不清空官方已有评分
+PASS: 想看状态不带评分可提交
+PASS: 能力未知时在看仍显示且可选择
+PASS: 能力未知时提示保存前再次确认
+PASS: 官方表单不提供在看时按钮明确禁用
+PASS: 禁用在看按钮显示具体原因
+PASS: 确认结果展示提交稳定状态
+PASS: 前端只发送一个 saveDoubanEntry 消息 | [{"id": "1785881981560-6b81ed13aaa8d8", "op": "saveDoubanEntry", "payload": {"subjectId": "1292052", "subjectUrl": "https://movie.douban.com/subject/1292052/", "status": "collect", "rating": 5, "setComment": true, "comment": "新短评"}}]
+PASS: 统一保存 payload 完整
+PASS: 确认成功后界面解锁
+PASS: 想看自动清除评分
+PASS: 想看禁用评分按钮
+PASS: 后端阻止时保留用户编辑
+PASS: 后端阻止后界面解锁
+PASS: 删除失败后界面恢复可操作
+ALL_FIXTURES_OK (26 checks)

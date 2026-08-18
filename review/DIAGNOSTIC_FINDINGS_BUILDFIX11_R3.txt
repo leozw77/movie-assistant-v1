@@ -1,0 +1,21 @@
+﻿BuildFix11 R3 diagnostic findings
+
+Observed title: 我的朋友安德烈 (SubjectId=35416504)
+Observed full-cast sample: CardCount=31, AvatarCount=23, stable after two complete-state samples.
+Known official-page-visible actors such as 宁理 (27570099) and 雷佳音 (27491948) were returned with empty AvatarUrl/AvatarSource, while name/role/profile identity were correct.
+
+R2 source re-check:
+- The suspected readImage early-return bug is NOT present in R2. The empty return occurs after the node loop.
+- R2 only schedules ScheduleHomeAvatarEnrichment, so missing FullCast cards have no final person-page fallback.
+- The front-end castAvatarUpdated handler only searches state.currentDetail.cast (home cast) and deliberately does not rerender while full cast is shown.
+- WorkerWebView is 1x1 pixels, which is unfriendly to lazy/intersection-based rendering.
+
+R3 correction:
+- Add FullCast-specific low-priority enrichment.
+- Reuse same-person FullCast avatar first, then PersonAvatarCache, then person page.
+- Fetch each missing person once and update all of that person's role cards.
+- Add castScope to incremental messages and maintain state.fullCast in app.js.
+- Use a normal 1024x768 off-screen WorkerWebView viewport.
+- Advance FullCastParserVersion to 3 to invalidate R2 incomplete FullCast caches only.
+
+No changes were made to review save semantics, official readback rules, delete-disabled state, or DetailWebView responsibilities.

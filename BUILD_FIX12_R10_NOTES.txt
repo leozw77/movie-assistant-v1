@@ -1,0 +1,22 @@
+﻿BuildFix12 R10
+
+Focus: restore automatic Douban history synchronization on the R9 stability/performance baseline.
+
+Changes:
+- Restore automatic refresh for collect / wish / do history tabs.
+- Startup remains cache-first: local cards render immediately, then the visible Douban tab refreshes in the background.
+- Switching to collect / wish / watching triggers an automatic page-0 refresh; no manual sync click is required.
+- Keep the manual button as an explicit “立即同步豆瓣” force-refresh action.
+- Add a 5-minute freshness throttle and a front-end in-flight guard to avoid repeated automatic requests.
+- Existing WorkerJobQueue HistoryRead coalescing remains enabled as the back-end dedupe layer.
+- HistoryRead remains low priority and cancelable; OfficialReviewRead / save / delete can preempt it.
+- When login becomes available or WebView2 browser recovery completes, the visible history tab automatically resumes synchronization.
+
+Preserved:
+- BuildFix12 R7 verified do-list two-stage deletion behavior.
+- R8/R9 faster deletion and real WebView2 recreation after BrowserProcessExited.
+- BuildFix11 Detail/Worker split and cast/avatar behavior.
+- Review write protocol and official readback semantics.
+
+Windows build status:
+- Not compiled in the current Linux environment; run BUILD_PREVIEW.cmd on Windows with .NET 8 SDK.

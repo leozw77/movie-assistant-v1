@@ -1,0 +1,57 @@
+PASS: csproj XML 可解析
+PASS: VERSION 为 preview.6 | 0.9.0-preview.6
+PASS: VERSION 与 csproj 一致
+PASS: VERSION 与运行日志版本一致
+PASS: 活动接口只暴露评价读取与 v2 保存
+PASS: 桥接白名单禁止旧删除
+PASS: 前端删除按钮明确禁用
+PASS: 旧写入入口降级为私有 legacy
+PASS: 模型定义 Keep/Set/Clear
+PASS: 空值与未知值分离
+PASS: 前端发送 ratingAction/commentAction
+PASS: 前端不再构造 setComment 旧协议
+PASS: 想看最终状态强制无评分
+PASS: Keep 从最新官方值合并
+PASS: 详情页先读取官方评价
+PASS: 详情页元数据跳过重复状态能力表单
+PASS: 启动与切换标签不自动抢占隐藏WebView2
+PASS: 完整官方快照覆盖本地
+PASS: 官方明确无评价才清空本地
+PASS: 表单可见不被当成无评价证据
+PASS: 不完整官方读取阻止提交
+PASS: 管线顺序为读取→提交→结算→回读→验证→本地
+PASS: 提交使用官方 form.requestSubmit
+PASS: 提交不使用 fetch/private HTTP
+PASS: 提交不读取 cookie
+PASS: 隐藏评分只读取不直接赋值
+PASS: 清除评分无独立按钮时使用官方想看往返
+PASS: 提交前复核状态评分短评
+PASS: 结算要求连续两次稳定
+PASS: 超时返回不确定而非成功
+PASS: 最终成功必须官方逐字段匹配
+PASS: 失败/不确定不写目标值
+PASS: 官方确认与本地缓存状态分离
+PASS: 专项自检覆盖延迟缓存仍可官方确认
+PASS: 连接器延迟缓存不再误报最终失败
+PASS: 外层缓存写入后重建最终结果
+PASS: 最终桥接返回官方确认字段
+PASS: 成功导航不再打印Unknown错误
+PASS: UI 明示网页为准
+PASS: 清除评分文案真实
+PASS: 结果阶段包含 official-read/settlement
+PASS: 前端以官方确认而非连接器缓存标记判定成功
+PASS: 前端区分官方确认与本地缓存
+PASS: 删除点击不会发送 WebMessage
+PASS: DoubanConnector.cs 分隔符平衡
+PASS: DoubanWebView2Connector.cs 分隔符平衡
+PASS: DoubanWebView2Connector.ReviewWriteV2.cs 分隔符平衡
+PASS: HtmlMediaLibraryForm.cs 分隔符平衡
+PASS: ReviewWriteModels.cs 分隔符平衡
+PASS: ReviewTargetResolver.cs 分隔符平衡
+PASS: ReviewWriteCoordinator.cs 分隔符平衡
+PASS: ReviewSettlementPolicy.cs 分隔符平衡
+PASS: DoubanOfficialFormScripts.cs 分隔符平衡
+PASS: OfficialReviewCachePolicy.cs 分隔符平衡
+PASS: ReviewWriteVerifier.cs 分隔符平衡
+PASS: SelfTest.cs 分隔符平衡
+SUMMARY: 56 passed, 0 failed

@@ -1,0 +1,20 @@
+﻿DoubanReview preview.6 BuildFix6 source validation
+Generated: 2026-08-05
+
+Completed in the packaging environment:
+- Review pipeline static validation: 48/48 passed
+- JavaScript review protocol tests: all passed
+- Media library app.js syntax check: passed
+- Windows launcher format validation: passed
+- Source validation: passed
+- Fixture validation: passed
+- ZIP structure and checksum validation: performed during final packaging
+
+BuildFix6 focused release gate:
+- ReviewPipelineSelfTest now contains 15 deterministic checks.
+- The new check verifies that rating Clear never writes the hidden rating field directly and uses the official visible wish round-trip fallback when no explicit clear control exists.
+
+Environment limitation:
+- The packaging environment does not contain the Windows .NET 8 SDK or WebView2 runtime.
+- No new BuildFix6 EXE compilation or real Douban submission is claimed here.
+- Run BUILD_PREVIEW.cmd on Windows to compile, publish and execute the focused and legacy self-tests.

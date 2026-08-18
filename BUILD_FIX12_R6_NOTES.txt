@@ -1,0 +1,30 @@
+﻿BuildFix12 R6 - do-list trusted UI click
+
+基线：
+- BuildFix12 R5
+- BuildFix11 R3 已实机验证的双 WebView2 / 详情 / 演职员 / 普通评价保存保持不变。
+
+本轮根据 2026-08-09 09:23 诊断包修正：
+1. R5 已经导航到 https://movie.douban.com/people/{ProfileId}/do?start=0 并精确找到目标影片唯一“删除”控件。
+2. 但 JavaScript HTMLElement.click() 没有导致该记录从 do 列表移除，也没有出现删除导航/确认事件。
+3. R6 首页改为用户实测有效的精确地址：
+   https://movie.douban.com/people/{ProfileId}/do
+   仅第二页及以后使用 ?start=N。
+4. R6 不再使用 synthetic node.click() 删除 do 项。
+5. 先按 SubjectId 找到目标 item，只在该 item 内找到唯一“删除”。
+6. 将按钮滚动到 WorkerWebView 视口中心，并用 elementFromPoint 复核没有被遮挡。
+7. 使用 CoreWebView2.CallDevToolsProtocolMethodAsync("Input.dispatchMouseEvent") 发送 mousePressed/mouseReleased，
+   让 Chromium 按真实鼠标输入路径点击豆瓣官方页面控件。
+8. 仍不使用 fetch、HttpClient、手工 POST、私有写接口或 Cookie 导出。
+9. 删除后仍必须：
+   - 新鲜重载同一 do 列表连续确认 SubjectId 消失；
+   - 影片详情连续两次确认 status/rating/comment/MarkedDate 均为空；
+   - 最终 do 列表硬复核通过；
+   才允许写本地 tombstone。
+
+新增日志：
+- do-list locate Probe（含目标卡片及删除控件的安全结构信息）
+- do-list control prepared
+- do-list trusted click dispatched（坐标、Tag、Class、FormActionPath、HrefPath）
+
+当前打包环境没有 Windows/.NET SDK，因此 R6 仍需 Windows 编译和真实账号删除回归。

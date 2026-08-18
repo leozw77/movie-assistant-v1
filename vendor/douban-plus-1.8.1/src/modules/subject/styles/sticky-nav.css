@@ -1,0 +1,117 @@
+/* ---------- Sticky nav ---------- */
+.atv-stickynav {
+  position: fixed;
+  z-index: 9999;
+  top: 0;
+  right: 0;
+  left: 0;
+  display: flex;
+  height: 56px;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 max(28px, 5vw);
+  border-bottom: 1px solid var(--atv-border-subtle);
+  background: var(--atv-bg-nav-solid);
+  gap: 24px;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-100%);
+}
+
+/* Frosted glass effect only when NOT actively scrolling — Apple-style.
+   The backdrop-filter forces per-frame compositing; dropping it during
+   scroll eliminates the main source of scroll jank. */
+.atv-stickynav.is-visible:not(.is-scrolling) {
+  -webkit-backdrop-filter: saturate(180%) blur(24px);
+  backdrop-filter: saturate(180%) blur(24px);
+  background: var(--atv-bg-nav);
+}
+
+.atv-stickynav.is-visible {
+  pointer-events: auto;
+}
+
+.atv-stickynav-title {
+  overflow: hidden;
+  min-width: 0;
+  flex: 0 1 auto;
+  padding-left: 132px;
+  color: var(--atv-text-primary);
+  font-size: var(--atv-type-title);
+  font-weight: var(--atv-font-weight-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.atv-stickynav-jumps {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  flex: 0 1 auto;
+  gap: 24px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.atv-stickynav-jumps::-webkit-scrollbar {
+  display: none;
+}
+
+.atv-stickynav-jumps a {
+  position: relative;
+  cursor: pointer;
+  font-size: var(--atv-type-body-sm);
+  font-weight: var(--atv-font-weight-medium);
+  letter-spacing: 0.02em;
+  transition: color var(--atv-duration-feedback) ease;
+  white-space: nowrap;
+}
+
+#atv-douban-root .atv-stickynav-jumps a {
+  color: var(--atv-text-secondary);
+}
+
+#atv-douban-root .atv-stickynav-jumps a:hover {
+  background: transparent;
+  color: var(--atv-accent-bright);
+}
+
+#atv-douban-root .atv-stickynav-jumps a.is-active {
+  color: var(--atv-accent-bright);
+}
+
+.atv-stickynav-marker {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  background: var(--atv-accent-bright);
+  transform: translateX(0);
+  transition: transform var(--atv-duration-feedback) var(--atv-ease-in-out);
+}
+
+@media (width <= 768px) {
+  .atv-stickynav-title {
+    flex: 0 1 32%;
+    padding-left: 118px;
+    font-size: var(--atv-type-body-sm);
+  }
+
+  .atv-stickynav-jumps {
+    flex: 1 1 auto;
+    gap: 14px;
+  }
+
+  .atv-stickynav-jumps a {
+    font-size: var(--atv-type-caption-sm);
+  }
+}
+
+/* The sliding active marker jumps to the active item without sliding
+   motion under reduced-motion preference. */
+@media (prefers-reduced-motion: reduce) {
+  .atv-stickynav-marker {
+    transition: none;
+  }
+}

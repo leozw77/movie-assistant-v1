@@ -1,0 +1,33 @@
+BuildFix11 specialized validation
+Generated: 2026-08-05
+
+PASS: Detail/Worker 两个长期 WebView2 控件
+PASS: 两个豆瓣 WebView2 共用同一 EnvironmentProvider/Profile
+PASS: 启动阶段并行预热两个控制器
+PASS: 详情元数据固定走 DetailWebView
+PASS: 评价与完整演职员固定走 Worker 队列
+PASS: Worker 队列为单消费者优先级模型
+PASS: 保存任务优先级最高且开始后不可取消
+PASS: 头像任务会被高优先级任务抢占
+PASS: 导航支持取消令牌以便头像任务让路
+PASS: 首页脚本按卡片取前六位且无人物级去重
+PASS: 完整演职员优先逐个 li.celebrity 解析
+PASS: 完整演职员头像不向共同父节点扩展
+PASS: 完整演职员采用 complete + 双签名稳定采样
+PASS: 统一头像有效性过滤包含关键占位资源
+PASS: 人物主页只作为后台缺图最后一级
+PASS: 头像增量消息携带 SubjectId/RequestId/卡片身份
+PASS: 前端拒绝旧条目头像结果
+PASS: 前端拒绝旧条目保存结果覆盖新详情
+PASS: 所有详情/保存/全部演职员请求携带 requestId
+PASS: Cast/FullCast 缓存解析版本独立
+PASS: 旧演职员缓存定向失效不清评价字段
+PASS: 不同人物共享头像产生诊断警告
+PASS: 双 WebView 日志明确区分角色
+PASS: WebView2 进程故障安排独立恢复
+PASS: 夹具：首页同人不同职务保留六张
+PASS: 夹具：不同人物只取各自卡片头像
+PASS: 夹具：延迟 DOM 只在 complete 连续稳定后返回 | [False, False, False, True]
+PASS: 夹具：缓存升级保留评价与日期
+PASS: 前端 JavaScript 语法有效
+SUMMARY: 29 passed, 0 failed

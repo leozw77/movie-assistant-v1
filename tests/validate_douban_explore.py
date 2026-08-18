@@ -1,0 +1,80 @@
+#!/usr/bin/env python3
+from pathlib import Path
+import sys
+
+ROOT = Path(__file__).resolve().parents[1]
+FAILURES = []
+
+
+def check(name: str, condition: bool) -> None:
+    if condition:
+        print(f"PASS: {name}")
+    else:
+        FAILURES.append(name)
+        print(f"FAIL: {name}")
+
+
+explore_js = (ROOT / "WebAssets" / "DoubanPlus" / "douban-explore-page.js").read_text(encoding="utf-8")
+explore_css = (ROOT / "WebAssets" / "DoubanPlus" / "douban-explore-page.css").read_text(encoding="utf-8")
+card_js = (ROOT / "WebAssets" / "DoubanPlus" / "douban-card.js").read_text(encoding="utf-8")
+card_css = (ROOT / "WebAssets" / "DoubanPlus" / "douban-card.css").read_text(encoding="utf-8")
+personal_js = (ROOT / "WebAssets" / "DoubanPlus" / "douban-personal-page.js").read_text(encoding="utf-8")
+personal_css = (ROOT / "WebAssets" / "DoubanPlus" / "douban-personal-page.css").read_text(encoding="utf-8")
+watchlist_js = (ROOT / "WebAssets" / "DoubanPlus" / "douban-watchlist.js").read_text(encoding="utf-8")
+script_host = (ROOT / "DoubanPlusWebView2Script.cs").read_text(encoding="utf-8")
+host = (ROOT / "HtmlMediaLibraryForm.cs").read_text(encoding="utf-8")
+
+check("Explore 适配器与 CSS 已存在", "__QB_DOUBAN_EXPLORE_CSS__" in explore_js and len(explore_css) > 1000)
+check("共享卡片渲染器与样式已存在", "window.QbDoubanCard" in card_js and "qb-media-card-title" in card_css)
+check("个人页与探索页使用共享卡片渲染器", "QbDoubanCard.render" in personal_js and "QbDoubanCard.render" in explore_js)
+check("Explore 适配器覆盖电影与电视剧路由", "window.top !== window" in explore_js and "movie\\.douban\\.com\\/(?:explore|tv)" in explore_js and "isTvPage" in explore_js)
+check("探索页只读取电影卡片并排除片单节点", ".subject-list-list" in explore_js and ".explore-doulist, .explore-hot-list, .doulist" in explore_js)
+check("筛选代理保留豆瓣原生规则", "explore-recent-hot-tag" in explore_js and "explore-menu-second-tag" in explore_js and 'input[type="checkbox"]' in explore_js and "rating-range-title" in explore_js)
+check("Explore 顶部模式与两类筛选栏", "qb-explore-primary-tabs" in explore_js and "isAllMode" in explore_js and "qb-explore-region-button" in explore_css)
+check("评分弹窗命中 body 直属原生容器", ".drc-modal-container" in explore_css and "body.qb-explore-score-open > .drc-modal-container" in explore_css and "#wrapper .drc-modal" not in explore_css)
+check("电影和电视剧全部模式共用动态原生筛选组", "expand-card" in explore_js and "drc-label" in explore_js and "allFilterGroups" in explore_js and "structuredAllFilters" in explore_js and ".base-selector" in explore_js and ".click()" in explore_js and "waitFor" in explore_js)
+check("Explore 筛选使用原生 DOM 状态机", all(token in explore_js for token in ["native-option-opening", "native-option-selected", "native-dom-settling", "filter-applied", "setFilterPhase"]))
+check("筛选状态绑定当前组标题与当前容器", "nativeGroupTitle" in explore_js and "findNativeGroup(groupTitle)" in explore_js and "filterParent" in explore_js and "context.filterContainer = native.filterContainer()" in explore_js)
+check("筛选按钮同步激活状态与选中语义", "syncNativeGroupButton" in explore_js and "aria-pressed" in explore_js and "isDefaultNativeGroupValue" in explore_js)
+check("已选筛选按钮使用明确高亮颜色", ".qb-explore-group-filter.qb-active" in explore_css and "var(--qb-accent)" in explore_css and "qb-active\", active" in explore_js)
+check("筛选按钮先即时显示选中值并在失败时回滚", "groupSelectionOverrides" in explore_js and "syncNativeGroupButton(button, group, selectedGroup, item.label)" in explore_js and "groupSelectionOverrides.delete" in explore_js)
+check("一级筛选按钮使用本地即时选中态", "primarySelectionText" in explore_js and 'container.querySelectorAll(\".qb-explore-primary-tab\")' in explore_js and 'tab.dataset.nativeFilter = "primary"' not in explore_js)
+check("筛选异步任务可取消且观察筛选父节点与影片列表", "cancelFilterContext" in explore_js and "context.timers" in explore_js and "context.observers" in explore_js and "filterParentObserver" in explore_js and "listObserver" in explore_js)
+check("筛选应用期间不会被弹层外部点击取消且清理恢复按钮", "context.applying = true" in explore_js and "if (context.applying) return" in explore_js and 'button.disabled = false' in explore_js)
+check("筛选确认等待原生影片结果就绪", "waitForFilterResult" in explore_js and "context.resultObserver" in explore_js and "nativeResultLoading" in explore_js and "nativeResultEmpty" in explore_js and "currentItems.length > 0" in explore_js)
+check("筛选确认由单一原生容器事件驱动并保留安全上限", "timeout = 5000" in explore_js and "resultObserver.observe(host" in explore_js and "context.resultCheck" not in explore_js and "setTimeout(check, 50)" not in explore_js)
+check("筛选结果只读取一次并成功后提交", "const resultPromise = waitForFilterResult" in explore_js and "clickNative(freshOption)" in explore_js and "appliedItems = result?.items || null" in explore_js and "if (applied) {" in explore_js and "renderCards({ items: appliedItems" in explore_js)
+check("筛选事务异常或代次变化也会释放锁", "if (state.filterContext !== context) return" in explore_js and "finally {\n              disposeFilterContext" in explore_js and "setFilterOperationBusy(false, `filter-group:${group.title}`, { writeProbe: false })" in explore_js)
+check("筛选完成只原地同步按钮不重建整组", "syncFilterLabels" in explore_js and "scheduleFilterRender(context.pageGeneration, () => renderSecondaryControlsWhenReady" not in explore_js)
+check("筛选点击链路没有悬空原生组引用", "selectedGroup = findNativeGroup(groupTitle)" in explore_js and "syncNativeGroupButton(button, group, freshGroup" not in explore_js and "freshGroup" not in explore_js)
+check("一级和二级筛选点击使用当前原生节点", "findNativePrimary = label => native.primary().find" in explore_js and "const liveNode = findNativePrimary(primaryLabel)" in explore_js and "const liveNode = native.secondary().find" in explore_js and "clickNative(liveNode)" in explore_js)
+check("原生筛选一次操作只触发一次点击", "node.click()" in explore_js and "pointerdown" not in explore_js and "mousedown" not in explore_js and "mouseup" not in explore_js)
+check("筛选弹出层由 Douban Plus 管理且无过程提示文字", "qb-explore-popover" in explore_js and "正在按豆瓣规则" not in explore_js and "qb-explore-native-filter-open" not in explore_js)
+check("评分确认后保存当前区间显示值", "scoreRangeFromModal" in explore_js and "state.scoreRange" in explore_js and "评分 ${min}-${max}分" in explore_js)
+check("加载更多代理原生按钮", ".subject-list-main button" in explore_js and "加载更多" in explore_js)
+check("滚动哨兵自动触发加载", "IntersectionObserver" in explore_js and "qb-explore-scroll-sentinel" in explore_js and 'loadNextExplorePage("scroll")' in explore_js)
+check("分页请求有锁且使用原生完成条件", "state.loading" in explore_js and "waitForNativeLoad" in explore_js and "native-load-timeout" in explore_js and "450" not in explore_js)
+check("探索卡片按 SubjectId 去重并追加渲染", "const seen = new Set()" in explore_js and "append = false" in explore_js and "existingIds" in explore_js and "addedCount" in explore_js)
+check("Explore 与个人页使用同级导航和搜索宿主", "qb-explore-app-nav" in explore_js and "qb-explore-app-tab" in explore_css and "qb-douban-personal-url-v1" in personal_js and "qb-explore-search-host" in explore_js and "qb-personal-search-host" in personal_css and 'textContent = "探索"' in personal_js)
+check("Explore 主导航使用统一圆角激活态", "border-radius: 10px 10px 0 0" in explore_css and "border-bottom: 3px solid transparent" in explore_css)
+check("探索页提供电影与电视剧切换", "qb-explore-content-type-nav" in explore_js and "qb-explore-content-type-tab" in explore_css and "movie.douban.com/tv/" in explore_js and "contentTypeLabel" in explore_js)
+check("电视剧卡片显示类型与首播年份", 'uri=\\/tv\\/' in explore_js and "(?:tv\\/|uri=\\/tv\\/)" in explore_js and "contentType" in explore_js and "首播" in explore_js)
+check("电视剧筛选只显示豆瓣实际提供的复选项", "nativeCheckbox" in explore_js and "hasNativeCheckbox" in explore_js and "uncollect" in explore_js and "playable" in explore_js)
+check("电视剧二级筛选等待豆瓣原生节点挂载", "const secondaryNodes = native.secondary()" in explore_js and "!secondaryNodes.length" in explore_js and "container.dataset.filterState = \"non-all-pending\"" in explore_js and "renderSecondaryControlsWhenReady(container, generation, attempt + 1)" in explore_js)
+check("电视剧全部模式不再被排除在下拉分支外", "!isTvPage() && isAllMode()" not in explore_js and "isAllMode()" in explore_js and "explore-all-selectors-main" in explore_js)
+check("末页、失败与筛选重置状态可观测", "endReached" in explore_js and "endReason" in explore_js and "resetExplorePaging" in explore_js and "autoInfinite" in explore_js)
+check("无限滚动样式与末页哨兵状态", ".qb-explore-scroll-sentinel" in explore_css and ".qb-explore-footer[data-end=\"true\"]" in explore_css)
+check("详情消息带 subjectId 与 Explore 来源", "doubanExploreOpenSubject" in explore_js and "exploreUrl" in explore_js)
+check("个人页提供探索入口", "qb-personal-explore-tab" in personal_js and 'exploreLink.textContent = "探索"' in personal_js)
+check("待看入口统一为标题区动作", "qb-watchlist-action" in watchlist_js and "personalWatchlistUrl" in watchlist_js and "qb-personal-watchlist-tab" not in watchlist_js)
+check("右键待看识别探索卡片", "qb-explore-poster" in watchlist_js and 'source: "explore"' in watchlist_js)
+check("WebView2 注入 Explore 资源", "LoadExplorePage" in script_host and "douban-explore-page.js" in script_host and "douban-explore-page.css" in script_host)
+check("宿主允许 Explore 与 TV 列表并统一返回", "IsAllowedDoubanExploreUrl" in host and "IsAllowedDoubanTvUrl" in host and "IsAllowedDoubanExploreOrTvUrl" in host and "doubanExploreOpenSubject" in host and 'Text = "返回"' in host and "DoubanReturnButtonText" in host)
+check("宿主允许探索来源加入待看", '"explore"' in host and "IsAllowedWatchlistSubjectSource" in host)
+check("右键菜单提供刷新与返回首页", "doubanPageHome" in watchlist_js and "返回首页" in watchlist_js and "ConfigureDoubanNavigationContextMenu" in host)
+check("Explore 返回恢复使用延长条件等待", "maximumAttempts = isExplore ? 360 : 60" in host and "ExploreWait" in host and "var stable = await WaitForStableDoubanPlusRootAsync" in host)
+check("详情导航仍要求当前导航有效后显示", "e.NavigationId == _pendingDoubanPlusNavigationId" in host)
+check("列表切换期间隐藏原生页面并显示单一遮罩", "_doubanPlusView.Visible = false" in host and "ShowDoubanNavigationOverlay(\"正在切换豆瓣页面…\")" in host and "ListToListNavigation" in host)
+
+print(f"SUMMARY: {len(FAILURES)} failed")
+sys.exit(1 if FAILURES else 0)

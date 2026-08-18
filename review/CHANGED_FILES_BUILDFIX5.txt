@@ -1,0 +1,19 @@
+Source files modified:
+- DoubanOfficialFormScripts.cs
+- DoubanWebView2Connector.cs
+- DoubanWebView2Connector.ReviewWriteV2.cs
+- scripts/Build-Preview.ps1
+- README.md
+- PACKAGE_VERSION.txt
+- PACKAGE_SHA256SUMS.txt
+
+Files added:
+- BUILD_FIX5_NOTES.txt
+- BUILDFIX5_INTEGRATION.json
+- COLLECT_DIAGNOSTICS.cmd
+- scripts/Collect-Diagnostics.ps1
+- review/PERFORMANCE_ANALYSIS_BUILDFIX5.md
+- review/ACCEPTANCE_CHECKLIST_BUILDFIX5.md
+- review/PERFORMANCE_BUILDFIX5_RESULT.txt
+- review/SOURCE_VALIDATION_BUILDFIX5.txt
+- review/CHANGED_FILES_BUILDFIX5.txt

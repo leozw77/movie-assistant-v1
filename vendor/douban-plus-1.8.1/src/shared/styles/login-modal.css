@@ -1,0 +1,204 @@
+/* ---------- Login Prompt Modal ---------- */
+dialog::backdrop {
+  background: transparent;
+}
+
+.atv-login-modal {
+  position: fixed;
+  z-index: 10000;
+  display: flex;
+  width: 100vw;
+  min-height: 100vh;
+  align-items: center;
+  justify-content: center;
+  padding: max(24px, env(safe-area-inset-top))
+    max(24px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom))
+    max(24px, env(safe-area-inset-left));
+  border: none;
+  margin: 0;
+  -webkit-backdrop-filter: blur(16px) saturate(1.15);
+  backdrop-filter: blur(16px) saturate(1.15);
+  background: var(--atv-scrim-overlay);
+  inset: 0;
+  overscroll-behavior: contain;
+}
+
+.atv-login-modal-inner {
+  position: relative;
+  overflow: auto;
+  width: min(100%, 424px);
+  max-height: min(736px, calc(100dvh - 48px));
+  box-sizing: border-box;
+  padding: 30px 22px 22px;
+  border: 1px solid var(--atv-border-subtle);
+  border-radius: 20px;
+  background: var(--atv-bg-secondary);
+  box-shadow:
+    inset 0 1px 0 var(--atv-border-subtle),
+    0 24px 80px rgb(0 0 0 / 55%);
+  color: var(--atv-text-primary);
+  scrollbar-width: none;
+  text-align: center;
+}
+
+.atv-login-modal-inner::-webkit-scrollbar {
+  display: none;
+}
+
+.atv-modal-close.atv-login-modal-close {
+  position: absolute;
+  z-index: 2;
+  top: 12px;
+  right: 12px;
+  width: 32px;
+  height: 32px;
+  border-color: var(--atv-border-subtle);
+  background: var(--atv-bg-elevated);
+  color: var(--atv-text-tertiary);
+}
+
+.atv-modal-close.atv-login-modal-close:hover {
+  border-color: var(--atv-border-strong);
+  background: var(--atv-bg-hover-strong);
+  color: var(--atv-text-primary);
+}
+
+.atv-login-modal-title {
+  margin: 0 42px 6px;
+  color: var(--atv-text-primary);
+  font-size: var(--atv-type-title-md);
+  font-weight: var(--atv-font-weight-semibold);
+  line-height: 1.35;
+  text-wrap: balance;
+}
+
+.atv-login-modal-desc {
+  max-width: 300px;
+  margin: 0 auto 14px;
+  color: var(--atv-text-tertiary);
+  font-size: var(--atv-type-caption);
+  line-height: 1.55;
+  text-wrap: pretty;
+}
+
+.atv-login-modal-status {
+  min-height: 20px;
+  margin: 8px 0 0;
+  color: var(--atv-text-tertiary);
+  font-size: var(--atv-type-caption-sm);
+  line-height: 1.5;
+}
+
+.atv-login-modal-status[hidden] {
+  display: none;
+}
+
+.atv-login-modal-native {
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px;
+  border-radius: 16px;
+  margin-top: 10px;
+}
+
+.atv-login-modal-native::before {
+  position: absolute;
+  z-index: 2;
+  border-radius: 10px;
+  background: var(--atv-bg-hover);
+  content: "";
+  inset: 10px;
+  opacity: 1;
+  pointer-events: none;
+  transition: opacity var(--atv-duration-feedback) ease;
+}
+
+.atv-login-modal-native:empty {
+  min-height: 360px;
+}
+
+.atv-login-modal-native[aria-busy="true"] {
+  min-height: 360px;
+}
+
+.atv-login-modal-native.is-ready::before {
+  opacity: 0;
+}
+
+.atv-login-modal-native > iframe,
+.atv-login-modal-iframe {
+  position: relative;
+  z-index: 1;
+  display: block !important;
+  overflow: hidden !important;
+  width: 340px !important;
+  max-width: 100% !important;
+  height: 448px !important;
+  max-height: calc(100vh - 168px) !important;
+  box-sizing: border-box !important;
+  border: 0 !important;
+  border-radius: 10px !important;
+  margin: 0 auto !important;
+  background: #fff !important;
+  box-shadow: none !important;
+
+  /* Cross-origin iframe dark-mode override (first-principles):
+     invert(0.89) maps white #fff → #1c1c1c, which matches
+     --atv-bg-secondary: #1c1c1e within 2 RGB points — no more
+     pure-black void. Text #333 → #bbb, borders #e0 → #343434.
+     hue-rotate(180deg) counter-rotates the color shift from
+     invert so green stays green-ish and blue stays blue-ish.
+     invert(0.89) is the precise value calculated to hit the
+     existing modal surface color while keeping text readable. */
+  filter: invert(0.89) hue-rotate(180deg) !important;
+  opacity: 0;
+  transition: opacity var(--atv-duration-feedback) ease;
+}
+
+.atv-login-modal-native.is-ready > iframe {
+  opacity: 1;
+}
+
+.atv-login-modal-close:focus-visible {
+  outline: 2px solid var(--atv-accent);
+  outline-offset: 3px;
+}
+
+@media (width <= 1024px) {
+  .atv-login-modal {
+    align-items: flex-end;
+    padding: 16px;
+  }
+
+  .atv-login-modal-inner {
+    width: 100%;
+    padding: 28px 20px 20px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .atv-login-modal,
+  .atv-login-modal-inner,
+  .atv-login-modal.is-open .atv-login-modal-inner {
+    transform: none;
+    transition: none;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .atv-login-modal {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: var(--atv-scrim-overlay-solid);
+  }
+}
+
+@media (prefers-contrast: more) {
+  .atv-login-modal {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: var(--atv-scrim-overlay-solid);
+  }
+}

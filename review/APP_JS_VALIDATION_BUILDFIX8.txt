@@ -1,0 +1,1 @@
+PASS: node --check WebAssets/MediaLibrary/app.js

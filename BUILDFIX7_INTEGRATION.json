@@ -1,0 +1,13 @@
+{
+  "package": "DoubanReview_0.9.0-preview.6_Source_Integrated_BuildFix7_2026-08-05",
+  "baseline": "BuildFix6 complete source",
+  "changes": [
+    "separate official confirmation from local cache ownership",
+    "finalize LocalUpdated in HtmlMediaLibraryForm before bridge response",
+    "replace misleading connector LocalUpdated log with deferred cache status",
+    "suppress WebView2 Error=Unknown on successful navigation",
+    "frontend success is based on officialConfirmed"
+  ],
+  "deleteEnabled": false,
+  "ilPatch": false
+}

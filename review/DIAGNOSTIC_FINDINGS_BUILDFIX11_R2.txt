@@ -1,0 +1,15 @@
+BuildFix11 R2 diagnostic findings
+
+User Windows R1 build: succeeded and produced EXE + release ZIP.
+Legacy comprehensive self-test: 81/84.
+
+Failure classification:
+1) Full cast avatar lazy/background coverage: partial real compatibility regression. R1 had srcset/data-src/computed background but omitted data-background and pseudo-element backgrounds. Fixed card-locally.
+2) BuildFix10 layered cache TTL: stale SelfTest fixture. Runtime policy requires parser version 2; probe left versions at default 0. Fixed fixture only.
+3) Official empty home cast seven-day cache: stale SelfTest fixture for the same parser-version reason. Fixed fixture only.
+
+Safety:
+- no parent-card traversal added
+- no review write changes
+- no cache TTL changes
+- no deletion changes

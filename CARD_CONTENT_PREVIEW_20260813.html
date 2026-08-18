@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Douban Plus 卡片内容统一预览</title>
+  <style>
+    :root {
+      --bg: #0b0e11;
+      --panel: #171b21;
+      --panel-strong: #1e242c;
+      --border: rgba(205, 216, 230, .14);
+      --text: #f1f4f7;
+      --muted: #aeb8c7;
+      --muted-2: #778292;
+      --accent: #f2b44e;
+      --accent-soft: rgba(242, 180, 78, .14);
+      --radius: 15px;
+      --ease: 180ms cubic-bezier(.2, .8, .2, 1);
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-width: 960px; background: var(--bg); color: var(--text); font-family: "Microsoft YaHei UI", "Microsoft YaHei", sans-serif; }
+    .page { width: min(1420px, calc(100vw - 64px)); margin: 0 auto; padding: 40px 0 72px; }
+    .eyebrow { margin: 0 0 10px; color: var(--accent); font-size: 13px; font-weight: 800; letter-spacing: .14em; }
+    h1 { margin: 0; font-size: 38px; letter-spacing: -.045em; }
+    .lead { margin: 12px 0 28px; color: var(--muted); font-size: 14px; }
+    .view-tabs { display: flex; gap: 8px; margin-bottom: 24px; border-bottom: 1px solid var(--border); }
+    .view-tabs button { min-height: 48px; padding: 0 18px; border: 0; border-bottom: 3px solid transparent; border-radius: 10px 10px 0 0; background: transparent; color: var(--muted); cursor: pointer; font-size: 15px; font-weight: 700; transition: color var(--ease), background var(--ease), border-color var(--ease); }
+    .view-tabs button:hover { color: var(--text); background: rgba(255,255,255,.04); }
+    .view-tabs button.active { color: var(--text); border-color: var(--accent); background: var(--accent-soft); }
+    .rule { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; margin-bottom: 22px; padding: 14px 16px; border: 1px solid var(--border); border-radius: 12px; background: linear-gradient(135deg, rgba(31,37,46,.95), rgba(21,25,31,.98)); color: var(--muted); font-size: 13px; }
+    .rule strong { color: var(--accent); font-weight: 700; }
+    .cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+    .card { overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius); background: linear-gradient(180deg, var(--panel-strong), var(--panel)); box-shadow: 0 14px 32px rgba(0,0,0,.2); transition: transform var(--ease), border-color var(--ease), box-shadow var(--ease); }
+    .card:hover { border-color: rgba(242,180,78,.58); box-shadow: 0 20px 38px rgba(0,0,0,.3); transform: translateY(-3px); }
+    .poster { position: relative; display: flex; aspect-ratio: 2 / 3; align-items: flex-end; padding: 17px; overflow: hidden; }
+    .poster::after { position: absolute; inset: 0; content: ""; background: linear-gradient(180deg, transparent 48%, rgba(0,0,0,.8)); }
+    .poster-copy { position: relative; z-index: 1; }
+    .poster-title { font-size: 25px; font-weight: 850; letter-spacing: -.06em; }
+    .poster-sub { margin-top: 5px; color: rgba(255,255,255,.7); font-size: 11px; letter-spacing: .08em; }
+    .poster-perfume { background: radial-gradient(circle at 70% 28%, #c4c4b2, #4b423e 35%, #191618 76%); }
+    .poster-wolfs { background: linear-gradient(145deg, #f1f1ed 0 42%, #19191a 43% 75%, #050506 76%); color: #141414; }
+    .poster-wolfs::after { background: linear-gradient(180deg, transparent 48%, rgba(0,0,0,.92)); }
+    .poster-explore { background: radial-gradient(circle at 58% 42%, #f2ac46, #873019 38%, #1b0e0d 78%); }
+    .poster-spider { background: linear-gradient(145deg, #d5893e, #2b3137 46%, #091319 78%); }
+    .body { display: flex; min-height: 178px; flex-direction: column; gap: 10px; padding: 15px; }
+    .title { min-height: 44px; margin: 0; color: var(--text); font-size: 17px; line-height: 1.35; font-weight: 700; }
+    .identity { color: var(--muted); font-size: 13px; line-height: 1.4; }
+    .context { display: -webkit-box; min-height: 38px; overflow: hidden; color: var(--muted); font-size: 13px; line-height: 1.45; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+    .footer { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin-top: auto; padding-top: 5px; }
+    .chip { border: 1px solid var(--border); border-radius: 999px; padding: 5px 8px; color: var(--muted); font-size: 11px; line-height: 1; white-space: nowrap; }
+    .chip.accent { border-color: rgba(242,180,78,.5); background: var(--accent-soft); color: var(--accent); }
+    .score { margin-left: auto; color: var(--accent); font-size: 22px; font-weight: 700; }
+    .annotation { margin-top: 22px; padding: 15px 17px; border: 1px solid var(--border); border-radius: 12px; color: var(--muted); font-size: 13px; line-height: 1.65; }
+    .annotation b { color: var(--text); }
+    .mode-panel { display: none; }
+    .mode-panel.active { display: block; animation: enter 180ms ease-out both; }
+    @keyframes enter { from { opacity: .2; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+    @media (max-width: 1100px) { .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } body { min-width: 0; } .page { width: min(100% - 32px, 720px); } }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 1ms !important; transition-duration: 1ms !important; } }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <p class="eyebrow">DOUBAN PLUS / CARD CONTENT PREVIEW</p>
+    <h1>海报下方内容统一方案</h1>
+    <p class="lead">四个板块使用同一套卡片骨架，只根据数据来源填充不同的辅助字段。</p>
+    <nav class="view-tabs" aria-label="卡片状态预览">
+      <button class="active" data-mode="all">整体对照</button>
+      <button data-mode="personal">个人页面</button>
+      <button data-mode="explore">探索页面</button>
+      <button data-mode="watchlist">我的待看</button>
+    </nav>
+
+    <section class="mode-panel active" data-panel="all">
+      <div class="rule"><strong>统一骨架</strong><span>标题</span><span>类型 · 年份</span><span>辅助信息</span><span>状态 / 评分 / 日期</span></div>
+      <div class="cards">
+        <article class="card"><div class="poster poster-perfume"><div class="poster-copy"><div class="poster-title">PERFUME</div><div class="poster-sub">THE STORY OF A MURDERER</div></div></div><div class="body"><h2 class="title">香水 / Perfume: The Story of a Murderer</h2><div class="identity">电影 · 2006</div><div class="context">个人页面：已标记为看过，并保留个人评分。</div><div class="footer"><span class="chip accent">看过</span><span class="chip accent">我的 ★★★</span><span class="chip">2026-08-13</span></div></div></article>
+        <article class="card"><div class="poster poster-wolfs"><div class="poster-copy"><div class="poster-title">WOLFS</div><div class="poster-sub">AN APPLE ORIGINAL FILM</div></div></div><div class="body"><h2 class="title">双狼 / Wolfs</h2><div class="identity">电影 · 2024</div><div class="context">个人页面：已加入想看，暂无个人评分。</div><div class="footer"><span class="chip accent">想看</span><span class="chip">2026-08-13</span></div></div></article>
+        <article class="card"><div class="poster poster-explore"><div class="poster-copy"><div class="poster-title">痴迷</div><div class="poster-sub">OBSESSION</div></div></div><div class="body"><h2 class="title">痴迷</h2><div class="identity">电影 · 2025</div><div class="context">美国 · 恐怖 · 奇幻 · 弗里·马克·迈克尔·约翰逊</div><div class="footer"><span class="chip">电影</span><span class="chip">上映 2025</span><strong class="score">7.6</strong></div></div></article>
+        <article class="card"><div class="poster poster-spider"><div class="poster-copy"><div class="poster-title">SPIDER-NOIR</div><div class="poster-sub">PRIME ORIGINAL SERIES</div></div></div><div class="body"><h2 class="title">暗影蜘蛛侠 Spider-Noir (2026)[剧集]</h2><div class="identity">电视剧 · 2026</div><div class="context">本地待看：只显示已有本地数据，不强行补充不存在的评分。</div><div class="footer"><span class="chip accent">待看</span><span class="chip">加入 2026-08-13</span></div></div></article>
+      </div>
+    </section>
+
+    <section class="mode-panel" data-panel="personal"><div class="rule"><strong>个人页面</strong><span>状态固定在底部</span><span>有评分才显示评分</span><span>无数据不显示空标签</span></div><div class="cards"><article class="card"><div class="poster poster-perfume"><div class="poster-copy"><div class="poster-title">PERFUME</div><div class="poster-sub">THE STORY OF A MURDERER</div></div></div><div class="body"><h2 class="title">香水 / Perfume: The Story of a Murderer</h2><div class="identity">电影 · 2006</div><div class="context">个人标记日期：2026-08-13</div><div class="footer"><span class="chip accent">看过</span><span class="chip accent">我的 ★★★</span></div></div></article><article class="card"><div class="poster poster-wolfs"><div class="poster-copy"><div class="poster-title">WOLFS</div><div class="poster-sub">AN APPLE ORIGINAL FILM</div></div></div><div class="body"><h2 class="title">双狼 / Wolfs</h2><div class="identity">电影 · 2024</div><div class="context">个人标记日期：2026-08-13</div><div class="footer"><span class="chip accent">想看</span></div></div></article></div></section>
+    <section class="mode-panel" data-panel="explore"><div class="rule"><strong>探索页面</strong><span>类型 · 年份固定一行</span><span>副标题最多两行</span><span>评分固定右侧</span></div><div class="cards"><article class="card"><div class="poster poster-explore"><div class="poster-copy"><div class="poster-title">痴迷</div><div class="poster-sub">OBSESSION</div></div></div><div class="body"><h2 class="title">痴迷</h2><div class="identity">电影 · 2025</div><div class="context">美国 · 恐怖 · 奇幻 · 弗里·马克·迈克尔·约翰逊</div><div class="footer"><span class="chip">电影</span><span class="chip">上映 2025</span><strong class="score">7.6</strong></div></div></article></div></section>
+    <section class="mode-panel" data-panel="watchlist"><div class="rule"><strong>我的待看</strong><span>标题紧跟海报</span><span>上映年份与加入时间作为辅助信息</span><span>移出操作独立放在底部</span></div><div class="cards"><article class="card"><div class="poster poster-spider"><div class="poster-copy"><div class="poster-title">SPIDER-NOIR</div><div class="poster-sub">PRIME ORIGINAL SERIES</div></div></div><div class="body"><h2 class="title">暗影蜘蛛侠 Spider-Noir (2026)[剧集]</h2><div class="identity">电视剧 · 2026</div><div class="context">加入时间：2026-08-13 06:18</div><div class="footer"><span class="chip accent">待看</span><span class="chip">移出待看</span></div></div></article></div></section>
+
+    <p class="annotation"><b>本预览的核心变化：</b>标题永远位于海报下方第一行；类型和年份使用统一格式；辅助信息最多两行；状态、评分、日期统一放在底部。缺少评分时不显示空位，避免不同板块卡片产生跳动。</p>
+  </main>
+  <script>
+    const tabs = [...document.querySelectorAll("[data-mode]")];
+    const panels = [...document.querySelectorAll("[data-panel]")];
+    tabs.forEach(tab => tab.addEventListener("click", () => {
+      const mode = tab.dataset.mode;
+      tabs.forEach(item => item.classList.toggle("active", item === tab));
+      panels.forEach(panel => panel.classList.toggle("active", panel.dataset.panel === mode));
+    }));
+  </script>
+</body>
+</html>

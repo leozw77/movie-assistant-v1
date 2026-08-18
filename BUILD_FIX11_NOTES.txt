@@ -1,0 +1,31 @@
+DoubanReview 0.9.0-preview.6 BuildFix11 R1
+Date: 2026-08-05
+
+Implemented:
+1. Two long-lived Douban WebView2 controls sharing one CoreWebView2Environment/Profile.
+2. DetailWebView owns subject metadata/home-cast navigation.
+3. WorkerWebView owns official review reads/writes, full cast, person-avatar fallback, history and search.
+4. Single-consumer priority Worker queue: save=0, official read=1, full cast=2, avatar=3, background=4.
+5. Save jobs become non-cancelable once official submission begins; lower-priority avatar jobs are cancelable.
+6. SubjectId + RequestId stale-result protection in C# and JavaScript.
+7. Home cast reads the first six Douban cards without person-level deduplication.
+8. Full cast is card-scoped to li.celebrity and uses complete-state stable sampling.
+9. Unified person-avatar URL validation and persistent 90-day PersonAvatarCache.
+10. Incremental castAvatarUpdated messages for background avatar completion.
+11. CastParserVersion=2 and FullCastParserVersion=2 invalidate only old cast caches.
+12. WebView role, JobId, RequestId, priority, timing and duplicate-avatar diagnostics.
+13. Process-failure recovery is isolated per Douban WebView2 controller.
+14. Existing review transaction semantics remain unchanged; deletion remains disabled.
+
+Validation performed in this environment:
+- Review protocol JavaScript: 6/6 passed.
+- Embedded Douban JavaScript syntax: 16/16 passed.
+- Review/source static gate: 92/92 passed.
+- BuildFix11 dual-WebView/cast gate: 29/29 passed.
+- Launcher normalization gate: 3/3 passed.
+
+Not performed:
+- Windows .NET 8 compilation.
+- WinForms/WebView2 runtime execution.
+- Real Douban login/navigation/submission regression.
+Reason: the current environment has no dotnet SDK and is not Windows.

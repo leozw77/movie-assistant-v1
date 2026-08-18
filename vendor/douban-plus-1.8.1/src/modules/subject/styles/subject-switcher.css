@@ -1,0 +1,181 @@
+/* ---------- Subject switcher ---------- */
+.atv-stickynav-subject-switcher {
+  position: relative;
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+.qb-global-search-host {
+  position: fixed;
+  z-index: 10000;
+  top: 12px;
+  right: 0;
+  left: 0;
+  display: flex;
+  justify-content: center;
+  margin-left: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .18s ease;
+}
+
+.qb-global-search-host[data-qb-global-search-visible="true"] {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.atv-subject-switcher-trigger,
+.atv-subject-switcher-close,
+.atv-subject-search-fallback,
+.atv-subject-suggestion {
+  border: 0;
+  appearance: none;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}
+
+.atv-subject-switcher-trigger {
+  display: inline-flex;
+  height: 34px;
+  flex: 0 0 auto;
+  align-items: center;
+  padding: 0 13px;
+  border: 1px solid var(--atv-border-subtle);
+  border-radius: 999px;
+  background: var(--atv-bg-elevated);
+  color: var(--atv-text-secondary);
+  font-size: var(--atv-type-caption);
+  font-weight: var(--atv-font-weight-semibold);
+  gap: 7px;
+  letter-spacing: 0.01em;
+  transition:
+    background var(--atv-duration-hover) ease,
+    border-color var(--atv-duration-hover) ease,
+    color var(--atv-duration-hover) ease;
+}
+
+.atv-subject-switcher-trigger:hover {
+  border-color: var(--atv-border-strong);
+  background: var(--atv-bg-hover-strong);
+  color: var(--atv-text-primary);
+  outline: none;
+}
+
+.atv-subject-switcher-trigger:focus-visible {
+  border-color: var(--atv-border-strong);
+  background: var(--atv-bg-hover-strong);
+  color: var(--atv-text-primary);
+  outline: 2px solid var(--atv-accent-bright);
+  outline-offset: 2px;
+}
+
+.atv-subject-switcher {
+  display: flex;
+  align-items: center;
+}
+
+.atv-subject-switcher-expanded {
+  display: flex;
+  overflow: hidden;
+  width: min(44vw, 520px);
+  max-width: 0;
+  height: 38px;
+  align-items: center;
+  border: 1px solid var(--atv-border-strong);
+  border-radius: 999px;
+  background: var(--atv-bg-elevated);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 28%);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    max-width 0.4s cubic-bezier(0.23, 1, 0.32, 1),
+    opacity 0.18s ease 0.02s;
+}
+
+.atv-subject-switcher[data-state="open"] .atv-subject-switcher-trigger {
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(0.92);
+  transition:
+    opacity 0.15s var(--atv-ease-out),
+    transform 0.15s var(--atv-ease-out);
+}
+
+.atv-subject-switcher[data-state="open"] .atv-subject-switcher-expanded {
+  position: fixed;
+  z-index: 100;
+  top: 9px;
+  left: 50%;
+  overflow: visible;
+  max-width: min(44vw, 520px);
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(-50%);
+}
+
+.atv-subject-switcher-search-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  margin-left: 13px;
+  color: var(--atv-text-tertiary);
+}
+
+.atv-subject-switcher-input {
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  padding: 0 8px;
+  border: 0;
+  background: transparent;
+  color: var(--atv-text-primary);
+  font: inherit;
+  font-size: var(--atv-type-body-sm);
+  outline: 0;
+}
+
+.atv-subject-switcher-input::placeholder {
+  color: var(--atv-text-tertiary);
+}
+
+.atv-subject-switcher-close {
+  height: 24px;
+  padding: 0 9px;
+  border-radius: 999px;
+  margin-right: 6px;
+  background: var(--atv-bg-elevated);
+  color: var(--atv-text-tertiary);
+  font-size: var(--atv-type-micro);
+  font-weight: var(--atv-font-weight-bold);
+  letter-spacing: 0.05em;
+}
+
+.atv-subject-switcher-close:hover {
+  background: var(--atv-bg-hover-strong);
+  color: var(--atv-text-primary);
+  outline: none;
+}
+
+.atv-subject-switcher-close:focus-visible {
+  background: var(--atv-bg-hover-strong);
+  color: var(--atv-text-primary);
+  outline: 2px solid var(--atv-accent-bright);
+  outline-offset: 2px;
+}
+
+@media (width <= 768px) {
+  .atv-subject-switcher-expanded {
+    width: min(78vw, 520px);
+  }
+
+  .atv-subject-switcher[data-state="open"] .atv-subject-switcher-expanded {
+    max-width: min(78vw, 520px);
+  }
+}
+
+/* Prevent iOS zoom on focus */
+@media (hover: none) and (pointer: coarse) {
+  .atv-subject-switcher-input {
+    font-size: 16px;
+  }
+}

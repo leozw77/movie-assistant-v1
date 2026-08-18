@@ -1,0 +1,3 @@
+PASS: BUILD_PREVIEW.cmd is ASCII-only, BOM-free, and CRLF-normalized
+PASS: Build-Preview.ps1 is UTF-8 BOM and CRLF-normalized
+PASS: launcher uses an explicit Windows PowerShell path and quoted script path

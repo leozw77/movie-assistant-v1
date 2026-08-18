@@ -1,0 +1,30 @@
+﻿DoubanReview 0.9.0-preview.6 Source Integrated BuildFix6
+Generated: 2026-08-05
+
+This is a complete source package. No manual hotfix copy is required.
+
+Diagnostic findings from the user's BuildFix5 run:
+- Windows restore/build/publish succeeded with 0 warnings and 0 errors.
+- Focused review self-test passed 14/14 and legacy diagnostics passed 72/72.
+- Normal status/rating save was officially confirmed and was substantially faster than BuildFix3.
+- Rating Clear still failed safely with clearCandidateCount=0.
+- The assumption that Douban exposed a visible img#star0 control was incorrect for the observed form.
+- Detail opening still waited behind automatic history synchronization and performed a redundant status-capability form read before the v2 official review read.
+
+BuildFix6 changes:
+1. Rating Clear no longer depends on a non-existent star0 control.
+2. When no explicit official clear control exists, the script uses only official visible status controls:
+   target -> wish (verify rating becomes empty) -> target (verify rating stays empty) -> requestSubmit().
+3. It never writes input[name=rating].value directly.
+4. Every step is verified in the live official form; failure remains Failed/Uncertain and does not update local cache.
+5. Official capability probing reports Clear support when the official wish round-trip path is available.
+6. Detail metadata no longer opens the official status form when the v2 official review read immediately follows.
+7. Startup and tab switching are cache-first. Online history refresh runs only when the user presses Refresh, preventing background history navigation from blocking detail.
+8. Official-form stability polling remains two consecutive samples, with a shorter safe sampling interval.
+9. Delete remains intentionally disabled pending stage-2 transaction rewrite.
+
+Build on Windows:
+Double-click BUILD_PREVIEW.cmd
+
+Collect diagnostics:
+Double-click COLLECT_DIAGNOSTICS.cmd

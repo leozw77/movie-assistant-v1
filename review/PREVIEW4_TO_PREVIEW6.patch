@@ -1,0 +1,3938 @@
+diff -ruN '--exclude=SOURCE_SHA256SUMS.txt' '--exclude=PACKAGE_SHA256SUMS.txt' '--exclude=PREVIEW4_TO_PREVIEW6.patch' /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/AI_HANDOFF.md /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/AI_HANDOFF.md
+--- /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/AI_HANDOFF.md	2026-08-04 21:24:46.000000000 +0000
++++ /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/AI_HANDOFF.md	2026-08-05 00:08:00.953305436 +0000
+@@ -1,43 +1,58 @@
+-﻿# 豆瓣写入 0.9.0-preview.2 修复源码交接
++# 豆瓣评价 0.9.0-preview.6 第一阶段源码交接
+ 
+ ## 当前状态
+ 
+-交接包中提出的两项源码问题已经实现修复：
++本包已从 `0.9.0-preview.4` 完整源码集成评价写入 v2，未复用 `preview.5` EXE，也未进行 IL 热补丁。
+ 
+-1. 电视剧“在看”不再由不完整的详情元数据永久隐藏；状态能力优先读取官方编辑表单。
+-2. 官方表单和提交结算增加稳定采样；不稳定或超时返回 `unconfirmed`，不更新本地。
++已完成：
+ 
+-本包已经通过源码与安全边界检查、Chromium 构造页面回归和启动器文件检查。由于当前环境没有 .NET SDK 和 Windows WebView2 Runtime，仍需下游在 Windows 上编译并完成真实账号验证。
++1. 评分和短评使用 `Keep / Set / Clear` 三态协议。
++2. 保存前读取豆瓣官方当前评价，网页数据覆盖本地缓存。
++3. 官方明确无评分、空短评或无评价时能够清除本地旧值；读取未知时禁止猜测。
++4. 官方可见表单通过真实控件和 `form.requestSubmit()` 提交。
++5. 提交需要连续稳定结算，并在官方重新回读逐字段匹配后才确认成功。
++6. 旧删除流程在前端与 WebMessage 白名单中停用。
+ 
+-## 修改入口
++## 主要入口
+ 
+-- 状态能力探测与稳定表单：`DoubanWebView2Connector.cs`
+-- 写入结果与能力数据模型：`DoubanConnector.cs`、`Models.cs`
+-- 详情回传与本地更新：`HtmlMediaLibraryForm.cs`
+-- 状态按钮行为和结果面板：`WebAssets/MediaLibrary/app.js`
+-- 禁用状态样式：`WebAssets/MediaLibrary/styles.css`
+-- 自动化验证：`scripts/Validate-Source.py`、`scripts/Validate-Fixtures.py`
+-
+-完整说明见 `review/IMPLEMENTATION_REPORT.md`；代码差异见 `review/PREVIEW2_CODE_DIFF.patch`。
+-
+-## 下游必须完成
+-
+-1. 在 Windows 安装 .NET 8 SDK 后双击 `BUILD_PREVIEW.cmd`。
+-2. 确认 restore、build、publish 和编译后 self-test 全部成功。
+-3. 使用已登录豆瓣 Profile 测试普通电影及电视剧：
+-   - “想看 / 在看 / 看过”能力显示；
+-   - 状态、评分、短评统一保存；
+-   - 连续重复写入和回读；
+-   - 超时/验证码/登录失效时本地不变；
+-   - 删除后检查影片页和三个状态列表。
+-4. 回归剧情简介、首页演员、完整演职员头像和 PotPlayer 链路。
+-5. 只有全部验收完成后，才评估正式 v0.9.0；不得覆盖 `stable-v0.8.9`。
++- 评价模型：`ReviewWriteModels.cs`
++- 用户意图与网页值合并：`ReviewTargetResolver.cs`
++- 写入协调状态机：`ReviewWriteCoordinator.cs`
++- 提交结算：`ReviewSettlementPolicy.cs`
++- 官方回读验证：`ReviewWriteVerifier.cs`
++- 官方表单脚本：`DoubanOfficialFormScripts.cs`
++- WebView2 接线：`DoubanWebView2Connector.ReviewWriteV2.cs`
++- 本地权威覆盖：`HtmlMediaLibraryForm.cs`
++- 前端协议与结果展示：`WebAssets/MediaLibrary/app.js`
++- 自动检查：`tests/validate_review_pipeline.py`、`tests/review-protocol.test.js`
++
++## 当前验证
++
++- 评价管线静态检查：45/45 通过。
++- 前端三态协议：6/6 通过。
++- `app.js` 语法检查：通过。
++- Windows 构建启动器格式检查：3/3 通过。
++- 原始上传源码 ZIP SHA-256 与交接记录一致。
++
++## 尚未完成
++
++当前环境没有可用 .NET SDK，且无法下载 SDK，因此未进行真实编译、发布和 Windows WebView2 账号回归。不得把本源码描述为已经生成可运行 EXE。
++
++下游应在 Windows 解压全部源码，双击 `BUILD_PREVIEW.cmd`。脚本会执行 restore、build、publish、内置 self-test、哈希生成和发布 ZIP 打包。
++
++## 第二阶段
++
++删除必须按独立事务实现：
++
++`官方当前评价读取 → 解析真实删除 form/link → 提交 → 等待导航/请求完成 → 官方详情回读不存在 → wish/do/collect 三列表复核 → 本地墓碑`
++
++确认框接受或节点 `click()` 不能作为删除成功证据。
+ 
+ ## 不得破坏的边界
+ 
+-- 禁止直接 POST 或 `fetch` 写入。
++- 禁止直接调用豆瓣私有接口或用 `fetch` 模拟写入。
+ - 禁止导出、复制或注入 Cookie。
+-- 禁止把远程豆瓣 WebView2 与本地 HTML WebView2 混用。
+-- 禁止在官方稳定回读确认前更新本地镜像。
+-- 禁止删除软件真实观看记录、影片详情、搜索、海报、演员或头像缓存。
+-- 统一保存脚本必须保持一次官方提交点击。
++- 禁止在官方回读确认前写入目标值。
++- 禁止把“读取失败”解释成“官方为空”。
++- 禁止把新 WebAssets 复制到旧 `preview.5` EXE 旁边冒充新版本。
++- `stable-v0.8.9` 不得覆盖。
+diff -ruN '--exclude=SOURCE_SHA256SUMS.txt' '--exclude=PACKAGE_SHA256SUMS.txt' '--exclude=PREVIEW4_TO_PREVIEW6.patch' /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/BUILD_REQUIRED.txt /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/BUILD_REQUIRED.txt
+--- /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/BUILD_REQUIRED.txt	2026-08-04 21:24:46.000000000 +0000
++++ /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/BUILD_REQUIRED.txt	2026-08-05 00:04:23.503506214 +0000
+@@ -1,15 +1,18 @@
+-﻿# Windows build required
++0.9.0-preview.6 build status
++============================
+ 
+-This package contains the corrected `0.9.0-preview.2` source and automated source/DOM validation results. It does **not** contain a newly compiled preview.2 EXE.
++This package contains the fully integrated preview.6 source tree. It is not an IL patch and it does not reuse a preview.3/preview.5 executable.
+ 
+-Reason: the packaging environment does not provide the .NET SDK, Windows Forms, or the Windows WebView2 runtime. A previous preview.1 EXE was deliberately removed so it cannot be mistaken for the corrected build.
++To build on Windows:
++1. Install the .NET 8 SDK.
++2. Install Microsoft Edge WebView2 Evergreen Runtime.
++3. Extract the whole source ZIP.
++4. Double-click BUILD_PREVIEW.cmd.
++5. The script restores, builds, publishes, runs the built-in self-test, and writes hashes under artifacts\.
+ 
+-On a Windows computer:
++The current packaging environment did not have a usable .NET SDK and could not download one, so no EXE is claimed or included here. Static source validation, JavaScript syntax validation, protocol tests, and launcher-format validation were completed before packaging.
+ 
+-1. Extract the ZIP completely.
+-2. Install the .NET 8 SDK and WebView2 Evergreen Runtime.
+-3. Double-click `BUILD_PREVIEW.cmd`.
+-4. Review `build-preview.log` and the generated self-test report.
+-5. Use the output under `artifacts\观影助手-v0.9.0-preview.2-win-x64` for real-account testing.
+-
+-Do not promote this preview to the stable channel until the unchecked items in `review/ACCEPTANCE_CHECKLIST.md` are completed.
++Important release boundary:
++- Normal review save uses the new v2 pipeline.
++- Delete is intentionally disabled in both the frontend and the WebMessage whitelist.
++- Use the Douban website for deletion until the stage-2 delete transaction is implemented.
+diff -ruN '--exclude=SOURCE_SHA256SUMS.txt' '--exclude=PACKAGE_SHA256SUMS.txt' '--exclude=PREVIEW4_TO_PREVIEW6.patch' /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/BUILD_STATUS.txt /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/BUILD_STATUS.txt
+--- /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/BUILD_STATUS.txt	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/BUILD_STATUS.txt	2026-08-05 00:04:23.503557089 +0000
+@@ -0,0 +1,18 @@
++0.9.0-preview.6 build status
++============================
++
++This package contains the fully integrated preview.6 source tree. It is not an IL patch and it does not reuse a preview.3/preview.5 executable.
++
++To build on Windows:
++1. Install the .NET 8 SDK.
++2. Install Microsoft Edge WebView2 Evergreen Runtime.
++3. Extract the whole source ZIP.
++4. Double-click BUILD_PREVIEW.cmd.
++5. The script restores, builds, publishes, runs the built-in self-test, and writes hashes under artifacts\.
++
++The current packaging environment did not have a usable .NET SDK and could not download one, so no EXE is claimed or included here. Static source validation, JavaScript syntax validation, protocol tests, and launcher-format validation were completed before packaging.
++
++Important release boundary:
++- Normal review save uses the new v2 pipeline.
++- Delete is intentionally disabled in both the frontend and the WebMessage whitelist.
++- Use the Douban website for deletion until the stage-2 delete transaction is implemented.
+diff -ruN '--exclude=SOURCE_SHA256SUMS.txt' '--exclude=PACKAGE_SHA256SUMS.txt' '--exclude=PREVIEW4_TO_PREVIEW6.patch' /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/CHANGELOG.md /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/CHANGELOG.md
+--- /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/CHANGELOG.md	2026-08-04 22:15:18.000000000 +0000
++++ /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/CHANGELOG.md	2026-08-05 00:04:23.503974760 +0000
+@@ -1,4 +1,15 @@
+-﻿# 0.9.0-preview.4（2026-08-05）
++# 0.9.0-preview.6 - 2026-08-05
++
++- 从 `preview.4` 完整源码集成评价写入 v2，不再依赖旧 EXE 的 IL 热补丁。
++- 评分与短评改为 `Keep / Set / Clear` 三态协议。
++- 保存前以豆瓣网页当前评价为准，官方明确为空时覆盖本地旧值。
++- 官方表单通过真实控件和 `form.requestSubmit()` 提交；提交前复核字段。
++- 结算需要连续稳定信号，并在官方回读逐字段匹配后才更新本地。
++- 无法确认时返回 `unconfirmed`，不把目标值写入本地。
++- 修复“创建表单可见即推断当前无评价”的风险。
++- 已知不可靠的旧删除链路在前端和 WebMessage 白名单中停用，等待第二阶段重写。
++
++# 0.9.0-preview.4（2026-08-05）
+ 
+ - 修复已删除条目无法由用户明确重新添加的墓碑死锁：保存前保留墓碑，只有豆瓣官方提交并稳定回读成功后才清除。
+ - 修复认证徽章 `ic_verify@2x.png` 被误识别成人物头像；排除 `/f/shire/` 界面素材并从人物页补取真实头像。
+diff -ruN '--exclude=SOURCE_SHA256SUMS.txt' '--exclude=PACKAGE_SHA256SUMS.txt' '--exclude=PREVIEW4_TO_PREVIEW6.patch' /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/CrashLogger.cs /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/CrashLogger.cs
+--- /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/CrashLogger.cs	2026-08-04 21:13:34.000000000 +0000
++++ /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/CrashLogger.cs	2026-08-05 00:00:04.875173734 +0000
+@@ -1,8 +1,8 @@
+-﻿namespace QbPotDoubanAi;
++namespace QbPotDoubanAi;
+ 
+ public static class AppInfo
+ {
+-    public const string Version = "0.9.0-preview.1";
++    public const string Version = "0.9.0-preview.6";
+ }
+ 
+ public static class CrashLogger
+diff -ruN '--exclude=SOURCE_SHA256SUMS.txt' '--exclude=PACKAGE_SHA256SUMS.txt' '--exclude=PREVIEW4_TO_PREVIEW6.patch' /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/DoubanConnector.cs /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/DoubanConnector.cs
+--- /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/DoubanConnector.cs	2026-08-04 21:19:04.000000000 +0000
++++ /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/DoubanConnector.cs	2026-08-05 00:00:04.874391953 +0000
+@@ -1,4 +1,4 @@
+-﻿namespace QbPotDoubanAi;
++namespace QbPotDoubanAi;
+ 
+ internal interface IDoubanConnector
+ {
+@@ -8,8 +8,8 @@
+     Task<DoubanSearchPageResult> SearchAsync(string text, int start);
+     Task<DoubanSubjectMetadataResult> ReadMetadataAsync(string subjectUrl, IReadOnlyCollection<DoubanCastMember>? existingCast = null);
+     Task<List<DoubanCastMember>> ReadAllCastAsync(string subjectUrl);
+-    Task<DoubanWriteResult> SaveDoubanEntryAsync(string subjectUrl, DoubanEntryWriteRequest request);
+-    Task<DoubanWriteResult> DeleteAsync(string subjectUrl);
++    Task<OfficialReviewSnapshot> ReadOfficialReviewAsync(string subjectUrl);
++    Task<ReviewWriteResultV2> SaveDoubanEntryAsync(string subjectUrl, DoubanEntryWriteRequestV2 request);
+ }
+ 
+ internal sealed record DoubanEntryWriteRequest(
+@@ -98,7 +98,10 @@
+         }
+     }
+ 
+-    public Task<DoubanWriteResult> SaveDoubanEntryAsync(string subjectUrl, DoubanEntryWriteRequest request) =>
++    public Task<OfficialReviewSnapshot> ReadOfficialReviewAsync(string subjectUrl) =>
++        _webView2.ReadOfficialReviewAsync(subjectUrl);
++
++    public Task<ReviewWriteResultV2> SaveDoubanEntryAsync(string subjectUrl, DoubanEntryWriteRequestV2 request) =>
+         _webView2.SaveDoubanEntryAsync(subjectUrl, request);
+ 
+     internal static bool CanFallback(Exception ex)
+@@ -110,6 +113,4 @@
+                !text.Contains("登录窗口正在使用", StringComparison.OrdinalIgnoreCase);
+     }
+ 
+-    public Task<DoubanWriteResult> DeleteAsync(string subjectUrl) =>
+-        _webView2.DeleteAsync(subjectUrl);
+ }
+diff -ruN '--exclude=SOURCE_SHA256SUMS.txt' '--exclude=PACKAGE_SHA256SUMS.txt' '--exclude=PREVIEW4_TO_PREVIEW6.patch' /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/DoubanOfficialFormScripts.cs /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/DoubanOfficialFormScripts.cs
+--- /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/DoubanOfficialFormScripts.cs	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/DoubanOfficialFormScripts.cs	2026-08-04 23:51:02.597301678 +0000
+@@ -0,0 +1,192 @@
++using System.Text.Json;
++
++namespace QbPotDoubanAi;
++
++internal static class DoubanOfficialFormScripts
++{
++    private sealed record SubmitPayload(
++        string SubjectId,
++        string Status,
++        int? Rating,
++        string Comment);
++
++    /// <summary>
++    /// Uses the official visible form and requestSubmit(). It never calls fetch, never reads cookies,
++    /// and never writes the hidden rating value directly.
++    /// </summary>
++    public static string BuildSubmitScript(string subjectId, ResolvedReviewTarget target)
++    {
++        var payload = JsonSerializer.Serialize(new SubmitPayload(
++            subjectId,
++            target.Status,
++            target.Rating,
++            target.Comment));
++
++        return $$"""
++(() => {
++  const payload = {{payload}};
++  const visible = node => {
++    if (!node) return false;
++    const style = getComputedStyle(node);
++    return style.display !== 'none' && style.visibility !== 'hidden' && !node.disabled;
++  };
++  const clean = value => String(value ?? '').replace(/\r\n/g, '\n').trim();
++  const asRating = value => {
++    const number = Number(value || 0);
++    if (!Number.isFinite(number) || number <= 0) return null;
++    const normalized = number >= 10 && number % 10 === 0 ? number / 10 : number;
++    return normalized >= 1 && normalized <= 5 ? normalized : null;
++  };
++  const containerOf = form => {
++    const container = form.closest('.interest_sect_level,#interest_sect_level,#interest_sect,[class*="interest"]');
++    return container && !container.closest('#interest_sectl,.rating_wrap') ? container : null;
++  };
++  const forms = [...document.querySelectorAll('form')].filter(form => {
++    if (!visible(form) || !containerOf(form)) return false;
++    const action = form.getAttribute('action') || '';
++    if (/accounts\/login|passport\/login/i.test(action)) return false;
++    return !!form.querySelector('input[name="interest"],input[name="rating"],textarea[name="comment"]');
++  });
++  if (forms.length !== 1) {
++    return { submitted:false, error:'官方编辑表单数量异常', formCount:forms.length };
++  }
++
++  const form = forms[0];
++  const action = form.getAttribute('action') || '';
++  let actionUrl;
++  try {
++    actionUrl = new URL(action || location.href, location.href);
++  } catch {
++    return { submitted:false, error:'官方表单地址无效', action };
++  }
++  if (actionUrl.origin !== location.origin) {
++    return { submitted:false, error:'拒绝跨域官方表单', action:actionUrl.href };
++  }
++  if (!actionUrl.pathname.includes(`/subject/${payload.SubjectId}/`) &&
++      !actionUrl.pathname.includes(`/subject/${payload.SubjectId}`)) {
++    return { submitted:false, error:'官方表单影片ID不匹配', actionPath:actionUrl.pathname };
++  }
++
++  const interests = [...form.querySelectorAll('input[name="interest"]')];
++  const targetInterest = interests.find(node =>
++    String(node.value || '').toLowerCase() === String(payload.Status || '').toLowerCase());
++  if (!targetInterest) {
++    return {
++      submitted:false,
++      error:'官方表单不提供请求状态',
++      availableStatuses:interests.map(node => String(node.value || '')).filter(Boolean)
++    };
++  }
++  if (targetInterest.type === 'radio' || targetInterest.type === 'checkbox') {
++    targetInterest.click();
++    targetInterest.dispatchEvent(new Event('input', { bubbles:true }));
++    targetInterest.dispatchEvent(new Event('change', { bubbles:true }));
++  }
++  if ((targetInterest.type === 'radio' || targetInterest.type === 'checkbox') && !targetInterest.checked) {
++    return { submitted:false, error:'官方状态控件未更新' };
++  }
++
++  const ratingHidden = form.querySelector('input[name="rating"]');
++  const readRating = () => asRating(ratingHidden?.value);
++  const ratingCandidates = [...form.querySelectorAll(
++    'img[id^="star"],button[id^="star"],a[id^="star"],[data-rating],[data-value],[role="radio"],input[type="radio"][name="rating"]'
++  )].filter(visible);
++  const candidateRating = node => {
++    const idHit = String(node.id || '').match(/star[_-]?([1-5])$/i);
++    return asRating(
++      node.getAttribute('data-rating') ||
++      node.getAttribute('data-value') ||
++      node.value ||
++      node.getAttribute('aria-label')?.match(/[1-5]/)?.[0] ||
++      idHit?.[1]
++    );
++  };
++
++  if (payload.Rating == null) {
++    if (readRating() != null) {
++      const clearControls = [...form.querySelectorAll('a,button,input,[role="button"]')]
++        .filter(visible)
++        .filter(node => {
++          const text = clean(node.value || node.textContent || node.title || node.getAttribute('aria-label'));
++          const zero = asRating(node.getAttribute('data-rating') || node.getAttribute('data-value') || node.value) === null &&
++                       /^(0|none|null)$/i.test(String(node.getAttribute('data-rating') || node.getAttribute('data-value') || node.value || ''));
++          return zero || /取消评分|清除评分|删除评分|不评分|无评分/.test(text);
++        });
++      if (clearControls.length !== 1) {
++        return { submitted:false, error:'官方表单无法可靠清除评分', clearCandidateCount:clearControls.length };
++      }
++      clearControls[0].click();
++      clearControls[0].dispatchEvent(new Event('input', { bubbles:true }));
++      clearControls[0].dispatchEvent(new Event('change', { bubbles:true }));
++      if (readRating() != null) {
++        return { submitted:false, error:'官方评分清除控件未生效', ratingAfterClear:readRating() };
++      }
++    }
++  } else {
++    const candidates = ratingCandidates.filter(node => candidateRating(node) === payload.Rating);
++    if (candidates.length !== 1) {
++      return { submitted:false, error:'官方评分控件不唯一或缺失', rating:payload.Rating, candidateCount:candidates.length };
++    }
++    candidates[0].click();
++    candidates[0].dispatchEvent(new Event('input', { bubbles:true }));
++    candidates[0].dispatchEvent(new Event('change', { bubbles:true }));
++    if (readRating() !== payload.Rating) {
++      return { submitted:false, error:'官方评分控件未更新', requested:payload.Rating, actual:readRating() };
++    }
++  }
++
++  const commentNode = form.querySelector('textarea[name="comment"],textarea');
++  if (!commentNode) {
++    return { submitted:false, error:'官方短评控件缺失' };
++  }
++  commentNode.focus();
++  commentNode.value = payload.Comment;
++  commentNode.dispatchEvent(new Event('input', { bubbles:true }));
++  commentNode.dispatchEvent(new Event('change', { bubbles:true }));
++  if (clean(commentNode.value) !== clean(payload.Comment)) {
++    return { submitted:false, error:'官方短评控件未更新' };
++  }
++
++  const selectedStatus = interests.find(node => node.checked)?.value ||
++    (interests.length === 1 && interests[0].type === 'hidden' ? interests[0].value : '');
++  const prepared = {
++    status:String(selectedStatus || '').toLowerCase(),
++    rating:readRating(),
++    comment:clean(commentNode.value)
++  };
++  if (prepared.status !== String(payload.Status).toLowerCase() ||
++      prepared.rating !== payload.Rating ||
++      prepared.comment !== clean(payload.Comment)) {
++    return { submitted:false, error:'提交前官方表单复核失败', prepared, target:payload };
++  }
++
++  const submitButton = [...form.querySelectorAll('button[type="submit"],input[type="submit"]')].find(visible);
++  if (!submitButton) {
++    return { submitted:false, error:'官方提交按钮缺失' };
++  }
++
++  let submitEventObserved = false;
++  let submitDefaultPrevented = false;
++  form.addEventListener('submit', event => {
++    submitEventObserved = true;
++    submitDefaultPrevented = event.defaultPrevented;
++  }, { once:true, capture:true });
++
++  try {
++    form.requestSubmit(submitButton);
++  } catch (error) {
++    return { submitted:false, error:`requestSubmit 失败：${error?.message || error}` };
++  }
++
++  return {
++    submitted:submitEventObserved,
++    submitEventObserved,
++    submitDefaultPrevented,
++    initialUrl:location.href,
++    formAction:actionUrl.href,
++    prepared
++  };
++})()
++""";
++    }
++}
+diff -ruN '--exclude=SOURCE_SHA256SUMS.txt' '--exclude=PACKAGE_SHA256SUMS.txt' '--exclude=PREVIEW4_TO_PREVIEW6.patch' /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/DoubanWebView2Connector.ReviewWriteV2.cs /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/DoubanWebView2Connector.ReviewWriteV2.cs
+--- /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/DoubanWebView2Connector.ReviewWriteV2.cs	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/DoubanWebView2Connector.ReviewWriteV2.cs	2026-08-05 00:01:00.992609116 +0000
+@@ -0,0 +1,526 @@
++using System.Text.Json;
++using Microsoft.Web.WebView2.Core;
++
++namespace QbPotDoubanAi;
++
++internal sealed partial class DoubanWebView2Connector : IDoubanOfficialReviewGateway
++{
++    private bool _reviewWriteInProgress;
++    private bool _reviewNavigationStarted;
++    private bool _reviewNavigationCompleted;
++    private string _reviewNavigationUrl = "";
++    private string _reviewNavigationError = "";
++
++    private static readonly IOfficialReviewCacheWriter DeferredReviewCacheWriter = new DeferredCacheWriter();
++
++    public async Task<OfficialReviewSnapshot> ReadOfficialReviewAsync(string subjectUrl)
++    {
++        if (!IsAllowedSubjectUrl(subjectUrl))
++            return OfficialReviewSnapshot.Unknown("snapshot", "豆瓣影片地址无效。");
++        if (_loginWindowActive)
++            return OfficialReviewSnapshot.Unknown("snapshot", "豆瓣登录窗口正在使用，请关闭后再读取。");
++
++        await _navigationGate.WaitAsync().ConfigureAwait(true);
++        try
++        {
++            await EnsureInitializedAsync().ConfigureAwait(true);
++            var subjectId = ExtractSubjectId(subjectUrl);
++            var result = await ((IDoubanOfficialReviewGateway)this)
++                .ReadOfficialAsync(subjectId, subjectUrl, CancellationToken.None)
++                .ConfigureAwait(true);
++            DiagnosticLogger.Write($"Douban review v2 manual-read; SubjectId={subjectId}; Snapshot={SerializeDiagnostic(result)}");
++            return result;
++        }
++        finally
++        {
++            _navigationGate.Release();
++        }
++    }
++
++    public async Task<ReviewWriteResultV2> SaveDoubanEntryAsync(
++        string subjectUrl,
++        DoubanEntryWriteRequestV2 request)
++    {
++        if (!IsAllowedSubjectUrl(subjectUrl))
++            return ReviewWriteResultV2.Blocked("snapshot", request, null, "豆瓣影片地址无效。");
++        if (_loginWindowActive)
++            return ReviewWriteResultV2.Blocked("snapshot", request, null, "豆瓣登录窗口正在使用，请关闭后再保存。");
++
++        await _navigationGate.WaitAsync().ConfigureAwait(true);
++        try
++        {
++            await EnsureInitializedAsync().ConfigureAwait(true);
++            var subjectId = ExtractSubjectId(subjectUrl);
++            var coordinator = new ReviewWriteCoordinator(this, DeferredReviewCacheWriter);
++            var result = await coordinator.SaveAsync(subjectId, subjectUrl, request).ConfigureAwait(true);
++            DiagnosticLogger.Write(
++                $"Douban review v2 result; SubjectId={subjectId}; Phase={result.Phase}; Stage={result.Stage}; " +
++                $"Settled={result.Settled}; LocalUpdated={result.LocalUpdated}; Error={result.Error}; " +
++                $"Before={SerializeDiagnostic(result.Before)}; Official={SerializeDiagnostic(result.Official)}");
++            return result;
++        }
++        catch (Exception ex)
++        {
++            DiagnosticLogger.Write($"Douban review v2 failed before result mapping; URL={subjectUrl}; Error={ex}");
++            return new ReviewWriteResultV2(
++                ReviewWritePhase.Failed,
++                "exception",
++                false,
++                false,
++                request,
++                null,
++                null,
++                null,
++                ex.Message,
++                ex.ToString());
++        }
++        finally
++        {
++            _reviewWriteInProgress = false;
++            _navigationGate.Release();
++        }
++    }
++
++    async Task<OfficialReviewSnapshot> IDoubanOfficialReviewGateway.ReadOfficialAsync(
++        string subjectId,
++        string subjectUrl,
++        CancellationToken cancellationToken)
++    {
++        cancellationToken.ThrowIfCancellationRequested();
++        var fixedProfileId = await EnsureFixedProfileCoreAsync("review-v2-read").ConfigureAwait(true);
++        if (string.IsNullOrWhiteSpace(fixedProfileId))
++            return OfficialReviewSnapshot.Unknown("official-form", "无法确认当前豆瓣用户 Profile。");
++
++        var opened = false;
++        try
++        {
++            await NavigateAsync(subjectUrl).ConfigureAwait(true);
++            cancellationToken.ThrowIfCancellationRequested();
++            var detail = await EvaluateAsync(
++                DoubanWriteSnapshotScript.Replace("__PROFILE_ID__", JsonSerializer.Serialize(fixedProfileId)))
++                .ConfigureAwait(true);
++
++            var validationError = ValidateOfficialDetailSnapshot(detail, subjectId, fixedProfileId);
++            if (!string.IsNullOrWhiteSpace(validationError))
++                return OfficialReviewSnapshot.Unknown("detail-snapshot", validationError);
++
++            var detailStatus = ReviewTargetResolver.NormalizeStatus(String(detail, "detectedStatus"));
++            var detailStatusKnown = Boolean(detail, "statusKnown");
++            var detailExistsKnown = detailStatusKnown;
++            var detailExists = detailStatus is "wish" or "do" or "collect";
++
++            var open = await EvaluateAsync(
++                DoubanWriteOpenCapabilityScript.Replace("__SUBJECT_ID__", JsonSerializer.Serialize(subjectId)))
++                .ConfigureAwait(true);
++            opened = Boolean(open, "clicked");
++            if (!opened)
++            {
++                // A complete, explicit "none" snapshot is still authoritative even if no edit form can be opened.
++                if (detailExistsKnown && !detailExists)
++                {
++                    return new OfficialReviewSnapshot(
++                        ExistsKnown: true,
++                        Exists: false,
++                        StatusKnown: true,
++                        Status: null,
++                        RatingKnown: true,
++                        Rating: null,
++                        CommentKnown: true,
++                        Comment: string.Empty,
++                        CapabilitiesKnown: false,
++                        SupportedStatuses: Array.Empty<string>(),
++                        CanSetRating: false,
++                        CanClearRating: true,
++                        CanEditComment: false,
++                        Source: "detail-snapshot",
++                        Error: null);
++                }
++                return OfficialReviewSnapshot.Unknown("official-form", String(open, "error", "官方编辑表单入口缺失。"));
++            }
++
++            var wait = await WaitForOfficialFormAsync(subjectId).ConfigureAwait(true);
++            var form = wait.Form;
++            DiagnosticLogger.Write(
++                $"Douban review v2 official-read; SubjectId={subjectId}; Stable={wait.Stable}; Attempts={wait.Attempts}; " +
++                $"Detail={detail}; Open={open}; Form={form}");
++
++            if (Boolean(form, "captcha"))
++                return OfficialReviewSnapshot.Unknown("official-form", "豆瓣要求人工验证，请完成验证后重试。");
++            if (Boolean(form, "loginPage"))
++                return OfficialReviewSnapshot.Unknown("official-form", "豆瓣登录已失效。");
++            if (!Boolean(form, "ready") || !wait.Stable)
++                return OfficialReviewSnapshot.Unknown("official-form", wait.Stable
++                    ? String(form, "error", "官方编辑表单没有出现。")
++                    : "官方编辑表单字段在等待时间内未稳定。");
++
++            var formStatus = ReviewTargetResolver.NormalizeStatus(String(form, "selectedInterest"));
++            var openIndicatesExisting = Boolean(open, "generic") || Boolean(open, "selected");
++
++            // A visible target-specific create form is not proof that no review exists.
++            // Absence is authoritative only when the detail snapshot explicitly recognized "none".
++            var formIndicatesExisting = openIndicatesExisting && formStatus is ("wish" or "do" or "collect");
++            var existsKnown = detailExistsKnown || formIndicatesExisting;
++            var exists = detailExistsKnown ? detailExists : formIndicatesExisting;
++
++            var statusKnown = existsKnown;
++            string? status = exists ? (formStatus is ("wish" or "do" or "collect") ? formStatus : detailStatus) : null;
++            if (exists && status is not ("wish" or "do" or "collect"))
++                statusKnown = false;
++
++            var options = ReadOfficialFormStatusOptions(form);
++            var supported = options
++                .Select(option => option.Text switch { "想看" => "wish", "在看" => "do", "看过" => "collect", _ => "" })
++                .Where(value => value.Length > 0)
++                .Distinct(StringComparer.OrdinalIgnoreCase)
++                .ToArray();
++            var capabilitiesKnown = supported.Length >= 2 || Boolean(open, "generic") || Boolean(open, "selected");
++
++            int? rating = null;
++            var ratingKnown = Boolean(form, "ratingKnown");
++            if (ratingKnown && form.TryGetProperty("rating", out var ratingValue) &&
++                ratingValue.ValueKind == JsonValueKind.Number && ratingValue.TryGetInt32(out var ratingNumber))
++                rating = ratingNumber is >= 1 and <= 5 ? ratingNumber : null;
++
++            var commentKnown = Boolean(form, "commentKnown");
++            var comment = commentKnown ? ReviewTargetResolver.NormalizeComment(String(form, "comment")) : null;
++
++            if (!exists)
++            {
++                // Opening a target-specific create form must not turn its defaults into an existing review.
++                ratingKnown = true;
++                rating = null;
++                commentKnown = true;
++                comment = string.Empty;
++            }
++
++            var canSetRating = (Int(form, "ratingControlCount") ?? 0) > 0;
++            var canClearRating = rating is null || (Int(form, "clearRatingControlCount") ?? 0) == 1;
++            var canEditComment = (Int(form, "commentControlCount") ?? 0) > 0;
++
++            if (!existsKnown || !statusKnown || !ratingKnown || !commentKnown)
++                return OfficialReviewSnapshot.Unknown("official-form", "豆瓣官方当前评价字段未读取完整。");
++
++            return new OfficialReviewSnapshot(
++                existsKnown,
++                exists,
++                statusKnown,
++                status,
++                ratingKnown,
++                rating,
++                commentKnown,
++                comment,
++                capabilitiesKnown,
++                supported,
++                canSetRating,
++                canClearRating,
++                canEditComment,
++                "official-form",
++                null);
++        }
++        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
++        {
++            throw;
++        }
++        catch (Exception ex)
++        {
++            DiagnosticLogger.Write($"Douban review v2 official-read failed; SubjectId={subjectId}; Error={ex}");
++            return OfficialReviewSnapshot.Unknown("official-form", ex.Message);
++        }
++        finally
++        {
++            if (opened)
++            {
++                try { await NavigateAsync(subjectUrl).ConfigureAwait(true); }
++                catch (Exception ex) { DiagnosticLogger.Write($"Douban review v2 restore subject failed; SubjectId={subjectId}; Error={ex.Message}"); }
++            }
++        }
++    }
++
++    async Task<ReviewSubmitReceipt> IDoubanOfficialReviewGateway.SubmitTargetAsync(
++        string subjectId,
++        string subjectUrl,
++        ResolvedReviewTarget target,
++        CancellationToken cancellationToken)
++    {
++        cancellationToken.ThrowIfCancellationRequested();
++        var fixedProfileId = await EnsureFixedProfileCoreAsync("review-v2-submit").ConfigureAwait(true);
++        if (string.IsNullOrWhiteSpace(fixedProfileId))
++            return FailedReceipt("无法确认当前豆瓣用户 Profile。");
++
++        try
++        {
++            await NavigateAsync(subjectUrl).ConfigureAwait(true);
++            var detail = await EvaluateAsync(
++                DoubanWriteSnapshotScript.Replace("__PROFILE_ID__", JsonSerializer.Serialize(fixedProfileId)))
++                .ConfigureAwait(true);
++            var validationError = ValidateOfficialDetailSnapshot(detail, subjectId, fixedProfileId);
++            if (!string.IsNullOrWhiteSpace(validationError))
++                return FailedReceipt(validationError, detail);
++
++            var open = await EvaluateAsync(DoubanWriteOpenScriptV2
++                    .Replace("__SUBJECT_ID__", JsonSerializer.Serialize(subjectId))
++                    .Replace("__STATUS__", JsonSerializer.Serialize(target.Status)))
++                .ConfigureAwait(true);
++            if (!Boolean(open, "clicked"))
++                return FailedReceipt(String(open, "error", "官方表单不提供请求状态。"), open);
++
++            var wait = await WaitForOfficialFormAsync(subjectId).ConfigureAwait(true);
++            var form = wait.Form;
++            if (!wait.Stable || !Boolean(form, "ready"))
++                return FailedReceipt(wait.Stable
++                    ? String(form, "error", "官方编辑表单没有出现。")
++                    : "官方编辑表单字段在等待时间内未稳定。", new { open, form, wait.Attempts, wait.StableSamples });
++            if (!FormOffersStatus(form, target.Status))
++                return FailedReceipt("官方表单不提供请求状态。", form);
++            if (target.Rating is not null && (Int(form, "ratingControlCount") ?? 0) <= 0)
++                return FailedReceipt("官方评分控件缺失。", form);
++            if ((Int(form, "commentControlCount") ?? 0) <= 0)
++                return FailedReceipt("官方短评控件缺失。", form);
++
++            _reviewNavigationStarted = false;
++            _reviewNavigationCompleted = false;
++            _reviewNavigationUrl = "";
++            _reviewNavigationError = "";
++            _reviewWriteInProgress = true;
++
++            JsonElement submit;
++            try
++            {
++                submit = await EvaluateAsync(DoubanOfficialFormScripts.BuildSubmitScript(subjectId, target))
++                    .ConfigureAwait(true);
++            }
++            catch (Exception ex) when (_reviewNavigationStarted)
++            {
++                // ExecuteScript can be interrupted by the navigation it initiated. Navigation is only
++                // a process signal; final success still requires settlement and authoritative readback.
++                DiagnosticLogger.Write($"Douban review v2 submit script interrupted by navigation; SubjectId={subjectId}; Error={ex.Message}");
++                return new ReviewSubmitReceipt(
++                    SubmitEventObserved: true,
++                    SubmitDefaultPrevented: false,
++                    InitialUrl: subjectUrl,
++                    FormAction: null,
++                    Error: null,
++                    Diagnostic: new { inferredFromNavigation = true, navigationUrl = _reviewNavigationUrl, exception = ex.Message });
++            }
++
++            var observed = Boolean(submit, "submitEventObserved");
++            var submitted = Boolean(submit, "submitted");
++            var error = String(submit, "error");
++            DiagnosticLogger.Write(
++                $"Douban review v2 submit-event; SubjectId={subjectId}; Submitted={submitted}; Observed={observed}; " +
++                $"DefaultPrevented={Boolean(submit, "submitDefaultPrevented")}; Submit={submit}");
++
++            if (!submitted || !observed)
++            {
++                _reviewWriteInProgress = false;
++                return FailedReceipt(string.IsNullOrWhiteSpace(error) ? "官方表单未观察到 submit 事件。" : error, submit);
++            }
++
++            return new ReviewSubmitReceipt(
++                observed,
++                Boolean(submit, "submitDefaultPrevented"),
++                String(submit, "initialUrl", subjectUrl),
++                String(submit, "formAction"),
++                null,
++                submit);
++        }
++        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
++        {
++            _reviewWriteInProgress = false;
++            throw;
++        }
++        catch (Exception ex)
++        {
++            _reviewWriteInProgress = false;
++            DiagnosticLogger.Write($"Douban review v2 submit failed; SubjectId={subjectId}; Error={ex}");
++            return FailedReceipt(ex.Message, ex.ToString());
++        }
++    }
++
++    async Task<ReviewSettlementResult> IDoubanOfficialReviewGateway.WaitForSettlementAsync(
++        string subjectId,
++        string subjectUrl,
++        ResolvedReviewTarget target,
++        ReviewSubmitReceipt receipt,
++        CancellationToken cancellationToken)
++    {
++        var policy = new ReviewSettlementPolicy();
++        ReviewSettlementProbe? lastProbe = null;
++        try
++        {
++            for (var attempt = 1; attempt <= 48; attempt++)
++            {
++                cancellationToken.ThrowIfCancellationRequested();
++                await Task.Delay(250, cancellationToken).ConfigureAwait(true);
++                try
++                {
++                    var raw = await EvaluateAsync(DoubanWritePostSubmitProbeScript).ConfigureAwait(true);
++                    OfficialReviewSnapshot? inline = null;
++                    if (Boolean(raw, "subjectPage") && !Boolean(raw, "formOpen"))
++                    {
++                        var fixedProfileId = _session.ProfileId;
++                        if (!string.IsNullOrWhiteSpace(fixedProfileId))
++                        {
++                            try
++                            {
++                                var detail = await EvaluateAsync(
++                                    DoubanWriteSnapshotScript.Replace("__PROFILE_ID__", JsonSerializer.Serialize(fixedProfileId)))
++                                    .ConfigureAwait(true);
++                                inline = MapInlineDetailSnapshot(detail);
++                            }
++                            catch (Exception inlineError)
++                            {
++                                DiagnosticLogger.Write($"Douban review v2 inline readback unavailable; Attempt={attempt}; Error={inlineError.Message}");
++                            }
++                        }
++                    }
++
++                    lastProbe = new ReviewSettlementProbe(
++                        String(raw, "href", _worker.Source?.ToString() ?? subjectUrl),
++                        String(raw, "readyState"),
++                        _reviewNavigationStarted,
++                        _reviewNavigationCompleted,
++                        Boolean(raw, "formOpen"),
++                        Boolean(raw, "captcha"),
++                        Boolean(raw, "loginPage"),
++                        inline,
++                        new { raw, navigationUrl = _reviewNavigationUrl, navigationError = _reviewNavigationError });
++
++                    var decision = policy.Observe(lastProbe, target);
++                    DiagnosticLogger.Write(
++                        $"Douban review v2 settlement; SubjectId={subjectId}; Attempt={attempt}; State={decision.State}; " +
++                        $"StableSamples={decision.StableSamples}; Settled={decision.Settled}; Probe={lastProbe}");
++                    if (decision.Settled || decision.TerminalFailure)
++                        return new ReviewSettlementResult(
++                            decision.Settled,
++                            decision.TerminalFailure,
++                            decision.State,
++                            attempt,
++                            decision.Error,
++                            decision.Probe);
++                }
++                catch (Exception ex)
++                {
++                    DiagnosticLogger.Write($"Douban review v2 settlement probe transient failure; SubjectId={subjectId}; Attempt={attempt}; Error={ex.Message}");
++                }
++            }
++
++            var timeout = policy.Timeout(lastProbe);
++            return new ReviewSettlementResult(false, false, timeout.State, 48, timeout.Error, timeout.Probe);
++        }
++        finally
++        {
++            _reviewWriteInProgress = false;
++        }
++    }
++
++    private void ObserveReviewNavigationStarting(string? uri)
++    {
++        if (!_reviewWriteInProgress) return;
++        _reviewNavigationStarted = true;
++        _reviewNavigationCompleted = false;
++        _reviewNavigationUrl = uri ?? "";
++        _reviewNavigationError = "";
++        DiagnosticLogger.Write($"Douban review v2 navigation-starting; URL={_reviewNavigationUrl}");
++    }
++
++    private void ObserveReviewNavigationCompleted(CoreWebView2NavigationCompletedEventArgs args)
++    {
++        if (!_reviewWriteInProgress) return;
++        _reviewNavigationCompleted = true;
++        _reviewNavigationUrl = _worker.Source?.ToString() ?? _reviewNavigationUrl;
++        _reviewNavigationError = args.IsSuccess ? "" : args.WebErrorStatus.ToString();
++        DiagnosticLogger.Write(
++            $"Douban review v2 navigation-completed; Success={args.IsSuccess}; Error={args.WebErrorStatus}; URL={_reviewNavigationUrl}");
++    }
++
++    private string ValidateOfficialDetailSnapshot(JsonElement snapshot, string subjectId, string fixedProfileId)
++    {
++        if (Boolean(snapshot, "captcha"))
++        {
++            SetSessionState("captcha", "豆瓣要求人工验证");
++            return "豆瓣要求人工验证，请完成验证后重试。";
++        }
++        if (Boolean(snapshot, "loginPage") || !Boolean(snapshot, "loggedIn"))
++        {
++            SetSessionState("not-logged-in", "豆瓣尚未登录");
++            return "内置豆瓣 Profile 尚未登录，请先扫码登录。";
++        }
++        if (!Boolean(snapshot, "subjectPage") || !string.Equals(String(snapshot, "subjectId"), subjectId, StringComparison.Ordinal))
++            return "当前页面不是请求的豆瓣影片详情页。";
++        var detectedProfileId = String(snapshot, "detectedProfileId");
++        if (!string.IsNullOrWhiteSpace(detectedProfileId) && !string.Equals(detectedProfileId, fixedProfileId, StringComparison.Ordinal))
++            return "当前页面豆瓣用户与固定用户快照不一致。";
++        return "";
++    }
++
++    private static OfficialReviewSnapshot? MapInlineDetailSnapshot(JsonElement detail)
++    {
++        var statusKnown = Boolean(detail, "statusKnown");
++        var status = ReviewTargetResolver.NormalizeStatus(String(detail, "detectedStatus"));
++        var exists = status is "wish" or "do" or "collect";
++        if (!statusKnown) return null;
++
++        var ratingKnown = Boolean(detail, "ratingKnown");
++        int? rating = null;
++        if (ratingKnown && detail.TryGetProperty("rating", out var ratingValue) && ratingValue.TryGetInt32(out var ratingNumber))
++            rating = ratingNumber is >= 1 and <= 5 ? ratingNumber : null;
++        var commentKnown = Boolean(detail, "commentKnown");
++        var comment = commentKnown ? ReviewTargetResolver.NormalizeComment(String(detail, "comment")) : null;
++
++        if (!exists)
++        {
++            ratingKnown = true;
++            rating = null;
++            commentKnown = true;
++            comment = string.Empty;
++        }
++
++        return new OfficialReviewSnapshot(
++            true,
++            exists,
++            true,
++            exists ? status : null,
++            ratingKnown,
++            rating,
++            commentKnown,
++            comment,
++            false,
++            Array.Empty<string>(),
++            false,
++            rating is null,
++            false,
++            "detail-inline",
++            null);
++    }
++
++    private static ReviewSubmitReceipt FailedReceipt(string error, object? diagnostic = null) => new(
++        false,
++        false,
++        "",
++        null,
++        error,
++        diagnostic);
++
++    private static string SerializeDiagnostic(object? value)
++    {
++        if (value is null) return "null";
++        try { return JsonSerializer.Serialize(value); }
++        catch { return value.ToString() ?? ""; }
++    }
++
++    private sealed class DeferredCacheWriter : IOfficialReviewCacheWriter
++    {
++        public Task<bool> OverwriteFromOfficialAsync(
++            string subjectId,
++            string subjectUrl,
++            OfficialReviewSnapshot official,
++            CancellationToken cancellationToken)
++        {
++            cancellationToken.ThrowIfCancellationRequested();
++            // HtmlMediaLibraryForm owns the live in-memory mirror. It applies the returned authoritative
++            // snapshot after the connector releases the navigation pipeline.
++            return Task.FromResult(false);
++        }
++    }
++}
+diff -ruN '--exclude=SOURCE_SHA256SUMS.txt' '--exclude=PACKAGE_SHA256SUMS.txt' '--exclude=PREVIEW4_TO_PREVIEW6.patch' /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/DoubanWebView2Connector.cs /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/DoubanWebView2Connector.cs
+--- /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/DoubanWebView2Connector.cs	2026-08-04 22:15:18.000000000 +0000
++++ /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/DoubanWebView2Connector.cs	2026-08-05 00:00:04.874727311 +0000
+@@ -1,10 +1,10 @@
+-﻿using System.Text.Json;
++using System.Text.Json;
+ using Microsoft.Web.WebView2.Core;
+ using Microsoft.Web.WebView2.WinForms;
+ 
+ namespace QbPotDoubanAi;
+ 
+-internal sealed class DoubanWebView2Connector : IDoubanConnector, IDisposable
++internal sealed partial class DoubanWebView2Connector : IDoubanConnector, IDisposable
+ {
+     private readonly WebView2 _worker;
+     private readonly WebView2EnvironmentProvider _environments;
+@@ -100,8 +100,10 @@
+         };
+         core.NavigationStarting += (_, e) =>
+         {
+-            if (!IsAllowedDoubanTopLevel(e.Uri)) e.Cancel = true;
++            if (!IsAllowedDoubanTopLevel(e.Uri)) { e.Cancel = true; return; }
++            ObserveReviewNavigationStarting(e.Uri);
+         };
++        core.NavigationCompleted += (_, e) => ObserveReviewNavigationCompleted(e);
+         core.ProcessFailed += (_, e) =>
+         {
+             DiagnosticLogger.Write($"WebView2 Douban worker process failed; Kind={e.ProcessFailedKind}");
+@@ -313,10 +315,10 @@
+         finally { _navigationGate.Release(); }
+     }
+ 
+-    public Task<DoubanWriteResult> SaveDoubanEntryAsync(string subjectUrl, DoubanEntryWriteRequest request) =>
++    private Task<DoubanWriteResult> SaveDoubanEntryLegacyAsync(string subjectUrl, DoubanEntryWriteRequest request) =>
+         SaveDoubanEntryCoreAsync(subjectUrl, request);
+ 
+-    public Task<DoubanWriteResult> DeleteAsync(string subjectUrl) => DeleteCoreAsync(subjectUrl);
++    private Task<DoubanWriteResult> DeleteLegacyAsync(string subjectUrl) => DeleteCoreAsync(subjectUrl);
+ 
+     private async Task<DoubanWriteResult> SaveDoubanEntryCoreAsync(string subjectUrl, DoubanEntryWriteRequest request)
+     {
+@@ -974,15 +976,23 @@
+   const ratingHidden=form?.querySelector('input[name="rating"]');
+   const ratingRaw=String(ratingHidden?.value||'').trim();
+   const ratingNumber=Number(ratingRaw||0);
+-  const rating=Number.isFinite(ratingNumber)&&ratingNumber>0 ? (ratingNumber>=10&&ratingNumber%10===0?ratingNumber/10:ratingNumber) : 0;
+-  const ratingKnown=!!ratingHidden&&rating>=1&&rating<=5;
++  const ratingNormalized=Number.isFinite(ratingNumber)&&ratingNumber>0 ? (ratingNumber>=10&&ratingNumber%10===0?ratingNumber/10:ratingNumber) : 0;
++  const rating=ratingNormalized>=1&&ratingNormalized<=5?ratingNormalized:null;
++  const ratingKnown=!!ratingHidden;
++  const clean=value=>String(value||'').replace(/\r\n/g,'\n').trim();
++  const clearRatingControlCount=form?[...form.querySelectorAll('a,button,input,[role="button"]')].filter(node=>{
++    const style=getComputedStyle(node); if(style.display==='none'||style.visibility==='hidden'||node.disabled)return false;
++    const text=clean(node.value||node.textContent||node.title||node.getAttribute('aria-label'));
++    const raw=String(node.getAttribute('data-rating')||node.getAttribute('data-value')||node.value||'');
++    return /^(0|none|null)$/i.test(raw)||/取消评分|清除评分|删除评分|不评分|无评分/.test(text);
++  }).length:0;
+   const commentNode=form?.querySelector('textarea[name="comment"],textarea');
+   const comment=String(commentNode?.value||'').trim();
+   const commentKnown=!!commentNode;
+   const action=form?.getAttribute('action')||'';
+   let actionPath=''; try{actionPath=action?new URL(action,location.href).pathname:'';}catch{}
+   const error=captcha?'豆瓣要求人工验证':loginPage?'豆瓣登录已失效':form?'':'官方编辑表单没有出现';
+-  return {ready:!!form,captcha,loginPage,error,actionPath,fields,ratingControlCount,commentControlCount,interestOptions,selectedInterest,rating,ratingRaw,ratingKnown,comment,commentKnown,personalContainerFound:!!form,formCount:forms.length};
++  return {ready:!!form,captcha,loginPage,error,actionPath,fields,ratingControlCount,clearRatingControlCount,commentControlCount,interestOptions,selectedInterest,rating,ratingRaw,ratingKnown,comment,commentKnown,personalContainerFound:!!form,formCount:forms.length};
+ })()
+ """;
+     internal const string DoubanWriteSubmitScriptV2 = """
+diff -ruN '--exclude=SOURCE_SHA256SUMS.txt' '--exclude=PACKAGE_SHA256SUMS.txt' '--exclude=PREVIEW4_TO_PREVIEW6.patch' /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/HtmlMediaLibraryForm.cs /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/HtmlMediaLibraryForm.cs
+--- /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/HtmlMediaLibraryForm.cs	2026-08-04 22:15:18.000000000 +0000
++++ /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/HtmlMediaLibraryForm.cs	2026-08-05 00:06:14.753109663 +0000
+@@ -1,4 +1,4 @@
+-﻿using System.Text.Json;
++using System.Text.Json;
+ using Microsoft.Web.WebView2.Core;
+ using Microsoft.Web.WebView2.WinForms;
+ 
+@@ -11,7 +11,7 @@
+     private static readonly HashSet<string> AllowedOperations = new(StringComparer.Ordinal)
+     {
+         "init", "sessionStatus", "libraryPage", "search", "detail", "allCast", "login", "ptSearch", "openLegacy",
+-        "saveDoubanEntry", "deleteEntry", "delete"
++        "saveDoubanEntry"
+     };
+ 
+     private readonly PersistentState _software;
+@@ -156,8 +156,14 @@
+                 if (!metadata.LoggedIn) throw new InvalidOperationException("内置豆瓣 Profile 尚未登录，请先扫码登录。");
+                 if (!metadata.IsSuccess) throw new InvalidDataException(string.IsNullOrWhiteSpace(metadata.Error) ? "豆瓣没有返回有效详情。" : metadata.Error);
+                 ApplyMetadata(record, metadata);
+-                PersistRecord(record);
+-                return DetailDto(record, metadata.ConnectorSource);
++                var officialReview = await _connector.ReadOfficialReviewAsync(subjectUrl);
++                if (ApplyAuthoritativeReview(record, officialReview)) PersistLiveMirror();
++                else
++                {
++                    DiagnosticLogger.Write($"HTML detail official review unavailable; SubjectId={subjectId}; Source={officialReview.Source}; Error={officialReview.Error}");
++                    PersistRecord(record);
++                }
++                return DetailDto(record, metadata.ConnectorSource + "+official-review");
+             }
+             case "allCast":
+             {
+@@ -179,47 +185,19 @@
+             {
+                 var record = GetWritableRecord(payload, allowTombstoneRecreate: true);
+                 var status = RequiredLibraryStatus(payload, "status");
++                var ratingAction = ReadReviewFieldAction(payload, "ratingAction");
+                 var rating = ReadNullableInt(payload, "rating", 1, 5);
+-                var setComment = ReadBool(payload, "setComment");
+-                var comment = ReadString(payload, "comment").Trim();
+-                if (setComment && comment.Length > 330) throw new InvalidDataException("短评不能超过 330 字。");
+-                var request = new DoubanEntryWriteRequest(status, rating, setComment, comment);
+-                var result = await _connector.SaveDoubanEntryAsync(record.SubjectUrl, request);
+-                if (!result.Success) return WriteEnvelope(record, result, "webview2-write", false);
++                var commentAction = ReadReviewFieldAction(payload, "commentAction");
++                var comment = commentAction == ReviewFieldAction.Set ? ReadString(payload, "comment").Trim() : null;
++                if (commentAction == ReviewFieldAction.Set && (comment?.Length ?? 0) > 330)
++                    throw new InvalidDataException("短评不能超过 330 字。");
+ 
+-                ApplyConfirmedDoubanEntry(record, result, request);
+-                PromoteToHistory(record);
+-                PersistLiveMirror();
+-                return WriteEnvelope(record, result with { LocalUpdated = true }, "webview2-write", true);
+-            }
+-            case "deleteEntry":
+-            case "delete":
+-            {
+-                var record = GetWritableRecord(payload, allowTombstoneRecreate: false);
+-                var result = await _connector.DeleteAsync(record.SubjectUrl);
+-                if (!result.Success) return WriteEnvelope(record, result, "webview2-write", false);
+-                record.Tombstoned = true;
+-                record.TombstonedAt = DateTime.Now;
+-                record.TombstoneReason = "豆瓣删除确认";
+-                record.Status = "deleted";
+-                PersistRecord(record);
+-                return new
+-                {
+-                    deleted = true,
+-                    subjectId = record.SubjectId,
+-                    tombstoned = true,
+-                    detail = DetailDto(record, "webview2-write"),
+-                    write = new
+-                    {
+-                        phase = "confirmed",
+-                        stage = "readback",
+-                        operation = result.Action,
+-                        requested = new { status = "delete", rating = (int?)null, commentLength = (int?)null },
+-                        official = new { status = "deleted", rating = (int?)null, comment = "" },
+-                        localUpdated = true,
+-                        error = ""
+-                    }
+-                };
++                var request = new DoubanEntryWriteRequestV2(status, ratingAction, rating, commentAction, comment);
++                var result = await _connector.SaveDoubanEntryAsync(record.SubjectUrl, request);
++                var authoritative = SelectAuthoritativeSnapshot(result);
++                var localUpdated = authoritative is not null && ApplyAuthoritativeReview(record, authoritative);
++                if (localUpdated) PersistLiveMirror();
++                return WriteEnvelopeV2(record, result, "webview2-write-v2", localUpdated);
+             }
+             case "ptSearch":
+             {
+@@ -287,6 +265,124 @@
+         connectorSource
+     };
+ 
++    private object WriteEnvelopeV2(DoubanHistoryRecord record, ReviewWriteResultV2 result, string connectorSource, bool localUpdated)
++    {
++        var phase = result.Phase switch
++        {
++            ReviewWritePhase.Confirmed => "confirmed",
++            ReviewWritePhase.Blocked => "blocked",
++            ReviewWritePhase.Uncertain => "unconfirmed",
++            _ => "failed"
++        };
++        var official = SelectAuthoritativeSnapshot(result) ?? result.Official ?? result.Before;
++        return new
++        {
++            detail = DetailDto(record, connectorSource),
++            write = new
++            {
++                phase,
++                stage = result.Stage,
++                operation = "save",
++                requested = new
++                {
++                    status = result.Requested.Status,
++                    ratingAction = FieldActionText(result.Requested.RatingAction),
++                    rating = result.Requested.Rating,
++                    commentAction = FieldActionText(result.Requested.CommentAction),
++                    comment = result.Requested.Comment
++                },
++                official = new
++                {
++                    existsKnown = official?.ExistsKnown == true,
++                    exists = official?.ExistsKnown == true ? official.Exists : (bool?)null,
++                    statusKnown = official?.StatusKnown == true,
++                    status = official?.Status,
++                    ratingKnown = official?.RatingKnown == true,
++                    rating = official?.Rating,
++                    commentKnown = official?.CommentKnown == true,
++                    comment = official?.Comment,
++                    source = official?.Source ?? ""
++                },
++                settled = result.Settled,
++                localUpdated,
++                error = result.Error ?? ""
++            }
++        };
++    }
++
++    private static OfficialReviewSnapshot? SelectAuthoritativeSnapshot(ReviewWriteResultV2 result)
++    {
++        if (IsCompleteOfficialSnapshot(result.Official)) return result.Official;
++        if (IsCompleteOfficialSnapshot(result.Before)) return result.Before;
++        return null;
++    }
++
++    private static bool IsCompleteOfficialSnapshot(OfficialReviewSnapshot? snapshot) =>
++        snapshot is not null && snapshot.ExistsKnown &&
++        (!snapshot.Exists || (snapshot.StatusKnown && snapshot.RatingKnown && snapshot.CommentKnown));
++
++    private bool ApplyAuthoritativeReview(DoubanHistoryRecord record, OfficialReviewSnapshot official)
++    {
++        if (!IsCompleteOfficialSnapshot(official)) return false;
++
++        if (!official.Exists)
++        {
++            record.Rating = null;
++            record.Comment = "";
++            record.DoubanStatusOptions = [];
++            record.DoubanStatusCapabilitiesKnown = official.CapabilitiesKnown;
++            record.DoubanStatusCapabilitySource = official.Source;
++            record.DoubanStatusCapabilityError = official.Error ?? "";
++            _history.Items.Remove(record.SubjectId);
++            if (!record.Tombstoned)
++            {
++                record.Status = "search";
++                _searchCache.Items[record.SubjectId] = record;
++            }
++            DiagnosticLogger.Write($"HTML authoritative cache overwrite; SubjectId={record.SubjectId}; Exists=false; Tombstoned={record.Tombstoned}; Source={official.Source}");
++            return true;
++        }
++
++        var status = ReviewTargetResolver.NormalizeStatus(official.Status);
++        if (status is not ("wish" or "do" or "collect")) return false;
++
++        record.Status = status;
++        record.Rating = official.Rating;
++        record.Comment = ReviewTargetResolver.NormalizeComment(official.Comment);
++        record.Tombstoned = false;
++        record.TombstonedAt = null;
++        record.TombstoneReason = "";
++        record.DoubanStatusCapabilitiesKnown = official.CapabilitiesKnown;
++        record.DoubanStatusCapabilitySource = official.Source;
++        record.DoubanStatusCapabilityError = official.Error ?? "";
++
++        var labels = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
++        {
++            ["wish"] = "想看", ["do"] = "在看", ["collect"] = "看过"
++        };
++        var supported = official.SupportedStatuses
++            .Select(ReviewTargetResolver.NormalizeStatus)
++            .Where(labels.ContainsKey)
++            .Distinct(StringComparer.OrdinalIgnoreCase)
++            .ToList();
++        if (!supported.Contains(status, StringComparer.OrdinalIgnoreCase)) supported.Add(status);
++        record.DoubanStatusOptions = supported
++            .Select(value => new DoubanStatusOption(labels[value], string.Equals(value, status, StringComparison.OrdinalIgnoreCase)))
++            .ToList();
++
++        PromoteToHistory(record);
++        DiagnosticLogger.Write($"HTML authoritative cache overwrite; SubjectId={record.SubjectId}; Exists=true; Status={status}; Rating={official.Rating?.ToString() ?? "null"}; CommentLength={record.Comment.Length}; Source={official.Source}");
++        return true;
++    }
++
++    private static string FieldActionText(ReviewFieldAction action) => action switch
++    {
++        ReviewFieldAction.Keep => "keep",
++        ReviewFieldAction.Set => "set",
++        ReviewFieldAction.Clear => "clear",
++        _ => ""
++    };
++
+     private object WriteEnvelope(DoubanHistoryRecord record, DoubanWriteResult result, string connectorSource, bool localUpdated)
+     {
+         var phase = !string.IsNullOrWhiteSpace(result.Phase)
+@@ -505,5 +601,16 @@
+         return result;
+     }
+     private static bool ReadBool(JsonElement value, string name) => value.TryGetProperty(name, out var property) && property.ValueKind == JsonValueKind.True;
++    private static ReviewFieldAction ReadReviewFieldAction(JsonElement value, string name)
++    {
++        var text = ReadString(value, name).Trim().ToLowerInvariant();
++        return text switch
++        {
++            "keep" => ReviewFieldAction.Keep,
++            "set" => ReviewFieldAction.Set,
++            "clear" => ReviewFieldAction.Clear,
++            _ => throw new InvalidDataException($"{name}无效。")
++        };
++    }
+     private static void Copy(string value, Action<string> setter) { if (!string.IsNullOrWhiteSpace(value)) setter(value.Trim()); }
+ }
+diff -ruN '--exclude=SOURCE_SHA256SUMS.txt' '--exclude=PACKAGE_SHA256SUMS.txt' '--exclude=PREVIEW4_TO_PREVIEW6.patch' /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/OfficialReviewCachePolicy.cs /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/OfficialReviewCachePolicy.cs
+--- /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/OfficialReviewCachePolicy.cs	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/OfficialReviewCachePolicy.cs	2026-08-04 23:51:02.597322959 +0000
+@@ -0,0 +1,69 @@
++using System;
++using System.Threading;
++using System.Threading.Tasks;
++namespace QbPotDoubanAi;
++
++/// <summary>
++/// Local data is a cache only. A successful official read overwrites every known field,
++/// including null rating and empty comment. Unknown fields never masquerade as empty fields.
++/// </summary>
++internal static class OfficialReviewCachePolicy
++{
++    public static CachedReviewState Merge(
++        CachedReviewState? existing,
++        string subjectId,
++        string subjectUrl,
++        OfficialReviewSnapshot official,
++        DateTimeOffset verifiedAt)
++    {
++        ArgumentNullException.ThrowIfNull(official);
++
++        if (!official.ExistsKnown)
++            throw new InvalidOperationException("官方是否存在字段未知，不能覆盖本地缓存。");
++
++        if (!official.Exists)
++        {
++            return new CachedReviewState(
++                subjectId,
++                subjectUrl,
++                Exists: false,
++                Status: null,
++                Rating: null,
++                Comment: string.Empty,
++                VerifiedAt: verifiedAt,
++                Source: official.Source);
++        }
++
++        if (!official.StatusKnown || !official.RatingKnown || !official.CommentKnown)
++            throw new InvalidOperationException("官方评价字段不完整，不能进行权威覆盖。");
++
++        return new CachedReviewState(
++            subjectId,
++            subjectUrl,
++            Exists: true,
++            Status: ReviewTargetResolver.NormalizeStatus(official.Status),
++            Rating: official.Rating,
++            Comment: ReviewTargetResolver.NormalizeComment(official.Comment),
++            VerifiedAt: verifiedAt,
++            Source: official.Source);
++    }
++}
++
++internal sealed record CachedReviewState(
++    string SubjectId,
++    string SubjectUrl,
++    bool Exists,
++    string? Status,
++    int? Rating,
++    string Comment,
++    DateTimeOffset VerifiedAt,
++    string Source);
++
++internal interface IOfficialReviewCacheWriter
++{
++    Task<bool> OverwriteFromOfficialAsync(
++        string subjectId,
++        string subjectUrl,
++        OfficialReviewSnapshot official,
++        CancellationToken cancellationToken);
++}
+diff -ruN '--exclude=SOURCE_SHA256SUMS.txt' '--exclude=PACKAGE_SHA256SUMS.txt' '--exclude=PREVIEW4_TO_PREVIEW6.patch' /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/PACKAGE_VERSION.txt /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/PACKAGE_VERSION.txt
+--- /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/PACKAGE_VERSION.txt	2026-08-04 22:15:18.000000000 +0000
++++ /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/PACKAGE_VERSION.txt	2026-08-05 00:04:23.503379195 +0000
+@@ -1,7 +1,8 @@
+-﻿Package: DoubanReview_0.9.0-preview.4_Fixed_Source_2026-08-05
+-Product source version: 0.9.0-preview.4
+-Source baseline: 0.9.0-preview.1
++Package: DoubanReview_0.9.0-preview.6_Source_Integrated_2026-08-05
++Product source version: 0.9.0-preview.6
++Source baseline: 0.9.0-preview.4
+ Stable baseline: stable-v0.8.9
+-Purpose: corrected, build-ready source package for the official-form capability and stable readback fixes
+-Compiled preview.4 EXE included: no (the packaging environment has no .NET SDK or Windows WebView2 runtime)
+-Historical preview.1 EXE included: no (removed to prevent version confusion)
++Purpose: stage-1 review pipeline rewrite (explicit Keep/Set/Clear, web-authoritative read, official requestSubmit settlement and readback)
++Delete support: intentionally disabled until the stage-2 deletion transaction is implemented and verified
++Compiled preview.6 EXE included: no
++Build method: run BUILD_PREVIEW.cmd on Windows with .NET 8 SDK and WebView2 Runtime
+diff -ruN '--exclude=SOURCE_SHA256SUMS.txt' '--exclude=PACKAGE_SHA256SUMS.txt' '--exclude=PREVIEW4_TO_PREVIEW6.patch' /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/README.md /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/README.md
+--- /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/README.md	2026-08-04 21:19:04.000000000 +0000
++++ /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/README.md	2026-08-05 00:08:18.933277416 +0000
+@@ -1,10 +1,10 @@
+-﻿# 观影助手
++# 观影助手
+ 
+ 观影助手是 Windows 桌面观影与豆瓣评分提醒工具。它支持 PotPlayer 播放监控，并可启动独立 Chrome / Edge 观影浏览器；作品完成后自动进入影片身份核验、评分、观点问答和 AI 短评流程。
+ 
+ ## 当前版本
+ 
+-当前开发预览：`0.9.0-preview.2`；当前正式发布版与长期稳定版仍为 `0.8.9`。本预览只用于统一豆瓣保存流程验证，不覆盖 `v0.8.9`、`stable-v0.8.9` 或任何历史正式发布物。
++当前开发预览：`0.9.0-preview.6`；当前正式发布版与长期稳定版仍为 `0.8.9`。本预览只用于统一豆瓣保存流程验证，不覆盖 `v0.8.9`、`stable-v0.8.9` 或任何历史正式发布物。
+ 
+ ## 功能
+ 
+@@ -14,7 +14,7 @@
+ - 支持豆瓣历史导入、历史详情、搜索、分页和海报展示。
+ - 托盘“影视库”使用本地 HTML 界面统一展示看过、想看、在看、软件记录和豆瓣在线搜索；每页最多 40 条，在线搜索缓存与历史数据保持分离。
+ - 软件内使用豆瓣官方页面扫码登录；专用 WebView2 Profile 支持无需启动外部 Chrome 的豆瓣搜索与详情读取，首次使用需要重新扫码。
+-- 内置 WebView2 连接器优先读取豆瓣，既有 CDP 连接器保留为只读回退；开发预览可在专用豆瓣 WebView2 Profile 中通过一个“保存到豆瓣”按钮，一次填写官方状态、评分和短评表单，并在官方回读全部请求字段后才更新本地镜像。标签写入暂不开放。
++- 内置 WebView2 连接器优先读取豆瓣，既有 CDP 连接器保留为只读回退；开发预览可在专用豆瓣 WebView2 Profile 中通过一个“保存到豆瓣”按钮提交状态、评分和短评；评分与短评支持保持、设置、清除三态，保存前以网页当前值为准，只有提交稳定且官方回读全部匹配后才更新本地镜像。软件内删除暂时停用，需在豆瓣网页删除后重新打开详情同步。标签写入暂不开放。
+ - 豆瓣详情支持剧情简介、导演、IMDb、首页最多 8 位演员姓名与头像，以及全部演职员的姓名、头像和岗位。
+ - 演员头像和海报通过受控本地图片资源加载，优先保留豆瓣原始 WebP，失败时再尝试官方 JPEG 变体；若演职员页只给出 `has_douban` 默认图，则按已有豆瓣人物页链接读取 `img.avatar` 真实头像；头像使用独立 300MB 最近使用缓存，海报使用独立缓存。
+ - 豆瓣详情通过独立 Chrome 后台读取，完成后精确关闭临时页面，并静默清理旧版遗留空白页。
+@@ -30,7 +30,7 @@
+ 4. 正常播放影片；达到默认 92% 进度和 10 分钟实际观看后，会出现评价提醒。
+ 5. 按流程确认身份、评分、回答问题并生成短评，然后复制并打开豆瓣。
+ 
+-双击 `BUILD_PREVIEW.cmd` 可在安装了 .NET 8 SDK 的 Windows 电脑上恢复依赖、编译、发布并运行内置自检。生成目录为 `artifacts\观影助手-v0.9.0-preview.2-win-x64`，其中包含 EXE、SHA-256 构建信息、自检结果和本次实现/验证报告。
++双击 `BUILD_PREVIEW.cmd` 可在安装了 .NET 8 SDK 的 Windows 电脑上恢复依赖、编译、发布并运行内置自检。生成目录为 `artifacts\观影助手-v0.9.0-preview.6-win-x64`，其中包含 EXE、SHA-256 构建信息、自检结果和本次实现/验证报告。
+ 
+ 命令行检查：
+ 
+diff -ruN '--exclude=SOURCE_SHA256SUMS.txt' '--exclude=PACKAGE_SHA256SUMS.txt' '--exclude=PREVIEW4_TO_PREVIEW6.patch' /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/ReviewSettlementPolicy.cs /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/ReviewSettlementPolicy.cs
+--- /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/ReviewSettlementPolicy.cs	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/ReviewSettlementPolicy.cs	2026-08-04 23:51:02.597335408 +0000
+@@ -0,0 +1,94 @@
++using System;
++namespace QbPotDoubanAi;
++
++internal sealed record ReviewSettlementProbe(
++    string Url,
++    string ReadyState,
++    bool NavigationStarted,
++    bool NavigationCompleted,
++    bool OfficialFormVisible,
++    bool Captcha,
++    bool LoginPage,
++    OfficialReviewSnapshot? InlineReadback,
++    object? Diagnostic);
++
++/// <summary>
++/// Stateful settlement evaluator. It requires two consecutive stable samples and never treats
++/// elapsed time alone as success. The caller may poll, but timeout produces Uncertain, not Confirmed.
++/// </summary>
++internal sealed class ReviewSettlementPolicy
++{
++    private int _stableSamples;
++    private string _lastSignature = string.Empty;
++
++    public ReviewSettlementDecision Observe(
++        ReviewSettlementProbe probe,
++        ResolvedReviewTarget target)
++    {
++        ArgumentNullException.ThrowIfNull(probe);
++        ArgumentNullException.ThrowIfNull(target);
++
++        if (probe.Captcha)
++            return Terminal("captcha", "豆瓣要求验证码，提交无法确认。");
++        if (probe.LoginPage)
++            return Terminal("login", "豆瓣登录状态已失效，提交无法确认。");
++
++        var readbackMatches = probe.InlineReadback is not null &&
++                              ReviewWriteVerifier.Verify(target, probe.InlineReadback).Matches;
++        var navigationSettled = probe.NavigationStarted &&
++                                probe.NavigationCompleted &&
++                                string.Equals(probe.ReadyState, "complete", StringComparison.OrdinalIgnoreCase) &&
++                                !probe.OfficialFormVisible;
++
++        var state = readbackMatches ? "official-readback-matches"
++            : navigationSettled ? "navigation-complete-form-closed"
++            : "pending";
++        var signature = string.Join('|',
++            state,
++            probe.Url,
++            probe.ReadyState,
++            probe.OfficialFormVisible,
++            probe.InlineReadback?.Status,
++            probe.InlineReadback?.Rating,
++            probe.InlineReadback?.Comment);
++
++        if (state != "pending" && string.Equals(signature, _lastSignature, StringComparison.Ordinal))
++            _stableSamples++;
++        else
++            _stableSamples = state == "pending" ? 0 : 1;
++
++        _lastSignature = signature;
++
++        return new ReviewSettlementDecision(
++            Settled: _stableSamples >= 2,
++            TerminalFailure: false,
++            State: state,
++            StableSamples: _stableSamples,
++            Error: null,
++            Probe: probe);
++    }
++
++    public ReviewSettlementDecision Timeout(ReviewSettlementProbe? lastProbe) => new(
++        Settled: false,
++        TerminalFailure: false,
++        State: "timeout-uncertain",
++        StableSamples: _stableSamples,
++        Error: "豆瓣提交在限定探测次数内未形成稳定结算信号；结果标记为不确定，本地不写入目标值。",
++        Probe: lastProbe);
++
++    private ReviewSettlementDecision Terminal(string state, string error) => new(
++        Settled: false,
++        TerminalFailure: true,
++        State: state,
++        StableSamples: _stableSamples,
++        Error: error,
++        Probe: null);
++}
++
++internal sealed record ReviewSettlementDecision(
++    bool Settled,
++    bool TerminalFailure,
++    string State,
++    int StableSamples,
++    string? Error,
++    ReviewSettlementProbe? Probe);
+diff -ruN '--exclude=SOURCE_SHA256SUMS.txt' '--exclude=PACKAGE_SHA256SUMS.txt' '--exclude=PREVIEW4_TO_PREVIEW6.patch' /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/ReviewTargetResolver.cs /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/ReviewTargetResolver.cs
+--- /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/ReviewTargetResolver.cs	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/ReviewTargetResolver.cs	2026-08-04 23:51:02.597346975 +0000
+@@ -0,0 +1,126 @@
++using System;
++using System.Collections.Generic;
++using System.Linq;
++namespace QbPotDoubanAi;
++
++internal static class ReviewTargetResolver
++{
++    private static readonly HashSet<string> AllowedStatuses = new(StringComparer.OrdinalIgnoreCase)
++    {
++        "wish", "do", "collect"
++    };
++
++    public static ResolvedReviewTarget Resolve(
++        OfficialReviewSnapshot official,
++        DoubanEntryWriteRequestV2 request)
++    {
++        ArgumentNullException.ThrowIfNull(official);
++        ArgumentNullException.ThrowIfNull(request);
++
++        var status = NormalizeStatus(request.Status);
++        if (!AllowedStatuses.Contains(status))
++        {
++            throw new ReviewWriteBlockedException("请选择想看、在看或看过状态。");
++        }
++
++        if (!official.ExistsKnown || !official.StatusKnown)
++        {
++            throw new ReviewWriteBlockedException("豆瓣官方当前状态未读取完整，禁止提交。");
++        }
++
++        if (official.CapabilitiesKnown &&
++            !official.SupportedStatuses.Contains(status, StringComparer.OrdinalIgnoreCase))
++        {
++            throw new ReviewWriteBlockedException($"豆瓣官方编辑表单不支持目标状态：{status}。");
++        }
++
++        ValidateRequestShape(request);
++
++        bool implicitWishClear = false;
++        int? rating;
++        if (status.Equals("wish", StringComparison.OrdinalIgnoreCase))
++        {
++            if (request.RatingAction == ReviewFieldAction.Set)
++            {
++                throw new ReviewWriteBlockedException("想看状态不能设置评分。");
++            }
++
++            // Douban's final wish state must have no rating. This is a final-state rule,
++            // not an assumption that a click succeeded; readback must still verify null.
++            rating = null;
++            implicitWishClear = official.RatingKnown && official.Rating is not null;
++        }
++        else
++        {
++            rating = request.RatingAction switch
++            {
++                ReviewFieldAction.Keep when official.RatingKnown => official.Rating,
++                ReviewFieldAction.Keep => throw new ReviewWriteBlockedException("豆瓣官方评分未读取完整，无法安全保持原评分。"),
++                ReviewFieldAction.Set => request.Rating,
++                ReviewFieldAction.Clear => null,
++                _ => throw new ReviewWriteBlockedException("评分操作无效。")
++            };
++        }
++
++        string comment = request.CommentAction switch
++        {
++            ReviewFieldAction.Keep when official.CommentKnown => NormalizeComment(official.Comment),
++            ReviewFieldAction.Keep => throw new ReviewWriteBlockedException("豆瓣官方短评未读取完整，无法安全保持原短评。"),
++            ReviewFieldAction.Set => NormalizeComment(request.Comment),
++            ReviewFieldAction.Clear => string.Empty,
++            _ => throw new ReviewWriteBlockedException("短评操作无效。")
++        };
++
++        if (comment.Length > 330)
++        {
++            throw new ReviewWriteBlockedException("短评不能超过 330 字。");
++        }
++
++        return new ResolvedReviewTarget(status, rating, comment, implicitWishClear, request);
++    }
++
++    public static bool IsNoChange(OfficialReviewSnapshot official, ResolvedReviewTarget target)
++    {
++        return official.ExistsKnown && official.Exists &&
++               official.StatusKnown && string.Equals(NormalizeStatus(official.Status), target.Status, StringComparison.Ordinal) &&
++               official.RatingKnown && official.Rating == target.Rating &&
++               official.CommentKnown && string.Equals(NormalizeComment(official.Comment), target.Comment, StringComparison.Ordinal);
++    }
++
++    private static void ValidateRequestShape(DoubanEntryWriteRequestV2 request)
++    {
++        if (request.RatingAction == ReviewFieldAction.Set &&
++            (request.Rating is < 1 or > 5 || request.Rating is null))
++        {
++            throw new ReviewWriteBlockedException("设置评分时必须提供 1 到 5 星。");
++        }
++
++        if (request.RatingAction != ReviewFieldAction.Set && request.Rating is not null)
++        {
++            throw new ReviewWriteBlockedException("只有 Set 评分操作可以携带评分值。");
++        }
++
++        if (request.CommentAction == ReviewFieldAction.Set && NormalizeComment(request.Comment).Length > 330)
++        {
++            throw new ReviewWriteBlockedException("短评不能超过 330 字。");
++        }
++
++        if (request.CommentAction != ReviewFieldAction.Set && request.Comment is not null)
++        {
++            throw new ReviewWriteBlockedException("只有 Set 短评操作可以携带短评内容。");
++        }
++    }
++
++    internal static string NormalizeStatus(string? value) =>
++        (value ?? string.Empty).Trim().ToLowerInvariant();
++
++    internal static string NormalizeComment(string? value) =>
++        (value ?? string.Empty).Replace("\r\n", "\n", StringComparison.Ordinal).Trim();
++}
++
++internal sealed class ReviewWriteBlockedException : Exception
++{
++    public ReviewWriteBlockedException(string message) : base(message)
++    {
++    }
++}
+diff -ruN '--exclude=SOURCE_SHA256SUMS.txt' '--exclude=PACKAGE_SHA256SUMS.txt' '--exclude=PREVIEW4_TO_PREVIEW6.patch' /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/ReviewWriteCoordinator.cs /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/ReviewWriteCoordinator.cs
+--- /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/ReviewWriteCoordinator.cs	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/ReviewWriteCoordinator.cs	2026-08-04 23:54:43.536055146 +0000
+@@ -0,0 +1,203 @@
++using System;
++using System.Threading;
++using System.Threading.Tasks;
++namespace QbPotDoubanAi;
++
++internal interface IDoubanOfficialReviewGateway
++{
++    Task<OfficialReviewSnapshot> ReadOfficialAsync(
++        string subjectId,
++        string subjectUrl,
++        CancellationToken cancellationToken);
++
++    Task<ReviewSubmitReceipt> SubmitTargetAsync(
++        string subjectId,
++        string subjectUrl,
++        ResolvedReviewTarget target,
++        CancellationToken cancellationToken);
++
++    Task<ReviewSettlementResult> WaitForSettlementAsync(
++        string subjectId,
++        string subjectUrl,
++        ResolvedReviewTarget target,
++        ReviewSubmitReceipt receipt,
++        CancellationToken cancellationToken);
++}
++
++/// <summary>
++/// Four-stage pipeline: intent -> official submit -> official readback -> local cache.
++/// No click result, confirm dialog, URL change or fixed delay can independently produce success.
++/// </summary>
++internal sealed class ReviewWriteCoordinator
++{
++    private readonly IDoubanOfficialReviewGateway _gateway;
++    private readonly IOfficialReviewCacheWriter _cache;
++
++    public ReviewWriteCoordinator(
++        IDoubanOfficialReviewGateway gateway,
++        IOfficialReviewCacheWriter cache)
++    {
++        _gateway = gateway ?? throw new ArgumentNullException(nameof(gateway));
++        _cache = cache ?? throw new ArgumentNullException(nameof(cache));
++    }
++
++    public async Task<ReviewWriteResultV2> SaveAsync(
++        string subjectId,
++        string subjectUrl,
++        DoubanEntryWriteRequestV2 request,
++        CancellationToken cancellationToken = default)
++    {
++        ArgumentException.ThrowIfNullOrWhiteSpace(subjectId);
++        ArgumentException.ThrowIfNullOrWhiteSpace(subjectUrl);
++        ArgumentNullException.ThrowIfNull(request);
++
++        OfficialReviewSnapshot? before = null;
++        ResolvedReviewTarget? target = null;
++
++        try
++        {
++            before = await _gateway.ReadOfficialAsync(subjectId, subjectUrl, cancellationToken)
++                .ConfigureAwait(true);
++
++            if (before.Error is not null || !before.ExistsKnown || !before.StatusKnown)
++            {
++                return ReviewWriteResultV2.Blocked(
++                    "official-read",
++                    request,
++                    before,
++                    before.Error ?? "豆瓣官方当前评价未读取完整。");
++            }
++
++            // The web is authoritative even before this save. Refresh the local cache from the
++            // successful complete read rather than preserving stale local values.
++            if (before.ExistsKnown && (!before.Exists ||
++                (before.StatusKnown && before.RatingKnown && before.CommentKnown)))
++            {
++                await _cache.OverwriteFromOfficialAsync(subjectId, subjectUrl, before, cancellationToken)
++                    .ConfigureAwait(true);
++            }
++
++            target = ReviewTargetResolver.Resolve(before, request);
++
++            if (ReviewTargetResolver.IsNoChange(before, target))
++            {
++                return new ReviewWriteResultV2(
++                    Phase: ReviewWritePhase.Confirmed,
++                    Stage: "no-change",
++                    Settled: true,
++                    LocalUpdated: true,
++                    Requested: request,
++                    Target: target,
++                    Before: before,
++                    Official: before,
++                    Error: null,
++                    Diagnostic: new { reason = "official-already-matches-target" });
++            }
++
++            var receipt = await _gateway.SubmitTargetAsync(
++                    subjectId,
++                    subjectUrl,
++                    target,
++                    cancellationToken)
++                .ConfigureAwait(true);
++
++            if (!receipt.SubmitEventObserved || receipt.Error is not null)
++            {
++                return new ReviewWriteResultV2(
++                    Phase: ReviewWritePhase.Failed,
++                    Stage: "submit",
++                    Settled: false,
++                    LocalUpdated: false,
++                    Requested: request,
++                    Target: target,
++                    Before: before,
++                    Official: null,
++                    Error: receipt.Error ?? "官方表单未观察到 submit 事件。",
++                    Diagnostic: receipt.Diagnostic);
++            }
++
++            var settlement = await _gateway.WaitForSettlementAsync(
++                    subjectId,
++                    subjectUrl,
++                    target,
++                    receipt,
++                    cancellationToken)
++                .ConfigureAwait(true);
++
++            if (!settlement.Settled)
++            {
++                return new ReviewWriteResultV2(
++                    Phase: settlement.TerminalFailure ? ReviewWritePhase.Failed : ReviewWritePhase.Uncertain,
++                    Stage: "settlement",
++                    Settled: false,
++                    LocalUpdated: false,
++                    Requested: request,
++                    Target: target,
++                    Before: before,
++                    Official: null,
++                    Error: settlement.Error ?? "豆瓣提交结果尚未确认。",
++                    Diagnostic: new { receipt, settlement });
++            }
++
++            var official = await _gateway.ReadOfficialAsync(subjectId, subjectUrl, cancellationToken)
++                .ConfigureAwait(true);
++            var verification = ReviewWriteVerifier.Verify(target, official);
++
++            if (!verification.Matches)
++            {
++                return new ReviewWriteResultV2(
++                    Phase: ReviewWritePhase.Uncertain,
++                    Stage: "readback",
++                    Settled: true,
++                    LocalUpdated: false,
++                    Requested: request,
++                    Target: target,
++                    Before: before,
++                    Official: official,
++                    Error: string.Join("；", verification.Mismatches),
++                    Diagnostic: new { receipt, settlement, verification });
++            }
++
++            var localUpdated = await _cache.OverwriteFromOfficialAsync(
++                    subjectId,
++                    subjectUrl,
++                    official,
++                    cancellationToken)
++                .ConfigureAwait(true);
++
++            return new ReviewWriteResultV2(
++                Phase: ReviewWritePhase.Confirmed,
++                Stage: "readback",
++                Settled: true,
++                LocalUpdated: localUpdated,
++                Requested: request,
++                Target: target,
++                Before: before,
++                Official: official,
++                Error: null,
++                Diagnostic: new { receipt, settlement });
++        }
++        catch (ReviewWriteBlockedException ex)
++        {
++            return ReviewWriteResultV2.Blocked("resolve-target", request, before, ex.Message);
++        }
++        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
++        {
++            throw;
++        }
++        catch (Exception ex)
++        {
++            return new ReviewWriteResultV2(
++                Phase: ReviewWritePhase.Failed,
++                Stage: "exception",
++                Settled: false,
++                LocalUpdated: false,
++                Requested: request,
++                Target: target,
++                Before: before,
++                Official: null,
++                Error: ex.Message,
++                Diagnostic: ex.ToString());
++        }
++    }
++}
+diff -ruN '--exclude=SOURCE_SHA256SUMS.txt' '--exclude=PACKAGE_SHA256SUMS.txt' '--exclude=PREVIEW4_TO_PREVIEW6.patch' /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/ReviewWriteModels.cs /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/ReviewWriteModels.cs
+--- /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/ReviewWriteModels.cs	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/ReviewWriteModels.cs	2026-08-04 23:51:02.597373584 +0000
+@@ -0,0 +1,173 @@
++using System;
++using System.Collections.Generic;
++using System.Text.Json;
++using System.Text.Json.Serialization;
++
++namespace QbPotDoubanAi;
++
++/// <summary>
++/// Explicit mutation semantics. Null is a value; it is no longer overloaded to mean "do not change".
++/// </summary>
++[JsonConverter(typeof(ReviewFieldActionJsonConverter))]
++internal enum ReviewFieldAction
++{
++    Keep,
++    Set,
++    Clear
++}
++
++
++internal sealed class ReviewFieldActionJsonConverter : JsonConverter<ReviewFieldAction>
++{
++    public ReviewFieldActionJsonConverter()
++    {
++    }
++
++    public override ReviewFieldAction Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
++    {
++        if (reader.TokenType != JsonTokenType.String)
++            throw new JsonException("Review field action must be a string.");
++
++        return (reader.GetString() ?? string.Empty).Trim().ToLowerInvariant() switch
++        {
++            "keep" => ReviewFieldAction.Keep,
++            "set" => ReviewFieldAction.Set,
++            "clear" => ReviewFieldAction.Clear,
++            _ => throw new JsonException("Review field action must be keep, set, or clear.")
++        };
++    }
++
++    public override void Write(Utf8JsonWriter writer, ReviewFieldAction value, JsonSerializerOptions options)
++    {
++        writer.WriteStringValue(value switch
++        {
++            ReviewFieldAction.Keep => "keep",
++            ReviewFieldAction.Set => "set",
++            ReviewFieldAction.Clear => "clear",
++            _ => throw new JsonException("Unknown review field action.")
++        });
++    }
++}
++
++internal sealed record DoubanEntryWriteRequestV2(
++    string Status,
++    ReviewFieldAction RatingAction,
++    int? Rating,
++    ReviewFieldAction CommentAction,
++    string? Comment);
++
++/// <summary>
++/// An authoritative snapshot read from Douban's official edit form.
++/// Every nullable value has a separate Known flag so "known empty" is not confused with "read failed".
++/// </summary>
++internal sealed record OfficialReviewSnapshot(
++    bool ExistsKnown,
++    bool Exists,
++    bool StatusKnown,
++    string? Status,
++    bool RatingKnown,
++    int? Rating,
++    bool CommentKnown,
++    string? Comment,
++    bool CapabilitiesKnown,
++    IReadOnlyList<string> SupportedStatuses,
++    bool CanSetRating,
++    bool CanClearRating,
++    bool CanEditComment,
++    string Source,
++    string? Error)
++{
++    public static OfficialReviewSnapshot Unknown(string source, string error) => new(
++        ExistsKnown: false,
++        Exists: false,
++        StatusKnown: false,
++        Status: null,
++        RatingKnown: false,
++        Rating: null,
++        CommentKnown: false,
++        Comment: null,
++        CapabilitiesKnown: false,
++        SupportedStatuses: Array.Empty<string>(),
++        CanSetRating: false,
++        CanClearRating: false,
++        CanEditComment: false,
++        Source: source,
++        Error: error);
++}
++
++/// <summary>
++/// Fully resolved final state. The submitter receives this object, not the ambiguous UI mutation request.
++/// </summary>
++internal sealed record ResolvedReviewTarget(
++    string Status,
++    int? Rating,
++    string Comment,
++    bool RatingWasImplicitlyClearedByWish,
++    DoubanEntryWriteRequestV2 Intent);
++
++internal enum ReviewWritePhase
++{
++    ReadingOfficial,
++    ResolvingTarget,
++    NoChange,
++    FillingForm,
++    Submitting,
++    WaitingForSettlement,
++    ReadingBack,
++    Verifying,
++    UpdatingLocalCache,
++    Confirmed,
++    Blocked,
++    Failed,
++    Uncertain
++}
++
++internal sealed record ReviewSubmitReceipt(
++    bool SubmitEventObserved,
++    bool SubmitDefaultPrevented,
++    string InitialUrl,
++    string? FormAction,
++    string? Error,
++    object? Diagnostic);
++
++internal sealed record ReviewSettlementResult(
++    bool Settled,
++    bool TerminalFailure,
++    string State,
++    int Attempts,
++    string? Error,
++    object? LastProbe);
++
++internal sealed record ReviewVerificationResult(
++    bool Matches,
++    IReadOnlyList<string> Mismatches);
++
++internal sealed record ReviewWriteResultV2(
++    ReviewWritePhase Phase,
++    string Stage,
++    bool Settled,
++    bool LocalUpdated,
++    DoubanEntryWriteRequestV2 Requested,
++    ResolvedReviewTarget? Target,
++    OfficialReviewSnapshot? Before,
++    OfficialReviewSnapshot? Official,
++    string? Error,
++    object? Diagnostic)
++{
++    public static ReviewWriteResultV2 Blocked(
++        string stage,
++        DoubanEntryWriteRequestV2 request,
++        OfficialReviewSnapshot? before,
++        string error,
++        object? diagnostic = null) => new(
++            Phase: ReviewWritePhase.Blocked,
++            Stage: stage,
++            Settled: false,
++            LocalUpdated: false,
++            Requested: request,
++            Target: null,
++            Before: before,
++            Official: null,
++            Error: error,
++            Diagnostic: diagnostic);
++}
+diff -ruN '--exclude=SOURCE_SHA256SUMS.txt' '--exclude=PACKAGE_SHA256SUMS.txt' '--exclude=PREVIEW4_TO_PREVIEW6.patch' /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/ReviewWriteVerifier.cs /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/ReviewWriteVerifier.cs
+--- /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/ReviewWriteVerifier.cs	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/ReviewWriteVerifier.cs	2026-08-04 23:51:02.597385172 +0000
+@@ -0,0 +1,46 @@
++using System;
++using System.Collections.Generic;
++namespace QbPotDoubanAi;
++
++internal static class ReviewWriteVerifier
++{
++    public static ReviewVerificationResult Verify(
++        ResolvedReviewTarget target,
++        OfficialReviewSnapshot official)
++    {
++        ArgumentNullException.ThrowIfNull(target);
++        ArgumentNullException.ThrowIfNull(official);
++
++        var mismatches = new List<string>();
++
++        if (!official.ExistsKnown)
++            mismatches.Add("评价是否存在：官方回读未知");
++        else if (!official.Exists)
++            mismatches.Add("评价是否存在：官方回读为不存在");
++
++        if (!official.StatusKnown)
++            mismatches.Add("状态：官方回读未知");
++        else if (!string.Equals(
++                     ReviewTargetResolver.NormalizeStatus(official.Status),
++                     target.Status,
++                     StringComparison.Ordinal))
++            mismatches.Add($"状态：目标 {target.Status}，官方 {official.Status ?? "<空>"}");
++
++        if (!official.RatingKnown)
++            mismatches.Add("评分：官方回读未知");
++        else if (official.Rating != target.Rating)
++            mismatches.Add($"评分：目标 {FormatRating(target.Rating)}，官方 {FormatRating(official.Rating)}");
++
++        if (!official.CommentKnown)
++            mismatches.Add("短评：官方回读未知");
++        else if (!string.Equals(
++                     ReviewTargetResolver.NormalizeComment(official.Comment),
++                     target.Comment,
++                     StringComparison.Ordinal))
++            mismatches.Add("短评：官方回读与目标不一致");
++
++        return new ReviewVerificationResult(mismatches.Count == 0, mismatches);
++    }
++
++    private static string FormatRating(int? value) => value is null ? "无评分" : $"{value} 星";
++}
+diff -ruN '--exclude=SOURCE_SHA256SUMS.txt' '--exclude=PACKAGE_SHA256SUMS.txt' '--exclude=PREVIEW4_TO_PREVIEW6.patch' /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/SelfTest.cs /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/SelfTest.cs
+--- /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/SelfTest.cs	2026-08-04 22:15:18.000000000 +0000
++++ /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/SelfTest.cs	2026-08-05 00:00:04.875308074 +0000
+@@ -1,4 +1,4 @@
+-﻿using System.Net;
++using System.Net;
+ using System.Net.Sockets;
+ 
+ namespace QbPotDoubanAi;
+@@ -110,19 +110,26 @@
+         Check("豆瓣删除使用可持久化 tombstone", tombstoneRoundTrip?.Tombstoned == true && tombstoneRoundTrip.TombstoneReason == "test");
+         Check("认证徽章不会被当成人物头像", string.IsNullOrWhiteSpace(BrowserCdpService.NormalizeAvatarUrl("https://img1.doubanio.com/f/shire/test/pics/ic_verify@2x.png")));
+         Check("豆瓣人物真实头像仍可使用", BrowserCdpService.NormalizeAvatarUrl("https://img1.doubanio.com/view/personage/m/public/real.jpg").Contains("/view/personage/", StringComparison.Ordinal));
+-        Check("豆瓣统一写入只使用官方 DOM 控件", DoubanWebView2Connector.DoubanWriteOpenScriptV2.Contains("pbtn-", StringComparison.Ordinal) && DoubanWebView2Connector.DoubanWriteSubmitScriptV2.Contains("submit.click()", StringComparison.OrdinalIgnoreCase) && !DoubanWebView2Connector.DoubanWriteSubmitScriptV2.Contains("fetch(", StringComparison.OrdinalIgnoreCase) && !DoubanWebView2Connector.DoubanWriteSubmitScriptV2.Contains("document.cookie", StringComparison.OrdinalIgnoreCase));
+-        Check("豆瓣删除回读三个官方列表", DoubanWebView2Connector.DoubanHistoryContainsSubjectScript.Contains("subject/", StringComparison.Ordinal) && DoubanWebView2Connector.DoubanHistoryContainsSubjectScript.Contains("contains", StringComparison.Ordinal));
+-        Check("豆瓣删除仅接受个人区域唯一官方控件", DoubanWebView2Connector.DoubanDeleteControlScript.Contains("candidate", StringComparison.Ordinal) && DoubanWebView2Connector.DoubanDeleteControlScript.Contains("a_confirm_link", StringComparison.Ordinal));
++        var reviewIntent = new DoubanEntryWriteRequestV2("collect", ReviewFieldAction.Set, 4, ReviewFieldAction.Clear, null);
++        var reviewTarget = new ResolvedReviewTarget("collect", 4, "", false, reviewIntent);
++        var reviewSubmitScript = DoubanOfficialFormScripts.BuildSubmitScript("1", reviewTarget);
++        Check("豆瓣评价 v2 只使用官方 DOM 表单", reviewSubmitScript.Contains("requestSubmit", StringComparison.Ordinal) && !reviewSubmitScript.Contains("fetch(", StringComparison.OrdinalIgnoreCase) && !reviewSubmitScript.Contains("document.cookie", StringComparison.OrdinalIgnoreCase));
++        Check("豆瓣评价 v2 不直接写隐藏评分值", reviewSubmitScript.Contains("input[name=\"rating\"]", StringComparison.Ordinal) && !reviewSubmitScript.Contains("ratingHidden.value =", StringComparison.Ordinal));
+         Check("豆瓣写入使用固定 Profile 快照回退", DoubanWebView2Connector.DoubanWriteSnapshotScript.Contains("__PROFILE_ID__", StringComparison.Ordinal) && DoubanWebView2Connector.DoubanWriteSnapshotScript.Contains("fixedProfileId", StringComparison.Ordinal));
+         using var diagnosticProbe = System.Text.Json.JsonDocument.Parse("{\"loginPage\":false,\"profileId\":\"123\"}");
+         Check("豆瓣诊断字段兼容 JSON 布尔值", DoubanWebView2Connector.ReadDiagnosticValue(diagnosticProbe.RootElement, "loginPage") == "False" && DoubanWebView2Connector.ReadDiagnosticValue(diagnosticProbe.RootElement, "profileId") == "123");
+-        Check("豆瓣评分控件识别覆盖 id/title/class", DoubanWebView2Connector.DoubanWriteSubmitScriptV2.Contains("node.id", StringComparison.Ordinal) && DoubanWebView2Connector.DoubanWriteSubmitScriptV2.Contains("'title'", StringComparison.Ordinal) && DoubanWebView2Connector.DoubanWriteSubmitScriptV2.Contains("hiddenValue", StringComparison.Ordinal));
+         Check("豆瓣状态编辑受控回退到个人区域", DoubanWebView2Connector.DoubanWriteOpenScriptV2.Contains("pbtn-", StringComparison.Ordinal) && DoubanWebView2Connector.DoubanWriteOpenScriptV2.Contains("personal", StringComparison.Ordinal));
+-        Check("统一保存操作受固定白名单保护", HtmlMediaLibraryForm.IsAllowedOperation("saveDoubanEntry") && HtmlMediaLibraryForm.IsAllowedOperation("deleteEntry") && !HtmlMediaLibraryForm.IsAllowedOperation("setStatus") && !HtmlMediaLibraryForm.IsAllowedOperation("setRating") && !HtmlMediaLibraryForm.IsAllowedOperation("saveShortReview") && !HtmlMediaLibraryForm.IsAllowedOperation("deleteAll"));
+-        Check("统一保存一次填写状态评分短评", DoubanWebView2Connector.DoubanWriteSubmitScriptV2.Contains("input[name=\"interest\"]", StringComparison.Ordinal) && DoubanWebView2Connector.DoubanWriteSubmitScriptV2.Contains("payload.rating!==null", StringComparison.Ordinal) && DoubanWebView2Connector.DoubanWriteSubmitScriptV2.Contains("payload.setComment", StringComparison.Ordinal));
+-        Check("统一保存提交前校验官方表单能力", DoubanWebView2Connector.DoubanWriteFormProbeScript.Contains("interestOptions", StringComparison.Ordinal) && DoubanWebView2Connector.DoubanWriteFormProbeScript.Contains("ratingControlCount", StringComparison.Ordinal) && DoubanWebView2Connector.DoubanWriteFormProbeScript.Contains("commentControlCount", StringComparison.Ordinal));
+-        Check("统一保存使用条件轮询等待提交完成", DoubanWebView2Connector.DoubanWritePostSubmitProbeScript.Contains("formOpen", StringComparison.Ordinal) && DoubanWebView2Connector.DoubanWritePostSubmitProbeScript.Contains("readyState", StringComparison.Ordinal));
+-        Check("想看与评分组合在 C# 层被拒绝", !string.IsNullOrWhiteSpace(DoubanWebView2Connector.ValidateEntryRequest(new DoubanEntryWriteRequest("wish", 5, false, ""))) && string.IsNullOrWhiteSpace(DoubanWebView2Connector.ValidateEntryRequest(new DoubanEntryWriteRequest("collect", null, false, ""))));
++        Check("统一保存操作受固定白名单保护", HtmlMediaLibraryForm.IsAllowedOperation("saveDoubanEntry") && !HtmlMediaLibraryForm.IsAllowedOperation("deleteEntry") && !HtmlMediaLibraryForm.IsAllowedOperation("delete") && !HtmlMediaLibraryForm.IsAllowedOperation("setStatus") && !HtmlMediaLibraryForm.IsAllowedOperation("setRating") && !HtmlMediaLibraryForm.IsAllowedOperation("saveShortReview") && !HtmlMediaLibraryForm.IsAllowedOperation("deleteAll"));
++        Check("评价字段支持 Keep Set Clear 三态", Enum.GetValues<ReviewFieldAction>().SequenceEqual([ReviewFieldAction.Keep, ReviewFieldAction.Set, ReviewFieldAction.Clear]));
++        var existingOfficial = new OfficialReviewSnapshot(true, true, true, "collect", true, 5, true, "网页短评", true, ["wish", "do", "collect"], true, true, true, "self-test", null);
++        var keepRequest = new DoubanEntryWriteRequestV2("do", ReviewFieldAction.Keep, null, ReviewFieldAction.Keep, null);
++        var keepTarget = ReviewTargetResolver.Resolve(existingOfficial, keepRequest);
++        Check("只改状态时保持网页最新评分短评", keepTarget.Status == "do" && keepTarget.Rating == 5 && keepTarget.Comment == "网页短评");
++        var clearRequest = new DoubanEntryWriteRequestV2("collect", ReviewFieldAction.Clear, null, ReviewFieldAction.Clear, null);
++        var clearTarget = ReviewTargetResolver.Resolve(existingOfficial, clearRequest);
++        Check("评分和短评可明确清除", clearTarget.Rating is null && clearTarget.Comment == "");
++        Check("官方表单空评分仍标记为已知", DoubanWebView2Connector.DoubanWriteFormProbeScript.Contains("const ratingKnown=!!ratingHidden", StringComparison.Ordinal));
++        Check("统一保存使用连续稳定结算", DoubanWebView2Connector.DoubanWritePostSubmitProbeScript.Contains("formOpen", StringComparison.Ordinal) && new ReviewSettlementPolicy().Timeout(null).State == "timeout-uncertain");
+         Check("豆瓣默认占位头像不会伪装成演员头像", BrowserCdpService.NormalizeAvatarUrl("https://img1.doubanio.com/cuphead/movie-static/pics/has_douban@2x.png") == "" && BrowserCdpService.NormalizeAvatarUrl("https://img1.doubanio.com/view/personage/m/public/a.jpg").EndsWith("a.jpg", StringComparison.Ordinal));
+         Check("豆瓣协议相对头像会正规化为 HTTPS", BrowserCdpService.NormalizeAvatarUrl("//img1.doubanio.com/view/personage/m/public/a.webp") == "https://img1.doubanio.com/view/personage/m/public/a.webp");
+         Check("豆瓣默认用户头像会被过滤", BrowserCdpService.NormalizeAvatarUrl("https://img1.doubanio.com/default_avatar.png") == "");
+diff -ruN '--exclude=SOURCE_SHA256SUMS.txt' '--exclude=PACKAGE_SHA256SUMS.txt' '--exclude=PREVIEW4_TO_PREVIEW6.patch' /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/VERSION /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/VERSION
+--- /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/VERSION	2026-08-04 22:15:18.000000000 +0000
++++ /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/VERSION	2026-08-05 00:00:04.875089990 +0000
+@@ -1 +1 @@
+-0.9.0-preview.4
++0.9.0-preview.6
+diff -ruN '--exclude=SOURCE_SHA256SUMS.txt' '--exclude=PACKAGE_SHA256SUMS.txt' '--exclude=PREVIEW4_TO_PREVIEW6.patch' /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/WebAssets/MediaLibrary/app.js /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/WebAssets/MediaLibrary/app.js
+--- /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/WebAssets/MediaLibrary/app.js	2026-08-04 21:19:04.000000000 +0000
++++ /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/WebAssets/MediaLibrary/app.js	2026-08-05 00:06:34.274383461 +0000
+@@ -1,4 +1,4 @@
+-﻿"use strict";
++"use strict";
+ 
+ const PAGE_SIZE = 40;
+ const state = {
+@@ -298,25 +298,19 @@
+   $("writePanel").classList.remove("hidden");
+   const statusLabels = { wish: "想看", do: "在看", collect: "看过" };
+   const options = Array.isArray(detail.statusOptions) ? detail.statusOptions : [];
+-  const capabilitiesKnown = detail.statusCapabilitiesKnown === true;
+   const selectedStatusText = options.find(option => option.selected)?.text || "";
+   const selectedStatus = Object.keys(statusLabels).find(status => statusLabels[status] === selectedStatusText) || "";
+   document.querySelectorAll("#writeStatuses button").forEach(button => {
+-    const available = options.some(option => option.text === statusLabels[button.dataset.status]);
+-    button.classList.remove("hidden");
+-    button.dataset.capabilityBlocked = capabilitiesKnown && !available ? "true" : "false";
+-    button.disabled = state.writeBusy || button.dataset.capabilityBlocked === "true";
+-    button.classList.toggle("unsupported", button.dataset.capabilityBlocked === "true");
++    // A target-specific Douban form cannot be treated as the complete capability list.
++    // Keep all three states selectable and verify the requested target during save.
++    button.classList.remove("hidden", "unsupported");
++    button.dataset.capabilityBlocked = "false";
++    button.disabled = state.writeBusy;
+     button.classList.toggle("selected", selectedStatus === button.dataset.status);
+-    button.title = button.dataset.capabilityBlocked === "true"
+-      ? `官方编辑表单不提供“${statusLabels[button.dataset.status]}”`
+-      : capabilitiesKnown ? "已由官方编辑表单确认可用" : "状态能力将在保存前通过官方编辑表单再次确认";
++    button.title = "保存时将按目标状态打开豆瓣官方表单并回读确认";
+   });
+   state.writeBaseline = { status: selectedStatus, rating: detail.rating ? Number(detail.rating) : null, comment: String(detail.comment || "").trim() };
+-  const capabilityNote = capabilitiesKnown
+-    ? "官方表单能力已确认"
+-    : (detail.statusCapabilityError || "状态能力将在保存前确认");
+-  $("statusCurrent").textContent = `当前：${selectedStatusText || "—"} · ${capabilityNote}`;
++  $("statusCurrent").textContent = `当前：${selectedStatusText || "—"} · 保存时按目标状态确认`;
+   $("ratingCurrent").textContent = `当前：${detail.rating ? `${detail.rating} 星` : "未评分"}`;
+   $("reviewCurrent").textContent = `当前：${detail.comment || "空"}`;
+   $("writeReview").value = detail.comment || "";
+@@ -331,24 +325,12 @@
+   const operationLabel = { saveDoubanEntry: "统一保存", deleteEntry: "删除", delete: "删除" }[op] || op;
+   renderWriteOutcome({ phase: "submitting", stage: "snapshot", operation: operationLabel, requested: payload, official: {}, localUpdated: false });
+   setWriteBusy(true);
+-  let keepLockedAfterDelete = false;
+   try {
+     const response = await request(op, { subjectId: state.currentDetail.subjectId, subjectUrl: state.currentDetail.subjectUrl, ...payload });
+     const detail = response?.detail || response;
+     const write = response?.write || { phase: "confirmed", operation: operationLabel, requested: payload, official: {}, localUpdated: false, error: "" };
+     renderWriteOutcome({ ...write, operation: operationLabel });
+ 
+-    if ((op === "deleteEntry" || op === "delete") && write.phase === "confirmed") {
+-      state.currentDetail = detail;
+-      renderDetail(detail);
+-      renderWriteOutcome({ ...write, operation: operationLabel });
+-      $("writePanel").classList.remove("hidden");
+-      $("writePanel").querySelectorAll("button:not(#writeOutcome button),textarea").forEach(control => control.disabled = true);
+-      keepLockedAfterDelete = true;
+-      if (state.activeTab !== "software" && state.activeTab !== "search") void refreshLiveLibrary(state.activeTab, 0);
+-      showToast(successText);
+-      return;
+-    }
+     if (write.phase === "confirmed") {
+       state.currentDetail = detail;
+       renderDetail(detail);
+@@ -361,12 +343,12 @@
+     renderWriteOutcome({ phase: "failed", stage: "snapshot", operation: operationLabel, requested: payload, official: {}, localUpdated: false, error: message });
+     showToast(message);
+   } finally {
+-    if (!keepLockedAfterDelete) setWriteBusy(false);
++    setWriteBusy(false);
+   }
+ }
+ 
+ function selectedWriteStatus() {
+-  return document.querySelector("#writeStatuses button.selected:not(.hidden):not(:disabled)")?.dataset.status || "";
++  return document.querySelector("#writeStatuses button.selected:not(.hidden)")?.dataset.status || "";
+ }
+ 
+ function statusText(status) {
+@@ -375,7 +357,7 @@
+ 
+ function setWriteStatus(status) {
+   const target = document.querySelector(`#writeStatuses button[data-status="${status}"]`);
+-  if (!target || target.disabled || target.dataset.capabilityBlocked === "true") return;
++  if (!target || state.writeBusy) return;
+   document.querySelectorAll("#writeStatuses button[data-status]").forEach(button => {
+     button.classList.toggle("selected", button.dataset.status === status);
+   });
+@@ -396,19 +378,53 @@
+   updateWritePending();
+ }
+ 
++function resolvePendingMutations() {
++  const baseline = state.writeBaseline || { status: "", rating: null, comment: "" };
++  const status = selectedWriteStatus();
++  const rawRating = $("writeRating")?.dataset.value || "";
++  const selectedRating = rawRating ? Number(rawRating) : null;
++  const comment = $("writeReview").value.trim();
++
++  let ratingAction = "keep";
++  let rating = null;
++  if (status === "wish") {
++    // Wish has no rating as a final-state invariant. The backend still verifies official readback.
++    ratingAction = baseline.rating == null ? "keep" : "clear";
++  } else if (selectedRating !== baseline.rating) {
++    ratingAction = selectedRating == null ? "clear" : "set";
++    rating = selectedRating;
++  }
++
++  let commentAction = "keep";
++  let commentValue = null;
++  if (comment !== baseline.comment) {
++    commentAction = comment ? "set" : "clear";
++    if (commentAction === "set") commentValue = comment;
++  }
++
++  return { status, ratingAction, rating, commentAction, comment: commentValue };
++}
++
+ function updateWritePending() {
+   const status = selectedWriteStatus();
+-  const ratingValue = $("writeRating")?.dataset.value || "";
+   const wish = status === "wish";
+   document.querySelectorAll("#writeRating button[data-rating]").forEach(button => button.disabled = state.writeBusy || wish);
+   $("clearRating").disabled = state.writeBusy || wish;
+   $("writeRatingLabel").classList.toggle("disabled", wish);
+   $("statusPending").textContent = `待保存：${statusText(status)}`;
+-  $("ratingPending").textContent = wish ? "待保存：想看状态不提交评分" : `待保存：${ratingValue ? `${ratingValue} 星` : "不提交"}`;
+-  const comment = $("writeReview").value;
+-  $("reviewPending").textContent = `${comment.length}/330`;
+-  const changed = !state.writeBaseline || comment.trim() !== state.writeBaseline.comment;
+-  $("reviewPending").classList.toggle("changed", changed);
++
++  const mutations = resolvePendingMutations();
++  const ratingText = mutations.ratingAction === "keep" ? "保持网页当前评分"
++    : mutations.ratingAction === "clear" ? "清除评分"
++    : `设置 ${mutations.rating} 星`;
++  $("ratingPending").textContent = wish ? `待保存：${ratingText}（想看最终无评分）` : `待保存：${ratingText}`;
++
++  const rawComment = $("writeReview").value;
++  const commentText = mutations.commentAction === "keep" ? "保持网页当前短评"
++    : mutations.commentAction === "clear" ? "清空短评"
++    : `更新短评（${rawComment.length}/330）`;
++  $("reviewPending").textContent = commentText;
++  $("reviewPending").classList.toggle("changed", mutations.commentAction !== "keep");
+ }
+ 
+ function restoreWriteBaseline() {
+@@ -422,15 +438,12 @@
+ }
+ 
+ function buildUnifiedWritePayload() {
+-  const status = selectedWriteStatus();
+-  if (!status) throw new Error("请选择想看、在看或看过状态。");
+-  const rawRating = $("writeRating")?.dataset.value || "";
+-  const rating = rawRating ? Number(rawRating) : null;
+-  if (status === "wish" && rating !== null) throw new Error("想看状态不能同时提交评分。");
+-  const comment = $("writeReview").value.trim();
+-  if (comment.length > 330) throw new Error("短评不能超过 330 字。");
+-  const setComment = !state.writeBaseline || comment !== state.writeBaseline.comment;
+-  return { status, rating, setComment, comment: setComment ? comment : "" };
++  const payload = resolvePendingMutations();
++  if (!payload.status) throw new Error("请选择想看、在看或看过状态。");
++  if (payload.status === "wish" && payload.ratingAction === "set") throw new Error("想看状态不能同时设置评分。");
++  const rawComment = $("writeReview").value.trim();
++  if (rawComment.length > 330) throw new Error("短评不能超过 330 字。");
++  return payload;
+ }
+ 
+ function setWriteBusy(busy) {
+@@ -438,28 +451,45 @@
+   const panel = $("writePanel");
+   if (!panel) return;
+   panel.querySelectorAll("button:not(#deleteEntry),textarea").forEach(control => {
+-    const capabilityBlocked = control instanceof HTMLButtonElement && control.dataset.capabilityBlocked === "true";
+-    control.disabled = state.writeBusy || capabilityBlocked;
++    control.disabled = state.writeBusy;
+   });
+-  $("deleteEntry").disabled = state.writeBusy;
++  $("deleteEntry").disabled = true; // Stage 1: old delete flow is known unsafe and must remain unavailable.
+   $("saveDoubanEntry").textContent = state.writeBusy ? "正在保存…" : "保存到豆瓣";
+   updateWritePending();
+ }
+ 
+ function formatRequested(requested) {
+   const value = requested && typeof requested === "object" ? requested : {};
+-  const rating = value.rating == null ? "不提交" : `${value.rating} 星`;
+-  const comment = value.commentLength == null
+-    ? (value.setComment ? `${String(value.comment || "").length} 字` : "不提交")
+-    : `${value.commentLength} 字`;
+-  return `状态：${statusText(value.status)}\n评分：${rating}\n短评：${comment}`;
++  const ratingAction = String(value.ratingAction || "").toLowerCase();
++  const commentAction = String(value.commentAction || "").toLowerCase();
++  const rating = ratingAction === "keep" ? "保持网页当前值"
++    : ratingAction === "clear" ? "清除"
++    : ratingAction === "set" ? `设置 ${value.rating} 星`
++    : value.rating == null ? "旧协议：不修改" : `${value.rating} 星`;
++  const comment = commentAction === "keep" ? "保持网页当前值"
++    : commentAction === "clear" ? "清空"
++    : commentAction === "set" ? `更新 ${String(value.comment || "").length} 字`
++    : value.commentLength == null
++      ? (value.setComment ? `${String(value.comment || "").length} 字` : "旧协议：不修改")
++      : `${value.commentLength} 字`;
++  return `状态：${statusText(value.status)}
++评分：${rating}
++短评：${comment}`;
+ }
+ 
+ function formatOfficial(official) {
+   const value = official && typeof official === "object" ? official : {};
+-  const rating = value.rating == null ? "未评分/未读取" : `${value.rating} 星`;
+-  const comment = value.comment == null || value.comment === "" ? "空或未读取" : String(value.comment);
+-  return `状态：${statusText(value.status)}\n评分：${rating}\n短评：${comment}`;
++  if (value.existsKnown === true && value.exists === false) {
++    return `评价：网页明确无评价
++来源：${value.source || "豆瓣官方"}`;
++  }
++  const status = value.statusKnown === true ? statusText(value.status) : "未读取";
++  const rating = value.ratingKnown === true ? (value.rating == null ? "未评分" : `${value.rating} 星`) : "未读取";
++  const comment = value.commentKnown === true ? (value.comment === "" ? "空" : String(value.comment)) : "未读取";
++  return `状态：${status}
++评分：${rating}
++短评：${comment}
++来源：${value.source || "—"}`;
+ }
+ 
+ function renderWriteOutcome(outcome) {
+@@ -471,7 +501,18 @@
+     return;
+   }
+   const labels = { submitting: "提交中", confirmed: "官方已确认", blocked: "已阻止", unconfirmed: "未确认", failed: "失败" };
+-  const stages = { snapshot: "固定用户与影片快照", formProbe: "探测官方表单", domFill: "填写官方表单", submit: "等待官方提交", readback: "官方回读确认" };
++  const stages = {
++    snapshot: "固定用户与影片快照",
++    "official-read": "读取豆瓣官方评价",
++    "resolve-target": "计算最终评价",
++    "no-change": "官方数据已一致",
++    formProbe: "探测官方表单",
++    domFill: "填写官方表单",
++    submit: "提交官方表单",
++    settlement: "等待豆瓣结算",
++    readback: "官方回读确认",
++    exception: "处理异常"
++  };
+   panel.className = `write-outcome ${outcome.phase || ""}`;
+   const settledText = outcome.settled == null ? "未报告" : (outcome.settled ? "是" : "否");
+   panel.textContent = `${labels[outcome.phase] || "结果"}\n操作：${outcome.operation || "—"}\n阶段：${stages[outcome.stage] || outcome.stage || "—"}\n提交稳定：${settledText}\n请求：\n${formatRequested(outcome.requested)}\n官方回读：\n${formatOfficial(outcome.official)}\n本地更新：${outcome.localUpdated ? "是" : "否"}\n时间：${new Date().toLocaleString()}${outcome.error ? `\n错误：${outcome.error}` : ""}`;
+@@ -494,8 +535,11 @@
+         state.currentDetail = detail;
+         renderDetail(detail);
+         renderWriteOutcome({ phase: "confirmed", stage: "readback", operation: "重新读取", requested: {}, official: {
+-          status: selectedWriteStatus(), rating: detail.rating ?? null, comment: detail.comment || ""
+-        }, localUpdated: false, error: "" });
++          existsKnown: true, exists: Boolean(selectedWriteStatus()),
++          statusKnown: true, status: selectedWriteStatus(),
++          ratingKnown: true, rating: detail.rating ?? null,
++          commentKnown: true, comment: detail.comment || "", source: "detail-reread"
++        }, localUpdated: true, error: "" });
+       } catch (error) {
+         renderWriteOutcome({ phase: "failed", stage: "readback", operation: "重新读取", requested: {}, official: {}, localUpdated: false, error: error?.message || "重新读取失败" });
+       }
+@@ -605,7 +649,7 @@
+   }
+ });
+ $("deleteEntry").addEventListener("click", () => {
+-  if (confirm("确认从豆瓣删除这条记录吗？")) void writeOperation("deleteEntry", {}, "已从豆瓣删除");
++  showToast("删除功能正在重做提交闭环；请暂时在豆瓣网页删除，返回软件后重新打开详情。");
+ });
+ 
+ initialize();
+diff -ruN '--exclude=SOURCE_SHA256SUMS.txt' '--exclude=PACKAGE_SHA256SUMS.txt' '--exclude=PREVIEW4_TO_PREVIEW6.patch' /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/WebAssets/MediaLibrary/index.html /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/WebAssets/MediaLibrary/index.html
+--- /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/WebAssets/MediaLibrary/index.html	2026-08-04 21:13:34.000000000 +0000
++++ /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/WebAssets/MediaLibrary/index.html	2026-08-04 23:51:02.599003581 +0000
+@@ -74,11 +74,11 @@
+             <section id="writeOutcome" class="write-outcome" aria-live="polite">尚未执行同步操作</section>
+             <div class="write-grid">
+               <span class="write-label">状态</span><div id="writeStatuses" class="write-statuses"><button type="button" data-status="wish">想看</button><button type="button" data-status="do">在看</button><button type="button" data-status="collect">看过</button></div><div class="write-actions"><span id="statusCurrent">当前：—</span><span id="statusPending">待保存：—</span></div>
+-              <span id="writeRatingLabel" class="write-label">评分</span><div id="writeRating" class="star-picker" role="radiogroup" aria-label="待保存评分"><button type="button" data-rating="1" role="radio" aria-label="1 星">☆</button><button type="button" data-rating="2" role="radio" aria-label="2 星">☆</button><button type="button" data-rating="3" role="radio" aria-label="3 星">☆</button><button type="button" data-rating="4" role="radio" aria-label="4 星">☆</button><button type="button" data-rating="5" role="radio" aria-label="5 星">☆</button></div><div class="write-actions"><span id="ratingCurrent">当前：—</span><span id="ratingPending">待保存：未选择</span><button id="clearRating" type="button" class="ghost">不提交评分</button></div>
+-              <label for="writeReview" class="write-label">短评</label><div class="review-editor"><span id="reviewCurrent">当前：—</span><textarea id="writeReview" maxlength="330" rows="3"></textarea><span id="reviewPending">0/330</span></div><div class="write-actions"><span>短评仅在内容变化时提交</span></div>
++              <span id="writeRatingLabel" class="write-label">评分</span><div id="writeRating" class="star-picker" role="radiogroup" aria-label="待保存评分"><button type="button" data-rating="1" role="radio" aria-label="1 星">☆</button><button type="button" data-rating="2" role="radio" aria-label="2 星">☆</button><button type="button" data-rating="3" role="radio" aria-label="3 星">☆</button><button type="button" data-rating="4" role="radio" aria-label="4 星">☆</button><button type="button" data-rating="5" role="radio" aria-label="5 星">☆</button></div><div class="write-actions"><span id="ratingCurrent">当前：—</span><span id="ratingPending">待保存：未选择</span><button id="clearRating" type="button" class="ghost">清除评分</button></div>
++              <label for="writeReview" class="write-label">短评</label><div class="review-editor"><span id="reviewCurrent">当前：—</span><textarea id="writeReview" maxlength="330" rows="3"></textarea><span id="reviewPending">0/330</span></div><div class="write-actions"><span>未修改则保持网页当前值；清空文本框表示清除短评</span></div>
+             </div>
+-            <div class="save-row"><button id="saveDoubanEntry" type="button">保存到豆瓣</button><button id="restoreDoubanEntry" type="button" class="ghost">恢复当前值</button><span id="writeRuleHint">一次填写官方表单，全部回读确认后才更新本地。</span></div>
+-            <div class="danger-row"><p>仅删除豆瓣个人记录，不删除软件真实观看记录和影片缓存。</p><button id="deleteEntry" type="button" class="danger">删除豆瓣个人记录</button></div>
++            <div class="save-row"><button id="saveDoubanEntry" type="button">保存到豆瓣</button><button id="restoreDoubanEntry" type="button" class="ghost">恢复当前值</button><span id="writeRuleHint">网页为准：先读取官方当前值，提交后全部回读确认，再覆盖本地缓存。</span></div>
++            <div class="danger-row"><p>仅删除豆瓣个人记录，不删除软件真实观看记录和影片缓存。</p><button id="deleteEntry" type="button" class="danger" disabled title="删除提交闭环将在第二阶段重做">删除功能待修复</button></div>
+           </section>
+         </div>
+       </div>
+diff -ruN '--exclude=SOURCE_SHA256SUMS.txt' '--exclude=PACKAGE_SHA256SUMS.txt' '--exclude=PREVIEW4_TO_PREVIEW6.patch' /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/docs/STATUS.md /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/docs/STATUS.md
+--- /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/docs/STATUS.md	2026-08-04 21:24:46.000000000 +0000
++++ /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/docs/STATUS.md	2026-08-05 00:08:18.933442211 +0000
+@@ -1,6 +1,6 @@
+-﻿# 项目状态
++# 项目状态
+ 
+-当前开发工作区：`0.9.0-preview.2`；当前正式发布并登记的长期稳定版仍为 `0.8.9`
++当前开发工作区：`0.9.0-preview.6`；当前正式发布并登记的长期稳定版仍为 `0.8.9`
+ 
+ 当前状态：统一豆瓣保存开发候选，尚未正式发布。稳定源码标签 `v0.8.9`、发布登记提交 `40e17dc` 和 `stable-v0.8.9` 均保持冻结、不覆盖。
+ 
+@@ -47,7 +47,7 @@
+ 
+ ## 进行中
+ 
+-- `0.9.0-preview.2` 已完成官方表单状态能力统一、稳定表单采样、明确提交结算、源码检查和 Chromium DOM/UI fixture 回归。
++- `0.9.0-preview.6` 已完成评价三态协议、网页权威读取、官方 requestSubmit、连续稳定结算与逐字段回读；删除在第二阶段重做前明确停用。
+ - 尚待在 Windows + .NET 8 + 已登录豆瓣 WebView2 环境执行编译、内置自检和真实账号写入/删除回归；在这些步骤完成前不得登记为正式 v0.9.0。
+ 
+ ## 待开发
+diff -ruN '--exclude=SOURCE_SHA256SUMS.txt' '--exclude=PACKAGE_SHA256SUMS.txt' '--exclude=PREVIEW4_TO_PREVIEW6.patch' /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/review/ACCEPTANCE_CHECKLIST.md /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/review/ACCEPTANCE_CHECKLIST.md
+--- /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/review/ACCEPTANCE_CHECKLIST.md	2026-08-04 21:24:46.000000000 +0000
++++ /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/review/ACCEPTANCE_CHECKLIST.md	2026-08-05 00:12:31.532073152 +0000
+@@ -1,50 +1,28 @@
+-﻿# 0.9.0-preview.2 验收清单
++# preview.6 第一阶段验收清单
+ 
+-说明：`[x]` 表示已由源码检查或构造页面自动化验证；`[ ]` 表示仍需 Windows 或真实豆瓣环境验证。
++## 自动检查
+ 
+-## 源码与边界
++- [x] VERSION、csproj、运行日志版本一致
++- [x] JavaScript 语法检查通过
++- [x] Keep/Set/Clear 前端协议测试通过
++- [x] 评价管线静态边界测试通过
++- [x] Windows 构建启动脚本编码与换行检查通过
++- [ ] Windows .NET 8 实际编译通过
++- [ ] 构建后的内置自检全部通过
++
++## 真实豆瓣账号回归
++
++- [ ] 无评价 → 想看
++- [ ] 无评价 → 在看（官方表单支持时）
++- [ ] 无评价 → 看过
++- [ ] 想看 / 在看 / 看过之间互换
++- [ ] 设置、修改、清除评分
++- [ ] 设置、修改、清除短评
++- [ ] 只改状态时保持网页最新评分和短评
++- [ ] 网页端修改后重新打开详情，软件完整覆盖本地
++- [ ] 慢网络下不产生假成功
++- [ ] 验证码、登录失效和表单结构异常时不写本地目标值
+ 
+-- [x] 稳定版 `stable-v0.8.9` 未被修改或覆盖。
+-- [x] 隐藏豆瓣 WebView2 与本地 HTML WebView2 的隔离结构未改变。
+-- [x] 没有引入直接 POST、`fetch`、Cookie 导出或复制。
+-- [x] 统一保存仍只有一个 WebMessage 操作和一个官方提交点击。
+-- [x] 删除仍是独立危险操作。
+-
+-## 状态能力
+-
+-- [x] 能力模型支持 wish/do/collect，并记录是否已由官方表单确认。
+-- [x] “在看”不再仅由详情元数据决定。
+-- [x] 官方表单已知不支持某状态时，界面保留按钮、禁用并显示具体原因。
+-- [x] 详情元数据缺少状态选项时，不会永久隐藏官方可能提供的状态。
+-- [ ] 普通电影真实页面的 wish/do/collect 能力判断正确。
+-- [ ] 电视剧真实页面的“在看”能力由官方编辑表单正确识别。
+-
+-## 回读稳定性
+-
+-- [x] 表单关键字段要求连续 3 次稳定采样。
+-- [x] 提交后明确区分 settled、timeout、captcha 和 login。
+-- [x] 提交未稳定时返回 unconfirmed，不进入假定成功的回读，不更新本地。
+-- [x] 官方回读包含状态选项、当前状态、评分、短评和字段可读性。
+-- [x] 只有请求字段全部匹配才更新本地镜像。
+-- [x] unconfirmed 时保留本地旧值，并显示提交稳定状态和错误。
+-- [ ] 真实页面 confirmed 后详情页和列表页均显示新状态。
+-- [ ] 电视剧真实页面连续多次写入、回读无旧状态竞态。
+-
+-## 数据安全
+-
+-- [x] 失败或未确认不更新豆瓣本地镜像。
+-- [x] 删除流程和 tombstone 逻辑未改动。
+-- [x] 软件真实观看记录的数据分离未改动。
+-- [x] 影片详情、搜索、海报、演员和头像缓存的数据分离未改动。
+-- [ ] 真实删除后确认影片页和 wish/do/collect 三个列表均不存在。
+-
+-## 自动化与构建
+-
+-- [x] 源码静态检查：45/45。
+-- [x] JavaScript 语法检查。
+-- [x] Chromium 构造 DOM/UI 测试：26/26。
+-- [x] Windows 启动器文件格式检查：3/3。
+-- [ ] Windows .NET 8 restore/build/publish。
+-- [ ] 编译后内置 self-test。
+-- [ ] Windows WebView2 真实账号回归。
+-- [x] 所有未执行项目均已明确列出，没有虚报为通过。
++## 暂不验收
++
++- 删除：本阶段明确禁用，待第二阶段独立实现。
+diff -ruN '--exclude=SOURCE_SHA256SUMS.txt' '--exclude=PACKAGE_SHA256SUMS.txt' '--exclude=PREVIEW4_TO_PREVIEW6.patch' /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/review/ACCEPTANCE_CHECKLIST_preview6.md /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/review/ACCEPTANCE_CHECKLIST_preview6.md
+--- /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/review/ACCEPTANCE_CHECKLIST_preview6.md	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/review/ACCEPTANCE_CHECKLIST_preview6.md	2026-08-05 00:04:23.503824176 +0000
+@@ -0,0 +1,28 @@
++# preview.6 第一阶段验收清单
++
++## 自动检查
++
++- [x] VERSION、csproj、运行日志版本一致
++- [x] JavaScript 语法检查通过
++- [x] Keep/Set/Clear 前端协议测试通过
++- [x] 评价管线静态边界测试通过
++- [x] Windows 构建启动脚本编码与换行检查通过
++- [ ] Windows .NET 8 实际编译通过
++- [ ] 构建后的内置自检全部通过
++
++## 真实豆瓣账号回归
++
++- [ ] 无评价 → 想看
++- [ ] 无评价 → 在看（官方表单支持时）
++- [ ] 无评价 → 看过
++- [ ] 想看 / 在看 / 看过之间互换
++- [ ] 设置、修改、清除评分
++- [ ] 设置、修改、清除短评
++- [ ] 只改状态时保持网页最新评分和短评
++- [ ] 网页端修改后重新打开详情，软件完整覆盖本地
++- [ ] 慢网络下不产生假成功
++- [ ] 验证码、登录失效和表单结构异常时不写本地目标值
++
++## 暂不验收
++
++- 删除：本阶段明确禁用，待第二阶段独立实现。
+diff -ruN '--exclude=SOURCE_SHA256SUMS.txt' '--exclude=PACKAGE_SHA256SUMS.txt' '--exclude=PREVIEW4_TO_PREVIEW6.patch' /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/review/CHANGED_FILES.txt /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/review/CHANGED_FILES.txt
+--- /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/review/CHANGED_FILES.txt	2026-08-04 21:24:46.000000000 +0000
++++ /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/review/CHANGED_FILES.txt	2026-08-05 00:12:31.532712397 +0000
+@@ -1,24 +1,40 @@
+-Core changes compared with 0.9.0-preview.1:
+-BrowserCdpService.cs
++Changed/added for 0.9.0-preview.6 compared with 0.9.0-preview.4:
++AI_HANDOFF.md
++BUILD_REQUIRED.txt
++BUILD_STATUS.txt
++CHANGELOG.md
++CrashLogger.cs
+ DoubanConnector.cs
++DoubanOfficialFormScripts.cs
++DoubanWebView2Connector.ReviewWriteV2.cs
+ DoubanWebView2Connector.cs
+ HtmlMediaLibraryForm.cs
+-Models.cs
+-WebAssets/MediaLibrary/app.js
+-WebAssets/MediaLibrary/styles.css
+-scripts/Validate-Fixtures.py
+-scripts/Validate-Source.py
+-观影助手.csproj
+-VERSION
++OfficialReviewCachePolicy.cs
++PACKAGE_VERSION.txt
+ README.md
+-CHANGELOG.md
++ReviewSettlementPolicy.cs
++ReviewTargetResolver.cs
++ReviewWriteCoordinator.cs
++ReviewWriteModels.cs
++ReviewWriteVerifier.cs
++SelfTest.cs
++VERSION
++WebAssets/MediaLibrary/app.js
++WebAssets/MediaLibrary/index.html
+ docs/STATUS.md
+-AI_HANDOFF.md
+-BUILD_LAUNCHER_FIX.txt
+-BUILD_REQUIRED.txt
+-PACKAGE_VERSION.txt
+ review/ACCEPTANCE_CHECKLIST.md
++review/ACCEPTANCE_CHECKLIST_preview6.md
++review/CHANGED_FILES.txt
+ review/IMPLEMENTATION_REPORT.md
++review/IMPLEMENTATION_REPORT_preview6.md
+ review/PACKAGE_MANIFEST.md
+-review/PREVIEW2_CODE_DIFF.patch
++review/PREVIEW4_TO_PREVIEW6.patch
+ review/VALIDATION_RESULTS.txt
++review/VALIDATION_RESULTS_preview6.txt
++scripts/Build-Preview.ps1
++scripts/Validate-Fixtures.py
++scripts/Validate-Source.py
++tests/review-protocol.test.js
++tests/validate_review_pipeline.py
++观影助手.csproj
++先看这里.txt
+diff -ruN '--exclude=SOURCE_SHA256SUMS.txt' '--exclude=PACKAGE_SHA256SUMS.txt' '--exclude=PREVIEW4_TO_PREVIEW6.patch' /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/review/IMPLEMENTATION_REPORT.md /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/review/IMPLEMENTATION_REPORT.md
+--- /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/review/IMPLEMENTATION_REPORT.md	2026-08-04 22:09:18.000000000 +0000
++++ /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/review/IMPLEMENTATION_REPORT.md	2026-08-05 00:04:23.503710437 +0000
+@@ -1,120 +1,73 @@
+-﻿# 观影助手 0.9.0-preview.2 源码修复报告
++# 0.9.0-preview.6 评价体系第一阶段实现报告
+ 
+-日期：2026-08-05  
+-基线：`0.9.0-preview.1` 统一保存预览源码  
+-稳定基线：`stable-v0.8.9`，保持冻结，不覆盖  
+-交付性质：已完成源码修改和构造页面回归的开发预览源码；不是正式 v0.9.0 发布物。
++## 实现范围
+ 
+-## 结论
++本阶段基于 `0.9.0-preview.4` 完整源码合并，不再修改旧 EXE 的 IL，也不再混用旧程序集与新 WebAssets。
+ 
+-本轮修复了交接文档指出的两个同源问题：
++已完成四项基础改造：
+ 
+-1. 详情页状态按钮曾依赖不完整的详情 DOM 元数据，导致部分电视剧的“在看”被错误隐藏。
+-2. 官方编辑表单和提交后页面只等待“出现”，没有等待关键字段稳定，可能过早回读旧状态。
++1. 评价字段使用明确的 `Keep / Set / Clear` 三态协议。
++2. 保存前读取豆瓣官方当前评价，以网页数据计算最终目标。
++3. 使用官方可见表单、真实控件和 `form.requestSubmit()` 提交。
++4. 只有结算稳定且官方回读逐字段匹配后，才以官方结果覆盖本地缓存。
+ 
+-现在，状态能力优先由豆瓣官方编辑表单决定；表单填写、提交稳定和官方回读都具有明确的稳定条件。任何能力未知、提交超时或回读不稳定都不会凭猜测更新本地豆瓣镜像。
++## 关键行为
+ 
+-## 关键实现
++### 网页为唯一权威来源
+ 
+-### 1. 官方编辑表单成为状态能力来源
++- 官方读取完整：覆盖本地状态、评分和短评，包括明确的空评分、空短评与无评价。
++- 官方读取不完整：保留本地缓存，并阻止写入；不把“没有读到”误判成“网页为空”。
++- 仅打开一个目标状态的创建表单，不再被视为“网页当前无评价”的证据。
+ 
+-- 详情读取阶段新增官方能力探测：打开当前影片的通用编辑入口，读取表单 `interestOptions`。
+-- 探测结束后恢复原影片 URL，避免改变隐藏读取实例的后续导航语义。
+-- 新增并传递：
+-  - `StatusCapabilitiesKnown`
+-  - `StatusCapabilitySource`
+-  - `StatusCapabilityError`
+-- 成功写入并完成官方回读后，用最新表单能力刷新本地详情数据。
+-- 详情 DOM 的 `statusOptions` 仅作为能力未知时的辅助信息，不再具有永久隐藏按钮的权力。
++### 三态字段协议
+ 
+-### 2. 前端不再误删“在看”
++- `Keep`：使用保存前刚读取的官方值。
++- `Set`：设置指定评分或短评。
++- `Clear`：明确清除评分或短评。
++- `null` 不再同时承担“不修改”和“清空”两种含义。
+ 
+-- `wish / do / collect` 三个按钮始终存在。
+-- 能力未知：按钮可选，提示保存时会通过官方编辑表单重新确认。
+-- 能力已知且不支持：按钮保持可见但禁用，显示“官方编辑表单不提供该状态”的具体原因。
+-- 已禁用状态不会被选入统一保存请求。
++### 提交闭环
+ 
+-### 3. 官方表单稳定采样
++流程固定为：
+ 
+-`WaitForOfficialFormAsync()` 现在返回结构化结果，并要求关键签名连续 3 次一致。签名覆盖：
++`官方读取 → 计算最终目标 → 填写并复核官方表单 → requestSubmit → 连续稳定结算 → 官方重新读取 → 逐字段验证 → 本地覆盖`
+ 
+-- `interestOptions`
+-- `selectedInterest`
+-- 评分值与可读性
+-- 短评值与可读性
+-- 状态/评分/短评控件数量
+-- 表单 action 路径
++按钮点击、确认框接受、URL 变化或固定等待均不能单独产生成功结果。
+ 
+-验证码页和登录页会作为明确终止状态返回。提交前表单不稳定时不点击官方提交按钮；回读表单不稳定时返回 `unconfirmed`。
++### 结果状态
+ 
+-### 4. 提交稳定状态显式化
++- `confirmed`：官方回读与最终目标完全一致。
++- `blocked`：官方数据或表单能力不足，提交前停止。
++- `unconfirmed`：请求可能已发生，但结算或回读无法确定；不写目标值。
++- `failed`：明确提交失败。
+ 
+-`WaitForSubmitSettlementAsync()` 现在返回：
++### 删除边界
+ 
+-- `Settled`
+-- `State`
+-- `Attempts`
+-- 最后一次页面探针
++旧删除链路已知会在确认后提前导航，无法保证服务器请求完成。本阶段将删除从前端和 WebMessage 白名单同时停用，避免继续产生假成功。删除会在第二阶段按独立事务重做。
+ 
+-只有连续 2 次确认“已回到当前影片页、编辑表单关闭、页面不在加载”才标记为 `settled`。超时、验证码或登录状态都会在进入回读前终止，返回 `unconfirmed`，本地保持不变。
++## 主要变更文件
+ 
+-### 5. 结果、日志和本地更新
+-
+-- `DoubanWriteResult` 增加 `Settled` 和官方 `StatusOptions`。
+-- UI 结果面板显示“提交稳定：是 / 否 / 未报告”。
+-- 诊断日志记录能力表单、提交前表单、提交结算和回读表单的稳定状态、尝试次数、稳定样本数及 JSON 探针。
+-- 只有官方回读稳定且请求字段全部匹配时，才 `confirmed` 且 `localUpdated=true`。
+-
+-## 修改文件
+-
+-核心源码与界面：
+-
+-- `BrowserCdpService.cs`
+-- `DoubanConnector.cs`
++- `ReviewWriteModels.cs`
++- `ReviewTargetResolver.cs`
++- `ReviewWriteCoordinator.cs`
++- `ReviewSettlementPolicy.cs`
++- `ReviewWriteVerifier.cs`
++- `OfficialReviewCachePolicy.cs`
++- `DoubanOfficialFormScripts.cs`
++- `DoubanWebView2Connector.ReviewWriteV2.cs`
+ - `DoubanWebView2Connector.cs`
++- `DoubanConnector.cs`
+ - `HtmlMediaLibraryForm.cs`
+-- `Models.cs`
+ - `WebAssets/MediaLibrary/app.js`
+-- `WebAssets/MediaLibrary/styles.css`
+-
+-验证、版本和文档：
+-
+-- `scripts/Validate-Source.py`
+-- `scripts/Validate-Fixtures.py`
+-- `观影助手.csproj`
+-- `VERSION`
+-- `README.md`
+-- `CHANGELOG.md`
+-- `docs/STATUS.md`
+-- `review/*`
+-
+-## 保持不变的安全边界
+-
+-- 不使用直接 HTTP POST 或 `fetch` 写入。
+-- 不导出、复制或注入 Cookie。
+-- 本地 HTML WebView2 与豆瓣远程 WebView2 继续隔离。
+-- 统一保存仍只发送一个 WebMessage，并且统一提交脚本只有一次官方 `submit.click()`。
+-- 未经官方稳定回读确认，不更新本地豆瓣镜像。
+-- 删除仍为独立危险操作；软件真实观看记录、影片详情、搜索、海报、演员和头像缓存的数据分离未改变。
+-
+-## 自动化验证结果
+-
+-- 源码与安全边界检查：45/45 通过。
+-- Chromium DOM/UI fixture：26/26 通过。
+-- Windows 启动器字节格式与调用方式：3/3 通过。
+-- `app.js` 与写入相关内嵌 JavaScript：Node.js 语法检查通过。
+-- C# 核心文件：词法定界符检查通过。
+-
+-详细输出见 `review/VALIDATION_RESULTS.txt`。
++- `WebAssets/MediaLibrary/index.html`
++- `SelfTest.cs`
+ 
+-## 本环境无法执行
++## 尚未完成
+ 
+-当前容器没有 `dotnet`，也不是 Windows 环境，因此以下项目未执行：
++- 删除事务重写。
++- Windows WebView2 真实账号组合回归。
++- 当前打包环境缺少 .NET SDK，因此未在本环境生成或声称已验证 EXE。
+ 
+-- `dotnet restore/build/publish`
+-- 主程序 `--self-test`
+-- Windows Forms / WebView2 运行
+-- 已登录豆瓣真实电影与电视剧写入、重复回读和删除回归
+-- PotPlayer 冒烟测试
++## 发布要求
+ 
+-因此本包不包含新编译的 preview.2 EXE，也不把源码验证表述为真实账号验证。Windows 上构建和实测后，才可评估是否进入正式发布流程。
++必须从本源码完整编译。禁止将新 WebAssets 复制到 `preview.5` 旧 EXE 旁边，也禁止继续对旧 EXE 做定长 IL 补丁。
+diff -ruN '--exclude=SOURCE_SHA256SUMS.txt' '--exclude=PACKAGE_SHA256SUMS.txt' '--exclude=PREVIEW4_TO_PREVIEW6.patch' /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/review/IMPLEMENTATION_REPORT_preview6.md /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/review/IMPLEMENTATION_REPORT_preview6.md
+--- /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/review/IMPLEMENTATION_REPORT_preview6.md	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/review/IMPLEMENTATION_REPORT_preview6.md	2026-08-05 00:04:23.503676557 +0000
+@@ -0,0 +1,73 @@
++# 0.9.0-preview.6 评价体系第一阶段实现报告
++
++## 实现范围
++
++本阶段基于 `0.9.0-preview.4` 完整源码合并，不再修改旧 EXE 的 IL，也不再混用旧程序集与新 WebAssets。
++
++已完成四项基础改造：
++
++1. 评价字段使用明确的 `Keep / Set / Clear` 三态协议。
++2. 保存前读取豆瓣官方当前评价，以网页数据计算最终目标。
++3. 使用官方可见表单、真实控件和 `form.requestSubmit()` 提交。
++4. 只有结算稳定且官方回读逐字段匹配后，才以官方结果覆盖本地缓存。
++
++## 关键行为
++
++### 网页为唯一权威来源
++
++- 官方读取完整：覆盖本地状态、评分和短评，包括明确的空评分、空短评与无评价。
++- 官方读取不完整：保留本地缓存，并阻止写入；不把“没有读到”误判成“网页为空”。
++- 仅打开一个目标状态的创建表单，不再被视为“网页当前无评价”的证据。
++
++### 三态字段协议
++
++- `Keep`：使用保存前刚读取的官方值。
++- `Set`：设置指定评分或短评。
++- `Clear`：明确清除评分或短评。
++- `null` 不再同时承担“不修改”和“清空”两种含义。
++
++### 提交闭环
++
++流程固定为：
++
++`官方读取 → 计算最终目标 → 填写并复核官方表单 → requestSubmit → 连续稳定结算 → 官方重新读取 → 逐字段验证 → 本地覆盖`
++
++按钮点击、确认框接受、URL 变化或固定等待均不能单独产生成功结果。
++
++### 结果状态
++
++- `confirmed`：官方回读与最终目标完全一致。
++- `blocked`：官方数据或表单能力不足，提交前停止。
++- `unconfirmed`：请求可能已发生，但结算或回读无法确定；不写目标值。
++- `failed`：明确提交失败。
++
++### 删除边界
++
++旧删除链路已知会在确认后提前导航，无法保证服务器请求完成。本阶段将删除从前端和 WebMessage 白名单同时停用，避免继续产生假成功。删除会在第二阶段按独立事务重做。
++
++## 主要变更文件
++
++- `ReviewWriteModels.cs`
++- `ReviewTargetResolver.cs`
++- `ReviewWriteCoordinator.cs`
++- `ReviewSettlementPolicy.cs`
++- `ReviewWriteVerifier.cs`
++- `OfficialReviewCachePolicy.cs`
++- `DoubanOfficialFormScripts.cs`
++- `DoubanWebView2Connector.ReviewWriteV2.cs`
++- `DoubanWebView2Connector.cs`
++- `DoubanConnector.cs`
++- `HtmlMediaLibraryForm.cs`
++- `WebAssets/MediaLibrary/app.js`
++- `WebAssets/MediaLibrary/index.html`
++- `SelfTest.cs`
++
++## 尚未完成
++
++- 删除事务重写。
++- Windows WebView2 真实账号组合回归。
++- 当前打包环境缺少 .NET SDK，因此未在本环境生成或声称已验证 EXE。
++
++## 发布要求
++
++必须从本源码完整编译。禁止将新 WebAssets 复制到 `preview.5` 旧 EXE 旁边，也禁止继续对旧 EXE 做定长 IL 补丁。
+diff -ruN '--exclude=SOURCE_SHA256SUMS.txt' '--exclude=PACKAGE_SHA256SUMS.txt' '--exclude=PREVIEW4_TO_PREVIEW6.patch' /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/review/PACKAGE_MANIFEST.md /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/review/PACKAGE_MANIFEST.md
+--- /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/review/PACKAGE_MANIFEST.md	2026-08-04 21:24:46.000000000 +0000
++++ /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/review/PACKAGE_MANIFEST.md	2026-08-05 00:08:00.953565092 +0000
+@@ -1,37 +1,33 @@
+-﻿# 0.9.0-preview.2 修复源码包清单
++# 0.9.0-preview.6 完整源码包清单
+ 
+-## 包含内容
++## 包含
+ 
+-- 完整 C# 主程序源码与项目文件。
+-- `WebAssets/MediaLibrary` 本地 HTML/CSS/JavaScript。
+-- `BUILD_PREVIEW.cmd` 与 `scripts/Build-Preview.ps1` Windows 一键构建链路。
+-- 源码、fixture 和启动器验证脚本。
+-- 原始问题分析、实现报告、验收清单、完整验证输出和代码差异补丁。
+-- `VERSION`、`PACKAGE_VERSION.txt`、`README.md`、`CHANGELOG.md` 和项目状态文档。
+-- `SOURCE_SHA256SUMS.txt` 与 `PACKAGE_SHA256SUMS.txt`。
++- 从 `0.9.0-preview.4` 合并后的完整 C# 源码与 `.csproj`。
++- 评价写入 v2 的模型、目标解析、状态机、结算、验证和 WebView2 接线。
++- `WebAssets/MediaLibrary` 三态评价界面与结果面板。
++- Windows 一键构建脚本 `BUILD_PREVIEW.cmd` 与 `scripts/Build-Preview.ps1`。
++- 静态管线检查、前端协议检查和启动器格式检查。
++- 实现报告、验收清单、变更清单、源码差异补丁和 SHA-256 清单。
+ 
+-## 有意排除内容
++## 有意不包含
+ 
+-- 原交接包中的 `artifacts/观影助手-v0.9.0-preview.1-win-x64`，避免旧 EXE 被误认为已包含本次修复。
+-- `bin/`、`obj/`、`.vs/` 和其他中间编译目录。
+-- 旧的 `build-preview.log` 和过时的重复验证输出。
+-- 用户 WebView2 Profile、Cookie、豆瓣登录状态、真实观看数据和日志。
+-- 新编译的 preview.2 EXE：当前打包环境没有 .NET SDK，未生成。
++- `preview.5` 或任何历史 EXE。
++- 新编译的 `preview.6` EXE：当前环境没有可用 .NET SDK，未生成。
++- 用户 WebView2 Profile、Cookie、豆瓣账号数据、观看数据和诊断日志。
++- `bin/`、`obj/`、`.vs/`、`artifacts/` 等构建目录。
+ 
+-## 版本声明
++## 功能边界
+ 
+-- 源码版本：`0.9.0-preview.2`。
+-- 修改基线：`0.9.0-preview.1`。
+-- 长期稳定版：`stable-v0.8.9`，未覆盖。
+-- `preview.2` 仍是开发预览，不代表正式 v0.9.0。
++- 普通评价保存使用 v2 管线。
++- 删除在本阶段明确停用，不得按成功功能验收。
++- 本源码必须完整编译，不得覆盖到旧 EXE 上运行。
+ 
+-## 验证声明
++## 自动验证
+ 
+-已在当前环境执行并通过：
++- 评价管线静态检查：45/45。
++- 前端协议测试：6/6。
++- JavaScript 语法：通过。
++- Windows 启动器格式：3/3。
++- 源码包内文件 SHA-256：已生成。
+ 
+-- 源码与安全边界检查 45/45。
+-- Chromium DOM/UI fixture 26/26。
+-- Windows 启动器文件检查 3/3。
+-- 包内 SHA-256 全量复核。
+-
+-未执行：Windows .NET 编译、内置 self-test、真实登录豆瓣 WebView2 回归。详见 `review/VALIDATION_RESULTS.txt`。
++未执行：Windows .NET 编译、编译后内置 self-test、真实豆瓣账号 WebView2 写入回归。
+diff -ruN '--exclude=SOURCE_SHA256SUMS.txt' '--exclude=PACKAGE_SHA256SUMS.txt' '--exclude=PREVIEW4_TO_PREVIEW6.patch' /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/review/VALIDATION_RESULTS.txt /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/review/VALIDATION_RESULTS.txt
+--- /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/review/VALIDATION_RESULTS.txt	2026-08-04 22:09:18.000000000 +0000
++++ /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/review/VALIDATION_RESULTS.txt	2026-08-05 00:12:31.531217331 +0000
+@@ -1,104 +1,57 @@
+-﻿观影助手 0.9.0-preview.2 源码验证结果
++观影助手 0.9.0-preview.6 第一阶段验证结果
+ 日期：2026-08-05
+ 
+-环境：Linux 容器；Node.js；Python Playwright；系统 Chromium。
+-限制：本环境没有 .NET SDK、C# 编译器、Windows Forms/WebView2 Windows Runtime，也没有已登录豆瓣 Profile。
+-
+-一、源码与安全边界检查
+-PASS: csproj XML 可解析
+-PASS: VERSION 与 csproj 一致 | 0.9.0-preview.2
+-PASS: HTML 只有一个统一保存按钮
+-PASS: HTML 不再暴露三个旧写入按钮
+-PASS: app.js 只绑定一个统一保存入口
+-PASS: WebMessage 白名单不含旧写入操作
+-PASS: C# 接口只保留统一保存与独立删除
+-PASS: 旧独立写入执行链已删除
+-PASS: 想看+评分在 C# 层拒绝
+-PASS: 失败或未确认不写本地
+-PASS: 结果模型包含结构化阶段、本地更新与提交稳定标志
+-PASS: 等待官方表单和提交完成使用条件轮询
+-PASS: 官方表单要求连续稳定采样
+-PASS: 提交等待显式区分 settled 与 timeout
+-PASS: 提交未稳定时不会继续官方回读
+-PASS: 详情状态能力来自官方编辑表单
+-PASS: 前端能力未知时不再永久隐藏在看
+-PASS: 提取内嵌脚本 DoubanWriteSnapshotScript
+-PASS: 提取内嵌脚本 DoubanWriteOpenCapabilityScript
+-PASS: 提取内嵌脚本 DoubanWriteOpenScriptV2
+-PASS: 提取内嵌脚本 DoubanWriteFormProbeScript
+-PASS: 提取内嵌脚本 DoubanWriteSubmitScriptV2
+-PASS: 提取内嵌脚本 DoubanWritePostSubmitProbeScript
+-PASS: 提取内嵌脚本 DoubanHistoryContainsSubjectScript
+-PASS: 提取内嵌脚本 DoubanDeleteControlScript
+-PASS: 写入脚本不使用 fetch
+-PASS: 写入脚本不读取或复制 Cookie
+-PASS: 统一写入脚本只点击一次官方提交
+-PASS: 统一写入限制同源和影片 ID
+-PASS: 评分通过可见控件而非直接写隐藏值
+-PASS: 删除脚本只选个人区域唯一控件
+-PASS: app.js Node 语法检查
+-PASS: DoubanWriteSnapshotScript Node 语法检查
+-PASS: DoubanWriteOpenCapabilityScript Node 语法检查
+-PASS: DoubanWriteOpenScriptV2 Node 语法检查
+-PASS: DoubanWriteFormProbeScript Node 语法检查
+-PASS: DoubanWriteSubmitScriptV2 Node 语法检查
+-PASS: DoubanWritePostSubmitProbeScript Node 语法检查
+-PASS: DoubanHistoryContainsSubjectScript Node 语法检查
+-PASS: DoubanDeleteControlScript Node 语法检查
+-PASS: DoubanConnector.cs 词法定界符平衡
+-PASS: DoubanWebView2Connector.cs 词法定界符平衡
+-PASS: HtmlMediaLibraryForm.cs 词法定界符平衡
+-PASS: SelfTest.cs 词法定界符平衡
+-PASS: CrashLogger.cs 词法定界符平衡
+-SUMMARY: 45 passed, 0 failed
+-
+-二、Chromium DOM/UI fixture
+-PASS: 详情能力探测优先打开官方通用编辑入口 | {"clicked": true, "generic": true, "selected": false, "tag": "BUTTON", "name": "pbtn-1292052", "text": "修改"}
+-PASS: 官方编辑表单返回完整 wish/do/collect 能力 | {"ready": true, "captcha": false, "loginPage": false, "error": "", "actionPath": "text/html,/subject/1292052/interest", "fields": [{"tag": "INPUT", "type": "radio", "name": "interest", "checked": false, "maxLength": -1}, {"tag": "INPUT", "type": "radio", "name": "interest", "checked": true, "maxLength": -1}, {"tag": "INPUT", "type": "radio", "name": "interest", "checked": false, "maxLength": -1}, {"tag": "INPUT", "type": "hidden", "name": "rating", "checked": false, "maxLength": -1}, {"tag": "TEXTAREA", "type": "textarea", "name": "comment", "checked": false, "maxLength": -1}, {"tag": "BUTTON", "type": "submit", "name": "", "checked": false, "maxLength": 0}], "ratingControlCount": 0, "commentControlCount": 1, "interestOptions": [{"type": "radio", "value": "wish", "checked": false}, {"type": "radio", "value": "do", "checked": true}, {"type": "radio", "value": "collect", "checked": false}], "selectedInterest": "do", "rating": 3, "ratingRaw": "30", "ratingKnown": true, "comment": "旧短评", "commentKnown": true, "personalContainerFound": true, "formCount": 1}
+-PASS: 官方表单能力探测 | {"ready": true, "captcha": false, "loginPage": false, "error": "", "actionPath": "text/html,/subject/1292052/interest", "fields": [{"tag": "INPUT", "type": "radio", "name": "interest", "checked": false, "maxLength": -1}, {"tag": "INPUT", "type": "radio", "name": "interest", "checked": true, "maxLength": -1}, {"tag": "INPUT", "type": "radio", "name": "interest", "checked": false, "maxLength": -1}, {"tag": "INPUT", "type": "hidden", "name": "rating", "checked": false, "maxLength": -1}, {"tag": "TEXTAREA", "type": "textarea", "name": "comment", "checked": false, "maxLength": 330}, {"tag": "BUTTON", "type": "submit", "name": "", "checked": false, "maxLength": 0}], "ratingControlCount": 6, "commentControlCount": 1, "interestOptions": [{"type": "radio", "value": "wish", "checked": false}, {"type": "radio", "value": "do", "checked": true}, {"type": "radio", "value": "collect", "checked": false}], "selectedInterest": "do", "rating": 3, "ratingRaw": "30", "ratingKnown": true, "comment": "旧短评", "commentKnown": true, "personalContainerFound": true, "formCount": 1}
+-PASS: 状态评分短评统一提交 | {"submitted": true, "statusFallback": false, "actionPath": "text/html,/subject/1292052/interest", "requestedStatus": "collect", "beforeInterest": "do", "selectedBeforeSubmit": "collect", "statusChanged": true, "ratingChanged": true, "commentChanged": true}
+-PASS: 官方提交按钮只点击一次
+-PASS: 提交前状态为 collect
+-PASS: 评分通过可见星级更新隐藏值
+-PASS: 短评写入官方文本框
+-PASS: 评分控件缺失时阻止提交 | {"submitted": false, "error": "官方评分控件缺失", "candidateCount": 0, "candidates": []}
+-PASS: 评分控件缺失时零提交
+-PASS: nullable 评分仍可统一保存
+-PASS: nullable 评分不清空官方已有评分
+-PASS: 想看状态不带评分可提交
+-PASS: 能力未知时在看仍显示且可选择
+-PASS: 能力未知时提示保存前再次确认
+-PASS: 官方表单不提供在看时按钮明确禁用
+-PASS: 禁用在看按钮显示具体原因
+-PASS: 确认结果展示提交稳定状态
+-PASS: 前端只发送一个 saveDoubanEntry 消息 | [{"id": "1785878702859-7e813bf6916b3", "op": "saveDoubanEntry", "payload": {"subjectId": "1292052", "subjectUrl": "https://movie.douban.com/subject/1292052/", "status": "collect", "rating": 5, "setComment": true, "comment": "新短评"}}]
+-PASS: 统一保存 payload 完整
+-PASS: 确认成功后界面解锁
+-PASS: 想看自动清除评分
+-PASS: 想看禁用评分按钮
+-PASS: 后端阻止时保留用户编辑
+-PASS: 后端阻止后界面解锁
+-PASS: 删除失败后界面恢复可操作
+-ALL_FIXTURES_OK (26 checks)
+-
+-三、Windows 启动器文件检查
+-PASS: BUILD_PREVIEW.cmd is ASCII-only, BOM-free, and CRLF-normalized
+-PASS: Build-Preview.ps1 is UTF-8 BOM and CRLF-normalized
+-PASS: launcher uses an explicit Windows PowerShell path and quoted script path
+-
+-四、编译器可用性检查
+-NOT FOUND: dotnet
+-NOT FOUND: csc
+-
+-五、未执行项目
+-NOT RUN: dotnet restore/build/publish（容器无 .NET SDK）
+-NOT RUN: 主程序 --self-test（无法编译 Windows 主程序）
+-NOT RUN: Windows WebView2 真实登录豆瓣写入/删除
+-NOT RUN: 电视剧“在看”真实页面能力与重复回读压力测试
+-NOT RUN: PotPlayer 冒烟测试
+-NOT RUN: 真实豆瓣详情、首页演员、完整演职员图片下载回归
++验证对象：从 0.9.0-preview.4 完整源码合并后的 preview.6 源码树。
++验证环境：Linux 容器；Python 3；Node.js。
++环境限制：无可用 .NET SDK、Windows Forms 运行环境、Windows WebView2 Runtime 和已登录豆瓣账号。
++
++一、评价管线源码检查
++结果：45/45 通过。
++
++覆盖的关键边界：
++- VERSION、csproj 与运行日志版本一致。
++- 活动接口只暴露官方评价读取与 v2 保存。
++- WebMessage 白名单不再允许旧删除入口。
++- 前端删除按钮禁用，点击不发送删除 WebMessage。
++- 评分、短评采用 Keep / Set / Clear 明确协议。
++- 官方明确为空与字段读取未知分离。
++- 保存前先读取官方评价，并以官方当前值解析 Keep。
++- 仅详情页明确识别“无评价”时才允许清空本地；打开创建表单不作为无评价证据。
++- 官方读取不完整时阻止提交。
++- 提交使用官方可见表单、真实控件与 form.requestSubmit()。
++- 提交脚本不使用 fetch，不读取或复制 Cookie，不直接写隐藏评分值。
++- 提交前复核状态、评分和短评。
++- 结算需要连续两次稳定信号；超时返回不确定，不返回成功。
++- 最终成功必须由官方重新回读逐字段匹配。
++- 失败或不确定时不写入目标值。
++- 关键 C# 文件词法定界符检查通过。
++
++二、前端协议测试
++结果：6/6 通过。
++
++PASS: 未修改评分和短评发送 keep
++PASS: 清除评分发送 clear
++PASS: 设置评分发送 set 并携带值
++PASS: 清空短评发送 clear
++PASS: 设置短评发送 set 并携带内容
++PASS: 最终状态为 wish 时，将已有评分解析为清除目标
++
++三、JavaScript 与构建启动器
++PASS: WebAssets/MediaLibrary/app.js 语法检查
++PASS: BUILD_PREVIEW.cmd 为 ASCII、无 BOM、CRLF
++PASS: scripts/Build-Preview.ps1 为 UTF-8 BOM、CRLF
++PASS: 启动器使用明确的 Windows PowerShell 路径和带引号脚本路径
++PASS: PowerShell 脚本定界符平衡检查
++
++四、未执行项目
++NOT RUN: dotnet restore/build/publish（当前容器没有可用 .NET SDK）
++NOT RUN: 编译后的 --self-test
++NOT RUN: Windows WebView2 真实豆瓣账号写入回归
++NOT RUN: 电影与电视剧 wish/do/collect 全组合回归
++NOT RUN: 慢网络、登录失效、验证码和页面结构变化的真实回归
++NOT RUN: 删除事务（本阶段明确禁用，待第二阶段重写）
+ 
+ 结论：
+-- 源码安全边界、状态能力传递、稳定采样、明确提交结算和前端按钮行为均通过自动化检查。
+-- 构造页面回归证明：能力未知时“在看”不会消失；官方明确不支持时按钮可见、禁用且有原因；统一保存仍只提交一次。
+-- 这些结果不能替代 Windows 编译和真实豆瓣账号回归，未执行项目不得标记为通过。
++- 第一阶段源码集成、协议、静态安全边界和前端行为检查均通过。
++- 本结果不能替代 Windows 实际编译和真实豆瓣账号回归。
++- 本源码包不包含、也不声称已经生成可运行 preview.6 EXE。
+diff -ruN '--exclude=SOURCE_SHA256SUMS.txt' '--exclude=PACKAGE_SHA256SUMS.txt' '--exclude=PREVIEW4_TO_PREVIEW6.patch' /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/review/VALIDATION_RESULTS_preview6.txt /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/review/VALIDATION_RESULTS_preview6.txt
+--- /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/review/VALIDATION_RESULTS_preview6.txt	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/review/VALIDATION_RESULTS_preview6.txt	2026-08-05 00:12:31.530371785 +0000
+@@ -0,0 +1,57 @@
++观影助手 0.9.0-preview.6 第一阶段验证结果
++日期：2026-08-05
++
++验证对象：从 0.9.0-preview.4 完整源码合并后的 preview.6 源码树。
++验证环境：Linux 容器；Python 3；Node.js。
++环境限制：无可用 .NET SDK、Windows Forms 运行环境、Windows WebView2 Runtime 和已登录豆瓣账号。
++
++一、评价管线源码检查
++结果：45/45 通过。
++
++覆盖的关键边界：
++- VERSION、csproj 与运行日志版本一致。
++- 活动接口只暴露官方评价读取与 v2 保存。
++- WebMessage 白名单不再允许旧删除入口。
++- 前端删除按钮禁用，点击不发送删除 WebMessage。
++- 评分、短评采用 Keep / Set / Clear 明确协议。
++- 官方明确为空与字段读取未知分离。
++- 保存前先读取官方评价，并以官方当前值解析 Keep。
++- 仅详情页明确识别“无评价”时才允许清空本地；打开创建表单不作为无评价证据。
++- 官方读取不完整时阻止提交。
++- 提交使用官方可见表单、真实控件与 form.requestSubmit()。
++- 提交脚本不使用 fetch，不读取或复制 Cookie，不直接写隐藏评分值。
++- 提交前复核状态、评分和短评。
++- 结算需要连续两次稳定信号；超时返回不确定，不返回成功。
++- 最终成功必须由官方重新回读逐字段匹配。
++- 失败或不确定时不写入目标值。
++- 关键 C# 文件词法定界符检查通过。
++
++二、前端协议测试
++结果：6/6 通过。
++
++PASS: 未修改评分和短评发送 keep
++PASS: 清除评分发送 clear
++PASS: 设置评分发送 set 并携带值
++PASS: 清空短评发送 clear
++PASS: 设置短评发送 set 并携带内容
++PASS: 最终状态为 wish 时，将已有评分解析为清除目标
++
++三、JavaScript 与构建启动器
++PASS: WebAssets/MediaLibrary/app.js 语法检查
++PASS: BUILD_PREVIEW.cmd 为 ASCII、无 BOM、CRLF
++PASS: scripts/Build-Preview.ps1 为 UTF-8 BOM、CRLF
++PASS: 启动器使用明确的 Windows PowerShell 路径和带引号脚本路径
++PASS: PowerShell 脚本定界符平衡检查
++
++四、未执行项目
++NOT RUN: dotnet restore/build/publish（当前容器没有可用 .NET SDK）
++NOT RUN: 编译后的 --self-test
++NOT RUN: Windows WebView2 真实豆瓣账号写入回归
++NOT RUN: 电影与电视剧 wish/do/collect 全组合回归
++NOT RUN: 慢网络、登录失效、验证码和页面结构变化的真实回归
++NOT RUN: 删除事务（本阶段明确禁用，待第二阶段重写）
++
++结论：
++- 第一阶段源码集成、协议、静态安全边界和前端行为检查均通过。
++- 本结果不能替代 Windows 实际编译和真实豆瓣账号回归。
++- 本源码包不包含、也不声称已经生成可运行 preview.6 EXE。
+diff -ruN '--exclude=SOURCE_SHA256SUMS.txt' '--exclude=PACKAGE_SHA256SUMS.txt' '--exclude=PREVIEW4_TO_PREVIEW6.patch' /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/scripts/Build-Preview.ps1 /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/scripts/Build-Preview.ps1
+--- /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/scripts/Build-Preview.ps1	2026-08-04 21:13:34.000000000 +0000
++++ /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/scripts/Build-Preview.ps1	2026-08-05 00:05:00.570186268 +0000
+@@ -8,6 +8,18 @@
+ $logPath = Join-Path $root "build-preview.log"
+ $transcriptStarted = $false
+ 
++function Invoke-Checked {
++    param(
++        [string]$Label,
++        [scriptblock]$Action
++    )
++    Write-Host $Label
++    & $Action
++    if ($LASTEXITCODE -ne 0) {
++        throw "$Label failed with exit code $LASTEXITCODE."
++    }
++}
++
+ try {
+     try {
+         Start-Transcript -Path $logPath -Force | Out-Null
+@@ -17,7 +29,7 @@
+         # Building must continue even when transcript is unavailable.
+     }
+ 
+-    Write-Host "DoubanReview preview build"
++    Write-Host "DoubanReview preview.6 full-source build"
+     Write-Host "Project root: $root"
+ 
+     $projects = @(Get-ChildItem -LiteralPath $root -Filter "*.csproj" -File)
+@@ -35,7 +47,17 @@
+         throw "VERSION file is empty."
+     }
+ 
++    $projectText = Get-Content -LiteralPath $project -Raw
++    if ($projectText -notmatch [regex]::Escape("<Version>$version</Version>")) {
++        throw "VERSION and csproj Version do not match."
++    }
++    $crashLogger = Get-Content -LiteralPath (Join-Path $root "CrashLogger.cs") -Raw
++    if ($crashLogger -notmatch [regex]::Escape("public const string Version = `"$version`";")) {
++        throw "VERSION and AppInfo.Version do not match."
++    }
++
+     $output = Join-Path $root ("artifacts\{0}-v{1}-win-x64" -f $projects[0].BaseName, $version)
++    $archive = Join-Path $root ("artifacts\{0}-v{1}-win-x64.zip" -f $projects[0].BaseName, $version)
+ 
+     $dotnet = Get-Command dotnet -ErrorAction SilentlyContinue
+     if (-not $dotnet) {
+@@ -52,37 +74,41 @@
+         throw "Installed .NET SDK is $sdkVersion. .NET 8 SDK or newer is required."
+     }
+ 
+-    Write-Host "[1/5] Restoring NuGet packages..."
+-    & dotnet restore $project -r win-x64
+-    if ($LASTEXITCODE -ne 0) { throw "dotnet restore failed with exit code $LASTEXITCODE." }
+-
+-    Write-Host "[2/5] Building $Configuration..."
+-    & dotnet build $project -c $Configuration -r win-x64 --no-restore
+-    if ($LASTEXITCODE -ne 0) { throw "dotnet build failed with exit code $LASTEXITCODE." }
+-
+-    Write-Host "[3/5] Checking JavaScript syntax..."
++    Write-Host "[1/7] Running source/protocol validation..."
++    $python = Get-Command python -ErrorAction SilentlyContinue
++    if ($python) {
++        Invoke-Checked "Python review-pipeline validation" { & python (Join-Path $root "tests\validate_review_pipeline.py") }
++    }
++    else {
++        Write-Warning "Python was not found; static Python validation was skipped."
++    }
+     $node = Get-Command node -ErrorAction SilentlyContinue
+-    $appJs = Join-Path $root "WebAssets\MediaLibrary\app.js"
+-    if ($node -and (Test-Path -LiteralPath $appJs)) {
+-        & node --check $appJs
+-        if ($LASTEXITCODE -ne 0) { throw "app.js syntax check failed with exit code $LASTEXITCODE." }
++    if ($node) {
++        Invoke-Checked "JavaScript syntax validation" { & node --check (Join-Path $root "WebAssets\MediaLibrary\app.js") }
++        Invoke-Checked "JavaScript review protocol tests" { & node (Join-Path $root "tests\review-protocol.test.js") }
+     }
+     else {
+-        Write-Warning "Node.js was not found; the optional app.js syntax check was skipped."
++        Write-Warning "Node.js was not found; JavaScript checks were skipped."
+     }
+ 
+-    Write-Host "[4/5] Publishing win-x64 single-file output..."
++    Invoke-Checked "[2/7] Restoring NuGet packages..." { & dotnet restore $project -r win-x64 }
++    Invoke-Checked "[3/7] Building $Configuration..." { & dotnet build $project -c $Configuration -r win-x64 --no-restore -p:ContinuousIntegrationBuild=true }
++
++    Write-Host "[4/7] Preparing publish directory..."
+     if (Test-Path -LiteralPath $output) {
+         Remove-Item -LiteralPath $output -Recurse -Force
+     }
+-    & dotnet publish $project -c $Configuration -r win-x64 --self-contained false --no-restore -o $output
+-    if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed with exit code $LASTEXITCODE." }
++    Invoke-Checked "[5/7] Publishing win-x64 single-file output..." {
++        & dotnet publish $project -c $Configuration -r win-x64 --self-contained false --no-restore -p:ContinuousIntegrationBuild=true -o $output
++    }
+ 
+     foreach ($relative in @(
+         "VERSION",
+         "CHANGELOG.md",
++        "BUILD_STATUS.txt",
+         "review\IMPLEMENTATION_REPORT.md",
+-        "review\VALIDATION_RESULTS.txt"
++        "review\VALIDATION_RESULTS_preview6.txt",
++        "review\ACCEPTANCE_CHECKLIST_preview6.md"
+     )) {
+         $source = Join-Path $root $relative
+         if (Test-Path -LiteralPath $source) {
+@@ -97,7 +123,7 @@
+         throw "No EXE was generated in the publish folder."
+     }
+ 
+-    Write-Host "[5/5] Running the built-in self-test..."
++    Write-Host "[6/7] Running built-in self-test..."
+     $selfTestResult = Join-Path $output "self-test-result.txt"
+     if (Test-Path -LiteralPath $selfTestResult) {
+         Remove-Item -LiteralPath $selfTestResult -Force
+@@ -113,34 +139,49 @@
+ 
+     $selfTestText = Get-Content -LiteralPath $selfTestResult -Raw
+     $firstLine = ($selfTestText -split "`r?`n")[0]
+-    if ($firstLine -match '(?<passed>\d+)\s*/\s*(?<total>\d+)') {
+-        $passed = [int]$Matches['passed']
+-        $total = [int]$Matches['total']
+-        if ($passed -lt $total) {
+-            Write-Warning "Built-in self-test reported $passed/$total passed. Review $selfTestResult."
+-        }
+-        else {
+-            Write-Host "Built-in self-test passed: $passed/$total." -ForegroundColor Green
+-        }
+-    }
+-    else {
+-        Write-Warning "Could not parse the self-test summary. Review $selfTestResult."
++    if ($firstLine -notmatch '(?<passed>\d+)\s*/\s*(?<total>\d+)') {
++        throw "Could not parse the built-in self-test summary."
+     }
++    $passed = [int]$Matches['passed']
++    $total = [int]$Matches['total']
++    if ($passed -ne $total) {
++        throw "Built-in self-test reported $passed/$total passed. Review $selfTestResult."
++    }
++    Write-Host "Built-in self-test passed: $passed/$total." -ForegroundColor Green
++
++    Write-Host "[7/7] Writing hashes and release metadata..."
++    $hashLines = Get-ChildItem -LiteralPath $output -File -Recurse |
++        Sort-Object FullName |
++        ForEach-Object {
++            $relative = $_.FullName.Substring($output.Length).TrimStart('\')
++            $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
++            "$hash  $relative"
++        }
++    $hashLines | Set-Content -LiteralPath (Join-Path $output "PACKAGE_SHA256SUMS.txt") -Encoding UTF8
+ 
+-    $hash = Get-FileHash -LiteralPath $exe.FullName -Algorithm SHA256
++    $exeHash = (Get-FileHash -LiteralPath $exe.FullName -Algorithm SHA256).Hash
+     @(
+         "Version: $version",
+         "SDK: $sdkVersion",
+         "Generated: $(Get-Date -Format o)",
+         "EXE: $($exe.Name)",
+-        "SHA256: $($hash.Hash)",
++        "SHA256: $exeHash",
++        "Source model: full-source preview.6 build; no IL patch",
++        "Review pipeline: v2 Keep/Set/Clear + official settlement/readback",
++        "Delete: intentionally disabled pending stage-2 rewrite",
+         "Channel: development preview; stable-v0.8.9 is not overwritten."
+     ) | Set-Content -LiteralPath (Join-Path $output "BUILD_INFO.txt") -Encoding UTF8
+ 
++    if (Test-Path -LiteralPath $archive) {
++        Remove-Item -LiteralPath $archive -Force
++    }
++    Compress-Archive -LiteralPath $output -DestinationPath $archive -CompressionLevel Optimal
++
+     Write-Host ""
+     Write-Host "Build completed successfully." -ForegroundColor Green
+     Write-Host "Output: $output" -ForegroundColor Green
+     Write-Host "Executable: $($exe.FullName)" -ForegroundColor Green
++    Write-Host "Archive: $archive" -ForegroundColor Green
+     exit 0
+ }
+ catch {
+diff -ruN '--exclude=SOURCE_SHA256SUMS.txt' '--exclude=PACKAGE_SHA256SUMS.txt' '--exclude=PREVIEW4_TO_PREVIEW6.patch' /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/scripts/Validate-Fixtures.py /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/scripts/Validate-Fixtures.py
+--- /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/scripts/Validate-Fixtures.py	2026-08-04 21:20:14.000000000 +0000
++++ /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/scripts/Validate-Fixtures.py	2026-08-05 00:06:51.921306971 +0000
+@@ -1,199 +1,13 @@
+-﻿from pathlib import Path
+-import json, re, sys, traceback, shutil, os
+-from playwright.sync_api import sync_playwright
+-
+-ROOT=Path(__file__).resolve().parents[1]
+-CS=(ROOT/'DoubanWebView2Connector.cs').read_text(encoding='utf-8-sig')
+-
+-def extract(name, repl=None):
+-    m=re.search(rf'internal const string {re.escape(name)} = """\n(.*?)\n""";', CS, re.S)
+-    assert m, name
+-    js=m.group(1)
+-    for k,v in (repl or {}).items(): js=js.replace(k,v)
+-    return js
+-
+-CAPABILITY_OPEN=extract('DoubanWriteOpenCapabilityScript', {'__SUBJECT_ID__': json.dumps('1292052')})
+-FORM_PROBE=extract('DoubanWriteFormProbeScript', {'__SUBJECT_ID__': json.dumps('1292052')})
+-SUBMIT_TEMPLATE=extract('DoubanWriteSubmitScriptV2')
+-
+-def submit_script(payload):
+-    return SUBMIT_TEMPLATE.replace('__PAYLOAD__', json.dumps(payload, ensure_ascii=False))
+-
+-BASE_HTML='''<!doctype html><html><head><title>fixture</title></head><body>
+-<div id="interest_sect_level" class="interest_sect_level">
+-<form id="interestForm" action="data:text/html,/subject/1292052/interest" method="post">
+-<label><input type="radio" name="interest" value="wish">想看</label>
+-<label><input type="radio" name="interest" value="do" checked>在看</label>
+-<label><input type="radio" name="interest" value="collect">看过</label>
+-<input type="hidden" name="rating" value="30">
+-<div id="stars">
+-<img id="star1" title="1 星"><img id="star2" title="2 星"><img id="star3" title="3 星"><img id="star4" title="4 星"><img id="star5" title="5 星">
+-</div>
+-<textarea name="comment" maxlength="330">旧短评</textarea>
+-<button id="officialSubmit" type="submit">保存</button>
+-</form></div>
+-<script>
+-window.submitCount=0;
+-document.querySelectorAll('#stars img').forEach(img=>img.addEventListener('click',()=>{document.querySelector('input[name=rating]').value=String(Number(img.id.slice(4))*10);}));
+-document.getElementById('interestForm').addEventListener('submit',e=>{e.preventDefault();window.submitCount++;});
+-</script></body></html>'''
+-
+-MISSING_RATING_HTML=BASE_HTML.replace('<div id="stars">\n<img id="star1" title="1 星"><img id="star2" title="2 星"><img id="star3" title="3 星"><img id="star4" title="4 星"><img id="star5" title="5 星">\n</div>','<div id="stars"></div>')
+-
+-CAPABILITY_HTML='''<!doctype html><html><body>
+-<div id="interest_sect_level" class="interest_sect_level">
+-<button id="editInterest" name="pbtn-1292052" type="button">修改</button>
+-<form id="interestForm" action="data:text/html,/subject/1292052/interest" style="display:none">
+-<label><input type="radio" name="interest" value="wish">想看</label>
+-<label><input type="radio" name="interest" value="do" checked>在看</label>
+-<label><input type="radio" name="interest" value="collect">看过</label>
+-<input type="hidden" name="rating" value="30">
+-<textarea name="comment">旧短评</textarea><button type="submit">保存</button>
+-</form></div>
+-<script>document.getElementById('editInterest').addEventListener('click',()=>{document.getElementById('interestForm').style.display='block';});</script>
+-</body></html>'''
+-
+-def route_subject(route): route.fulfill(status=200, content_type='text/html', body=route_subject.body)
+-route_subject.body=BASE_HTML
+-
+-results=[]
+-def ok(name, details=''): results.append((name,'PASS',details))
+-def check(cond,name,details=''):
+-    if not cond: raise AssertionError(f'{name}: {details}')
+-    ok(name,details)
+-
+-with sync_playwright() as p:
+-    
+-    executable=os.environ.get('PLAYWRIGHT_CHROMIUM_EXECUTABLE') or shutil.which('chromium') or shutil.which('chromium-browser') or shutil.which('google-chrome')
+-    launch_args={'headless':True}
+-    if executable: launch_args.update(executable_path=executable, args=['--no-sandbox'])
+-    browser=p.chromium.launch(**launch_args)
+-    context=browser.new_context()
+-    page=context.new_page()
+-
+-    # detail capability must come from the generic official edit form
+-    page.set_content(CAPABILITY_HTML)
+-    opened=page.evaluate(CAPABILITY_OPEN)
+-    probe=page.evaluate(FORM_PROBE)
+-    check(opened.get('clicked') is True and opened.get('generic') is True, '详情能力探测优先打开官方通用编辑入口', json.dumps(opened,ensure_ascii=False))
+-    values=[item.get('value') for item in probe.get('interestOptions',[])]
+-    check(probe.get('ready') is True and values==['wish','do','collect'] and probe.get('selectedInterest')=='do', '官方编辑表单返回完整 wish/do/collect 能力', json.dumps(probe,ensure_ascii=False))
+-
+-    # unified normal submit
+-    route_subject.body=BASE_HTML
+-    page.set_content(route_subject.body)
+-    probe=page.evaluate(FORM_PROBE)
+-    check(probe['ready'] and probe['ratingControlCount']>=5 and probe['commentControlCount']==1, '官方表单能力探测', json.dumps(probe,ensure_ascii=False))
+-    payload={'subjectId':'1292052','status':'collect','rating':4,'setComment':True,'comment':'统一短评'}
+-    result=page.evaluate(submit_script(payload))
+-    check(result.get('submitted') is True, '状态评分短评统一提交', json.dumps(result,ensure_ascii=False))
+-    check(page.evaluate('window.submitCount')==1, '官方提交按钮只点击一次')
+-    check(page.locator('input[name=interest]:checked').get_attribute('value')=='collect', '提交前状态为 collect')
+-    check(page.locator('input[name=rating]').get_attribute('value')=='40', '评分通过可见星级更新隐藏值')
+-    check(page.locator('textarea[name=comment]').input_value()=='统一短评', '短评写入官方文本框')
+-
+-    # missing rating control blocks before submit
+-    route_subject.body=MISSING_RATING_HTML
+-    page.set_content(route_subject.body)
+-    result=page.evaluate(submit_script(payload))
+-    check(result.get('submitted') is False and '评分控件缺失' in result.get('error',''), '评分控件缺失时阻止提交', json.dumps(result,ensure_ascii=False))
+-    check(page.evaluate('window.submitCount')==0, '评分控件缺失时零提交')
+-
+-    # nullable rating preserves existing official value
+-    route_subject.body=BASE_HTML
+-    page.set_content(route_subject.body)
+-    payload_null={'subjectId':'1292052','status':'collect','rating':None,'setComment':False,'comment':''}
+-    result=page.evaluate(submit_script(payload_null))
+-    check(result.get('submitted') is True and page.evaluate('window.submitCount')==1, 'nullable 评分仍可统一保存')
+-    check(page.locator('input[name=rating]').get_attribute('value')=='30', 'nullable 评分不清空官方已有评分')
+-
+-    # wish + null rating
+-    route_subject.body=BASE_HTML
+-    page.set_content(route_subject.body)
+-    payload_wish={'subjectId':'1292052','status':'wish','rating':None,'setComment':False,'comment':''}
+-    result=page.evaluate(submit_script(payload_wish))
+-    check(result.get('submitted') is True and page.locator('input[name=interest]:checked').get_attribute('value')=='wish', '想看状态不带评分可提交')
+-
+-    context.close()
+-
+-    # UI fixture
+-    context=browser.new_context()
+-    page=context.new_page()
+-    index=(ROOT/'WebAssets/MediaLibrary/index.html').read_text(encoding='utf-8-sig')
+-    app=(ROOT/'WebAssets/MediaLibrary/app.js').read_text(encoding='utf-8-sig')
+-    styles=(ROOT/'WebAssets/MediaLibrary/styles.css').read_text(encoding='utf-8-sig')
+-    pager=(ROOT/'WebAssets/MediaLibrary/pager.css').read_text(encoding='utf-8-sig')
+-    bridge_js=r'''
+-      window.__sentMessages=[];
+-      window.__backendMode='default';
+-      window.chrome={webview:{
+-        handlers:[], addEventListener(type,handler){if(type==='message')this.handlers.push(handler);},
+-        postMessage(message){
+-          window.__sentMessages.push(JSON.parse(JSON.stringify(message)));
+-          const detail=window.__detail;
+-          let envelope={id:message.id,ok:true,data:{}};
+-          if(message.op==='init') envelope.data={version:'0.9.0-preview.2',tabs:{collect:[],wish:[],watching:[],software:[]},login:{state:'logged-in',text:'豆瓣：已登录'}};
+-          else if(message.op==='libraryPage') envelope.data={items:[],hasMore:false,source:'webview2',login:{state:'logged-in',text:'豆瓣：已登录'}};
+-          else if(message.op==='sessionStatus') envelope.data={state:'logged-in',text:'豆瓣：已登录'};
+-          else if(message.op==='saveDoubanEntry') {
+-            if(window.__backendMode==='blocked') envelope.data={detail,write:{phase:'blocked',stage:'formProbe',requested:message.payload,official:{},settled:false,localUpdated:false,error:'官方评分控件缺失'}};
+-            else envelope.data={detail:{...detail,rating:message.payload.rating,comment:message.payload.comment,statusOptions:[{text:message.payload.status==='wish'?'想看':message.payload.status==='do'?'在看':'看过',selected:true}]},write:{phase:'confirmed',stage:'readback',requested:{status:message.payload.status,rating:message.payload.rating,commentLength:message.payload.setComment?message.payload.comment.length:null},official:{status:message.payload.status,rating:message.payload.rating,comment:message.payload.comment},settled:true,settled:true,localUpdated:true,error:''}};
+-          } else if(message.op==='deleteEntry') {
+-            if(window.__backendMode==='deleteError') envelope={id:message.id,ok:false,error:'删除确认失败'};
+-            else envelope.data={detail,write:{phase:'confirmed',stage:'readback',requested:{},official:{status:'deleted',rating:null,comment:''},settled:true,settled:true,localUpdated:true,error:''}};
+-          }
+-          Promise.resolve().then(()=>this.handlers.forEach(handler=>handler({data:envelope})));
+-        }
+-      }};
+-    '''
+-    combined=index.replace('<link rel="stylesheet" href="styles.css">','').replace('<link rel="stylesheet" href="pager.css">','')
+-    combined=__import__('re').sub(r'<meta http-equiv="Content-Security-Policy"[^>]*>', '', combined)
+-    combined=combined.replace('<script src="app.js"></script>', f'<script>{bridge_js}</script><script>{app}</script>')
+-    page.set_content(combined)
+-    page.wait_for_function("document.getElementById('summary').textContent.includes('0.9.0-preview.2')")
+-    detail={'subjectId':'1292052','subjectUrl':'https://movie.douban.com/subject/1292052/','title':'测试影片','year':'2002','genres':'剧情','directors':'导演','imdbId':'tt1234567','runtime':'120分钟','countries':'中国','summary':'简介','doubanScore':8.1,'rating':3,'posterUrl':'','markedDate':'','tags':'','comment':'旧短评','statusOptions':[{'text':'想看','selected':False},{'text':'在看','selected':False},{'text':'看过','selected':True}],'statusCapabilitiesKnown':True,'statusCapabilitySource':'official-form','statusCapabilityError':'','cast':[],'fullCastAvailable':False,'connectorSource':'fixture'}
+-    unknown_detail={**detail,'statusOptions':[{'text':'想看','selected':False},{'text':'看过','selected':True}],'statusCapabilitiesKnown':False,'statusCapabilityError':'官方表单字段未稳定'}
+-    page.evaluate('(d)=>{window.__detail=d; state.currentDetail=d; renderDetail(d);}',unknown_detail)
+-    do_button=page.locator('#writeStatuses button[data-status="do"]')
+-    check(do_button.is_visible() and not do_button.is_disabled(), '能力未知时在看仍显示且可选择')
+-    check('保存前' in (do_button.get_attribute('title') or ''), '能力未知时提示保存前再次确认')
+-
+-    known_without_do={**unknown_detail,'statusCapabilitiesKnown':True,'statusCapabilityError':''}
+-    page.evaluate('(d)=>{window.__detail=d; state.currentDetail=d; renderDetail(d);}',known_without_do)
+-    check(do_button.is_visible() and do_button.is_disabled(), '官方表单不提供在看时按钮明确禁用')
+-    check('不提供' in (do_button.get_attribute('title') or ''), '禁用在看按钮显示具体原因')
+-
+-    page.evaluate('(d)=>{window.__detail=d; state.currentDetail=d; renderDetail(d);}',detail)
+-    page.locator('#writeRating button[data-rating="5"]').click()
+-    page.locator('#writeReview').fill('新短评')
+-    page.locator('#saveDoubanEntry').click()
+-    page.wait_for_function("document.getElementById('writeOutcome').textContent.includes('本地更新：是')")
+-    check('提交稳定：是' in page.locator('#writeOutcome').inner_text(), '确认结果展示提交稳定状态')
+-    sent=page.evaluate("window.__sentMessages.filter(x=>x.op==='saveDoubanEntry')")
+-    check(len(sent)==1, '前端只发送一个 saveDoubanEntry 消息', json.dumps(sent,ensure_ascii=False))
+-    save_payload=sent[0]['payload']
+-    check(save_payload['status']=='collect' and save_payload['rating']==5 and save_payload['setComment'] is True and save_payload['comment']=='新短评', '统一保存 payload 完整')
+-    check(not page.locator('#saveDoubanEntry').is_disabled(), '确认成功后界面解锁')
+-
+-    page.evaluate('(d)=>{window.__detail=d; state.currentDetail=d; renderDetail(d);}',detail)
+-    page.locator('#writeStatuses button[data-status="wish"]').click()
+-    check(page.locator('#writeRating').get_attribute('data-value') in (None,''), '想看自动清除评分')
+-    check(page.locator('#writeRating button[data-rating="1"]').is_disabled(), '想看禁用评分按钮')
+-
+-    page.evaluate('(d)=>{window.__backendMode="blocked"; window.__detail=d; state.currentDetail=d; renderDetail(d);}',detail)
+-    page.locator('#writeReview').fill('必须保留的编辑内容')
+-    page.locator('#saveDoubanEntry').click()
+-    page.wait_for_function("document.getElementById('writeOutcome').textContent.includes('官方评分控件缺失')")
+-    check(page.locator('#writeReview').input_value()=='必须保留的编辑内容', '后端阻止时保留用户编辑')
+-    check(not page.locator('#saveDoubanEntry').is_disabled(), '后端阻止后界面解锁')
+-
+-    page.evaluate('window.__backendMode="deleteError"; window.confirm=()=>true;')
+-    page.locator('#deleteEntry').click()
+-    page.wait_for_function("document.getElementById('writeOutcome').textContent.includes('删除确认失败')")
+-    check(not page.locator('#deleteEntry').is_disabled() and not page.locator('#saveDoubanEntry').is_disabled(), '删除失败后界面恢复可操作')
+-
+-    context.close(); browser.close()
+-
+-for name,status,details in results:
+-    print(f'{status}: {name}' + (f' | {details}' if details else ''))
+-print(f'ALL_FIXTURES_OK ({len(results)} checks)')
++#!/usr/bin/env python3
++from pathlib import Path
++import shutil
++import subprocess
++import sys
++
++ROOT = Path(__file__).resolve().parents[1]
++node = shutil.which("node")
++if not node:
++    print("FAIL: Node.js is required for review-protocol fixtures")
++    sys.exit(1)
++result = subprocess.run([node, str(ROOT / "tests" / "review-protocol.test.js")], cwd=ROOT)
++sys.exit(result.returncode)
+diff -ruN '--exclude=SOURCE_SHA256SUMS.txt' '--exclude=PACKAGE_SHA256SUMS.txt' '--exclude=PREVIEW4_TO_PREVIEW6.patch' /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/scripts/Validate-Source.py /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/scripts/Validate-Source.py
+--- /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/scripts/Validate-Source.py	2026-08-04 21:20:14.000000000 +0000
++++ /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/scripts/Validate-Source.py	2026-08-05 00:03:13.433837083 +0000
+@@ -1,133 +1,6 @@
+-﻿#!/usr/bin/env python3
+-from __future__ import annotations
+-
++#!/usr/bin/env python3
+ from pathlib import Path
+-import json
+-import re
+-import shutil
+-import subprocess
+-import sys
+-import tempfile
+-import xml.etree.ElementTree as ET
++import runpy
+ 
+ ROOT = Path(__file__).resolve().parents[1]
+-FAILURES: list[str] = []
+-PASSES: list[str] = []
+-
+-
+-def check(name: str, condition: bool, detail: str = "") -> None:
+-    if condition:
+-        PASSES.append(f"PASS: {name}" + (f" | {detail}" if detail else ""))
+-    else:
+-        FAILURES.append(f"FAIL: {name}" + (f" | {detail}" if detail else ""))
+-
+-
+-def run(command: list[str], cwd: Path = ROOT) -> subprocess.CompletedProcess[str]:
+-    return subprocess.run(command, cwd=cwd, text=True, capture_output=True, encoding="utf-8", errors="replace")
+-
+-
+-# XML/project metadata
+-try:
+-    ET.parse(ROOT / "观影助手.csproj")
+-    check("csproj XML 可解析", True)
+-except Exception as exc:
+-    check("csproj XML 可解析", False, str(exc))
+-
+-version = (ROOT / "VERSION").read_text(encoding="utf-8-sig").strip()
+-project_text = (ROOT / "观影助手.csproj").read_text(encoding="utf-8-sig")
+-check("VERSION 与 csproj 一致", f"<Version>{version}</Version>" in project_text, version)
+-
+-# Frontend uniqueness and bridge boundary
+-html = (ROOT / "WebAssets/MediaLibrary/index.html").read_text(encoding="utf-8-sig")
+-app = (ROOT / "WebAssets/MediaLibrary/app.js").read_text(encoding="utf-8-sig")
+-form = (ROOT / "HtmlMediaLibraryForm.cs").read_text(encoding="utf-8-sig")
+-connector = (ROOT / "DoubanWebView2Connector.cs").read_text(encoding="utf-8-sig")
+-interface = (ROOT / "DoubanConnector.cs").read_text(encoding="utf-8-sig")
+-
+-check("HTML 只有一个统一保存按钮", html.count('id="saveDoubanEntry"') == 1)
+-check("HTML 不再暴露三个旧写入按钮", all(token not in html for token in ("setStatus", "setRating", "saveShortReview", "submitStatus", "submitRating")))
+-check("app.js 只绑定一个统一保存入口", app.count('$("saveDoubanEntry").addEventListener') == 1 and 'writeOperation("saveDoubanEntry"' in app)
+-check("WebMessage 白名单不含旧写入操作", '"saveDoubanEntry", "deleteEntry", "delete"' in form and all(f'"{x}"' not in form.split('private readonly',1)[0] for x in ("setStatus", "setRating", "saveShortReview", "writeStatus", "writeRating", "writeReview")))
+-check("C# 接口只保留统一保存与独立删除", "SaveDoubanEntryAsync" in interface and "DeleteAsync" in interface and all(x not in interface for x in ("SetStatusAsync", "SetRatingAsync", "SaveShortReviewAsync")))
+-check("旧独立写入执行链已删除", all(x not in connector for x in ("ExecuteWriteAsync", "DoubanStatusWriteScript", "DoubanRatingWriteScript", "DoubanReviewWriteScript")))
+-check("想看+评分在 C# 层拒绝", 'request.Status == "wish" && request.Rating is not null' in connector)
+-check("失败或未确认不写本地", 'if (!result.Success) return WriteEnvelope(record, result, "webview2-write", false);' in form and 'ApplyConfirmedDoubanEntry(record, result, request);' in form)
+-check("结果模型包含结构化阶段、本地更新与提交稳定标志", all(x in interface for x in ("Phase", "Stage", "RequestedStatus", "RequestedRating", "RequestedComment", "LocalUpdated", "Settled")))
+-check("等待官方表单和提交完成使用条件轮询", "WaitForOfficialFormAsync" in connector and "WaitForSubmitSettlementAsync" in connector and "for (var attempt" in connector)
+-check("官方表单要求连续稳定采样", "stableSamples >= 3" in connector and "OfficialFormSignature" in connector)
+-check("提交等待显式区分 settled 与 timeout", 'if (!settle.Settled)' in connector and 'new(probe, false, "timeout"' in connector)
+-check("提交未稳定时不会继续官方回读", connector.index('if (!settle.Settled)') < connector.index('stage = "readback"'))
+-check("详情状态能力来自官方编辑表单", "ProbeOfficialStatusCapabilitiesAsync" in connector and "StatusCapabilitiesKnown = capabilities.Known" in connector)
+-check("前端能力未知时不再永久隐藏在看", 'button.classList.remove("hidden")' in app and 'capabilityBlocked' in app and 'button.dataset.status !== "do"' not in app)
+-
+-# Embedded JS extraction and policy checks
+-script_names = [
+-    "DoubanWriteSnapshotScript", "DoubanWriteOpenCapabilityScript", "DoubanWriteOpenScriptV2", "DoubanWriteFormProbeScript",
+-    "DoubanWriteSubmitScriptV2", "DoubanWritePostSubmitProbeScript",
+-    "DoubanHistoryContainsSubjectScript", "DoubanDeleteControlScript",
+-]
+-extracted: dict[str, str] = {}
+-for name in script_names:
+-    match = re.search(rf'internal const string {re.escape(name)} = """\n(.*?)\n""";', connector, re.S)
+-    check(f"提取内嵌脚本 {name}", match is not None)
+-    if match:
+-        extracted[name] = match.group(1)
+-
+-write_bundle = "\n".join(extracted.values())
+-check("写入脚本不使用 fetch", "fetch(" not in write_bundle.lower())
+-check("写入脚本不读取或复制 Cookie", "document.cookie" not in write_bundle.lower() and ".cookie" not in write_bundle.lower())
+-submit = extracted.get("DoubanWriteSubmitScriptV2", "")
+-check("统一写入脚本只点击一次官方提交", submit.count("submit.click()") == 1)
+-check("统一写入限制同源和影片 ID", "u.origin!==location.origin" in submit and "u.pathname.includes(subjectId)" in submit)
+-check("评分通过可见控件而非直接写隐藏值", "rating.node.click()" in submit and "hidden.value=" not in submit)
+-check("删除脚本只选个人区域唯一控件", "candidates.length!==1" in extracted.get("DoubanDeleteControlScript", "") and "a_confirm_link" in extracted.get("DoubanDeleteControlScript", ""))
+-
+-node = shutil.which("node")
+-if node:
+-    result = run([node, "--check", str(ROOT / "WebAssets/MediaLibrary/app.js")])
+-    check("app.js Node 语法检查", result.returncode == 0, result.stderr.strip())
+-    replacements = {
+-        "__PROFILE_ID__": json.dumps("123456"),
+-        "__SUBJECT_ID__": json.dumps("1292052"),
+-        "__STATUS__": json.dumps("collect"),
+-        "__PAYLOAD__": json.dumps({"subjectId":"1292052","status":"collect","rating":5,"setComment":True,"comment":"测试短评"}, ensure_ascii=False),
+-    }
+-    with tempfile.TemporaryDirectory(prefix="douban-write-js-") as tmp:
+-        for name, js in extracted.items():
+-            for key, value in replacements.items():
+-                js = js.replace(key, value)
+-            path = Path(tmp) / f"{name}.js"
+-            path.write_text(js + ";\n", encoding="utf-8")
+-            result = run([node, "--check", str(path)])
+-            check(f"{name} Node 语法检查", result.returncode == 0, result.stderr.strip())
+-else:
+-    check("Node.js 可用于脚本语法检查", False, "node 未安装")
+-
+-# Lexical delimiter checks for modified C# files, ignoring string/comment tokens.
+-try:
+-    from pygments import lex
+-    from pygments.lexers.dotnet import CSharpLexer
+-    from pygments.token import Comment, String
+-    for filename in ["DoubanConnector.cs", "DoubanWebView2Connector.cs", "HtmlMediaLibraryForm.cs", "SelfTest.cs", "CrashLogger.cs"]:
+-        text = (ROOT / filename).read_text(encoding="utf-8-sig")
+-        # Pygments does not fully understand modern C# raw-string literals. Mask those
+-        # first so JavaScript/JSON braces inside them are not counted as C# delimiters.
+-        text = re.sub(r'\$*"""[\s\S]*?"""', '""', text)
+-        filtered = "".join(value for token, value in lex(text, CSharpLexer()) if token not in Comment and token not in String)
+-        pairs = [("{","}"),("(",")"),("[","]")]
+-        balanced = all(filtered.count(a) == filtered.count(b) for a,b in pairs)
+-        check(f"{filename} 词法定界符平衡", balanced)
+-except Exception as exc:
+-    check("C# 词法定界符检查", False, str(exc))
+-
+-# Git whitespace validation when this is a repository.
+-if (ROOT / ".git").exists() and shutil.which("git"):
+-    result = run(["git", "diff", "--check"])
+-    check("git diff --check", result.returncode == 0, (result.stdout + result.stderr).strip())
+-
+-for line in PASSES:
+-    print(line)
+-for line in FAILURES:
+-    print(line)
+-print(f"SUMMARY: {len(PASSES)} passed, {len(FAILURES)} failed")
+-sys.exit(1 if FAILURES else 0)
++runpy.run_path(str(ROOT / "tests" / "validate_review_pipeline.py"), run_name="__main__")
+diff -ruN '--exclude=SOURCE_SHA256SUMS.txt' '--exclude=PACKAGE_SHA256SUMS.txt' '--exclude=PREVIEW4_TO_PREVIEW6.patch' /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/tests/review-protocol.test.js /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/tests/review-protocol.test.js
+--- /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/tests/review-protocol.test.js	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/tests/review-protocol.test.js	2026-08-05 00:03:13.433634072 +0000
+@@ -0,0 +1,63 @@
++"use strict";
++const fs = require("fs");
++const vm = require("vm");
++const path = require("path");
++
++const root = path.resolve(__dirname, "..");
++const source = fs.readFileSync(path.join(root, "WebAssets", "MediaLibrary", "app.js"), "utf8");
++const match = source.match(/function resolvePendingMutations\(\) \{[\s\S]*?\n\}/);
++if (!match) throw new Error("resolvePendingMutations not found");
++
++function run({ baseline, status, rating, comment }) {
++  const elements = {
++    writeRating: { dataset: { value: rating == null ? "" : String(rating) } },
++    writeReview: { value: comment }
++  };
++  const context = {
++    state: { writeBaseline: baseline },
++    selectedWriteStatus: () => status,
++    $: id => elements[id]
++  };
++  vm.createContext(context);
++  vm.runInContext(`${match[0]}; result = resolvePendingMutations();`, context);
++  return JSON.parse(JSON.stringify(context.result));
++}
++
++function assertDeep(actual, expected, name) {
++  const a = JSON.stringify(actual);
++  const e = JSON.stringify(expected);
++  if (a !== e) throw new Error(`${name}\nexpected ${e}\nactual   ${a}`);
++  console.log(`PASS: ${name}`);
++}
++
++assertDeep(
++  run({ baseline:{status:"collect",rating:4,comment:"A"}, status:"collect", rating:4, comment:"A" }),
++  {status:"collect",ratingAction:"keep",rating:null,commentAction:"keep",comment:null},
++  "unchanged fields use keep"
++);
++assertDeep(
++  run({ baseline:{status:"collect",rating:4,comment:"A"}, status:"collect", rating:null, comment:"A" }),
++  {status:"collect",ratingAction:"clear",rating:null,commentAction:"keep",comment:null},
++  "rating clear is explicit"
++);
++assertDeep(
++  run({ baseline:{status:"collect",rating:4,comment:"A"}, status:"collect", rating:5, comment:"A" }),
++  {status:"collect",ratingAction:"set",rating:5,commentAction:"keep",comment:null},
++  "rating set carries value"
++);
++assertDeep(
++  run({ baseline:{status:"collect",rating:4,comment:"A"}, status:"collect", rating:4, comment:"" }),
++  {status:"collect",ratingAction:"keep",rating:null,commentAction:"clear",comment:null},
++  "comment clear is explicit"
++);
++assertDeep(
++  run({ baseline:{status:"collect",rating:4,comment:"A"}, status:"collect", rating:4, comment:"B" }),
++  {status:"collect",ratingAction:"keep",rating:null,commentAction:"set",comment:"B"},
++  "comment set carries value"
++);
++assertDeep(
++  run({ baseline:{status:"collect",rating:4,comment:"A"}, status:"wish", rating:null, comment:"A" }),
++  {status:"wish",ratingAction:"clear",rating:null,commentAction:"keep",comment:null},
++  "wish resolves existing rating to clear"
++);
++console.log("ALL_PROTOCOL_TESTS_OK");
+diff -ruN '--exclude=SOURCE_SHA256SUMS.txt' '--exclude=PACKAGE_SHA256SUMS.txt' '--exclude=PREVIEW4_TO_PREVIEW6.patch' /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/tests/validate_review_pipeline.py /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/tests/validate_review_pipeline.py
+--- /mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/tests/validate_review_pipeline.py	1970-01-01 00:00:00.000000000 +0000
++++ /mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/tests/validate_review_pipeline.py	2026-08-05 00:03:13.433778506 +0000
+@@ -0,0 +1,152 @@
++#!/usr/bin/env python3
++from __future__ import annotations
++
++from pathlib import Path
++import re
++import sys
++import xml.etree.ElementTree as ET
++
++ROOT = Path(__file__).resolve().parents[1]
++PASSES: list[str] = []
++FAILURES: list[str] = []
++
++
++def check(name: str, condition: bool, detail: str = "") -> None:
++    line = f"{'PASS' if condition else 'FAIL'}: {name}" + (f" | {detail}" if detail else "")
++    (PASSES if condition else FAILURES).append(line)
++    print(line)
++
++
++def text(relative: str) -> str:
++    return (ROOT / relative).read_text(encoding="utf-8-sig")
++
++
++# Project/version integrity.
++try:
++    ET.parse(ROOT / "观影助手.csproj")
++    check("csproj XML 可解析", True)
++except Exception as exc:
++    check("csproj XML 可解析", False, str(exc))
++
++version = text("VERSION").strip()
++project = text("观影助手.csproj")
++crash = text("CrashLogger.cs")
++check("VERSION 为 preview.6", version == "0.9.0-preview.6", version)
++check("VERSION 与 csproj 一致", f"<Version>{version}</Version>" in project)
++check("VERSION 与运行日志版本一致", f'public const string Version = "{version}";' in crash)
++
++# Active bridge/API boundary.
++html_form = text("HtmlMediaLibraryForm.cs")
++connector_api = text("DoubanConnector.cs")
++connector_v2 = text("DoubanWebView2Connector.ReviewWriteV2.cs")
++connector_core = text("DoubanWebView2Connector.cs")
++app = text("WebAssets/MediaLibrary/app.js")
++index = text("WebAssets/MediaLibrary/index.html")
++models = text("ReviewWriteModels.cs")
++resolver = text("ReviewTargetResolver.cs")
++coordinator = text("ReviewWriteCoordinator.cs")
++submit_script = text("DoubanOfficialFormScripts.cs")
++settlement = text("ReviewSettlementPolicy.cs")
++verifier = text("ReviewWriteVerifier.cs")
++
++check("活动接口只暴露评价读取与 v2 保存", "ReadOfficialReviewAsync" in connector_api and "DoubanEntryWriteRequestV2" in connector_api and "DeleteAsync" not in connector_api)
++check("桥接白名单禁止旧删除", '"saveDoubanEntry"' in html_form and '"deleteEntry"' not in html_form.split("private readonly", 1)[0] and '"delete"' not in html_form.split("private readonly", 1)[0])
++check("前端删除按钮明确禁用", 'id="deleteEntry" type="button" class="danger" disabled' in index and '$(' + '"deleteEntry").disabled = true' in app)
++check("旧写入入口降级为私有 legacy", "private Task<DoubanWriteResult> SaveDoubanEntryLegacyAsync" in connector_core and "private Task<DoubanWriteResult> DeleteLegacyAsync" in connector_core)
++
++# Explicit mutation protocol.
++check("模型定义 Keep/Set/Clear", all(token in models for token in ("Keep", "Set", "Clear")))
++check("空值与未知值分离", all(token in models for token in ("ExistsKnown", "RatingKnown", "CommentKnown")))
++check("前端发送 ratingAction/commentAction", all(token in app for token in ("ratingAction", "commentAction")))
++check("前端不再构造 setComment 旧协议", "const setComment" not in app)
++check("想看最终状态强制无评分", "rating = null" in resolver and "RatingWasImplicitlyClearedByWish" in models)
++check("Keep 从最新官方值合并", "official.Rating" in resolver and "official.Comment" in resolver)
++
++# Web-authoritative read and safe absence rule.
++check("详情页先读取官方评价", "ReadOfficialReviewAsync(subjectUrl)" in html_form)
++check("完整官方快照覆盖本地", "ApplyAuthoritativeReview" in html_form and "SelectAuthoritativeSnapshot" in html_form)
++check("官方明确无评价才清空本地", "if (!official.Exists)" in html_form and "record.Rating = null" in html_form and 'record.Comment = ""' in html_form)
++check("表单可见不被当成无评价证据", 'var existsKnown = detailExistsKnown || formIndicatesExisting;' in connector_v2 and 'Boolean(form, "ready")' not in connector_v2.split("var existsKnown",1)[1].split(";",1)[0])
++check("不完整官方读取阻止提交", 'before.Error is not null || !before.ExistsKnown || !before.StatusKnown' in coordinator)
++
++# Submit/settlement/readback pipeline.
++first_read = coordinator.find("ReadOfficialAsync")
++submit = coordinator.find("SubmitTargetAsync")
++settle = coordinator.find("WaitForSettlementAsync")
++second_read = coordinator.find("ReadOfficialAsync", first_read + 1)
++verify = coordinator.find("ReviewWriteVerifier.Verify")
++cache_write = coordinator.rfind("OverwriteFromOfficialAsync")
++check("管线顺序为读取→提交→结算→回读→验证→本地", -1 not in (first_read, submit, settle, second_read, verify, cache_write) and first_read < submit < settle < second_read < verify < cache_write)
++check("提交使用官方 form.requestSubmit", "form.requestSubmit(submitButton)" in submit_script)
++check("提交不使用 fetch/private HTTP", not re.search(r"\bfetch\s*\(", submit_script, re.I))
++check("提交不读取 cookie", "document.cookie" not in submit_script)
++check("隐藏评分只读取不直接赋值", "ratingHidden?.value" in submit_script and not re.search(r"ratingHidden\s*\.\s*value\s*=", submit_script))
++check("提交前复核状态评分短评", "提交前官方表单复核失败" in submit_script)
++check("结算要求连续两次稳定", "_stableSamples >= 2" in settlement)
++check("超时返回不确定而非成功", "timeout-uncertain" in settlement and "结果标记为不确定" in settlement)
++check("最终成功必须官方逐字段匹配", all(token in verifier for token in ("Status", "Rating", "Comment")) and "verification.Matches" in coordinator)
++check("失败/不确定不写目标值", coordinator.find("if (!verification.Matches)") < cache_write and "LocalUpdated: false" in coordinator)
++
++# UI semantics.
++check("UI 明示网页为准", "网页为准" in index)
++check("清除评分文案真实", ">清除评分</button>" in index)
++check("结果阶段包含 official-read/settlement", '"official-read"' in app and 'settlement: "等待豆瓣结算"' in app)
++check("删除点击不会发送 WebMessage", 'writeOperation("deleteEntry"' not in app)
++
++# Basic delimiter balance (string/comment-aware enough for these files).
++def delimiters_ok(source: str) -> tuple[bool, str]:
++    stack: list[tuple[str, int]] = []
++    pairs = {")": "(", "]": "[", "}": "{"}
++    i = 0
++    state = "code"
++    while i < len(source):
++        c = source[i]
++        n = source[i + 1] if i + 1 < len(source) else ""
++        if state == "code":
++            if c == "/" and n == "/": state, i = "line", i + 2; continue
++            if c == "/" and n == "*": state, i = "block", i + 2; continue
++            if source[i:i+4] == '$"""': state, i = "raw", i + 4; continue
++            if source[i:i+3] == '"""': state, i = "raw", i + 3; continue
++            if c == "@" and n == '"': state, i = "verbatim", i + 2; continue
++            if c == "$" and n == '"': state, i = "string", i + 2; continue
++            if c == '"': state, i = "string", i + 1; continue
++            if c == "'": state, i = "char", i + 1; continue
++            if c in "([{": stack.append((c, i))
++            elif c in ")]}":
++                if not stack or stack[-1][0] != pairs[c]: return False, f"mismatch {c} at {i}"
++                stack.pop()
++            i += 1; continue
++        if state == "line":
++            if c == "\n": state = "code"
++            i += 1; continue
++        if state == "block":
++            if c == "*" and n == "/": state, i = "code", i + 2
++            else: i += 1
++            continue
++        if state in ("string", "char"):
++            closing = '"' if state == "string" else "'"
++            if c == "\\": i += 2
++            elif c == closing: state, i = "code", i + 1
++            else: i += 1
++            continue
++        if state == "verbatim":
++            if c == '"' and n == '"': i += 2
++            elif c == '"': state, i = "code", i + 1
++            else: i += 1
++            continue
++        if state == "raw":
++            if source[i:i+3] == '"""': state, i = "code", i + 3
++            else: i += 1
++            continue
++    return (not stack and state in ("code", "line")), f"state={state}, stack={stack[-3:]}"
++
++for relative in (
++    "DoubanConnector.cs", "DoubanWebView2Connector.cs", "DoubanWebView2Connector.ReviewWriteV2.cs",
++    "HtmlMediaLibraryForm.cs", "ReviewWriteModels.cs", "ReviewTargetResolver.cs",
++    "ReviewWriteCoordinator.cs", "ReviewSettlementPolicy.cs", "DoubanOfficialFormScripts.cs",
++    "OfficialReviewCachePolicy.cs", "ReviewWriteVerifier.cs", "SelfTest.cs"):
++    ok, detail = delimiters_ok(text(relative))
++    check(f"{relative} 分隔符平衡", ok, detail if not ok else "")
++
++print(f"SUMMARY: {len(PASSES)} passed, {len(FAILURES)} failed")
++sys.exit(1 if FAILURES else 0)
+diff -ruN '--exclude=SOURCE_SHA256SUMS.txt' '--exclude=PACKAGE_SHA256SUMS.txt' '--exclude=PREVIEW4_TO_PREVIEW6.patch' "/mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/\345\205\210\347\234\213\350\277\231\351\207\214.txt" "/mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/\345\205\210\347\234\213\350\277\231\351\207\214.txt"
+--- "/mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/\345\205\210\347\234\213\350\277\231\351\207\214.txt"	2026-08-04 21:25:54.000000000 +0000
++++ "/mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/\345\205\210\347\234\213\350\277\231\351\207\214.txt"	2026-08-05 00:04:23.504055430 +0000
+@@ -1,31 +1,19 @@
+-﻿观影助手 0.9.0-preview.2 使用说明
+-====================================
++先看这里：0.9.0-preview.6
++==========================
+ 
+-这是一份已完成源码修复和自动化构造页面回归的开发预览源码，不是已经在当前环境编译好的 EXE。
++这是完整源码包，不是发布 EXE，也不是旧 EXE 的补丁覆盖包。
+ 
+-最快使用方法：
++Windows 构建：
++- 解压全部文件。
++- 安装 .NET 8 SDK 与 WebView2 Runtime。
++- 双击 BUILD_PREVIEW.cmd。
++- 成功产物在 artifacts 文件夹。
++
++本阶段可以测试：
++- 想看 / 在看 / 看过的新增与切换
++- 设置、修改、清除评分
++- 设置、修改、清空短评
++- 网页数据覆盖本地缓存
++- 提交结算与官方回读
+ 
+-1. 在 Windows 10/11 上完整解压本包。
+-2. 安装 .NET 8 SDK，并确认 Microsoft Edge WebView2 Evergreen Runtime 可用。
+-3. 双击 BUILD_PREVIEW.cmd。
+-4. 构建完成后进入：
+-   artifacts\观影助手-v0.9.0-preview.2-win-x64
+-5. 先看 self-test-result.txt、BUILD_INFO.txt 和 build-preview.log，再运行 观影助手.exe。
+-
+-本次核心修复：
+-- 电视剧“在看”优先由豆瓣官方编辑表单能力决定，不再被不完整详情元数据错误隐藏。
+-- 能力未知时按钮保持可用并提示保存时确认；官方明确不支持时保持可见、禁用并显示原因。
+-- 官方表单必须连续 3 次稳定后才允许填写或回读。
+-- 提交后明确区分 settled、timeout、captcha、login；未稳定不更新本地。
+-- 状态、评分、短评仍通过一个统一保存请求和一次官方提交点击完成。
+-
+-重要：
+-- 当前正式稳定版仍是 v0.8.9，本包是 0.9.0-preview.2 开发预览。
+-- 原 preview.1 EXE 已从本包移除，避免被误认为包含本次修复。
+-- 数据仍位于 %LOCALAPPDATA%\DoubanBrowserReminder；真实测试前建议备份。
+-- 当前环境没有 .NET SDK，无法生成经过 Windows 编译验证的 preview.2 EXE。
+-- 请先用不重要的测试影片验证写入和删除，并完成 review\ACCEPTANCE_CHECKLIST.md 中未勾选项目。
+-
+-详细实现：review\IMPLEMENTATION_REPORT.md
+-完整验证：review\VALIDATION_RESULTS.txt
+-代码差异：review\PREVIEW2_CODE_DIFF.patch
++本阶段不要测试软件内删除：删除按钮已故意停用。请暂时在豆瓣网页删除，再回到软件重新打开详情。
+diff -ruN '--exclude=SOURCE_SHA256SUMS.txt' '--exclude=PACKAGE_SHA256SUMS.txt' '--exclude=PREVIEW4_TO_PREVIEW6.patch' "/mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/\350\247\202\345\275\261\345\212\251\346\211\213.csproj" "/mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/\350\247\202\345\275\261\345\212\251\346\211\213.csproj"
+--- "/mnt/data/douban_src_p4/DoubanReview_0.9.0-preview.4_Source_2026-08-05/\350\247\202\345\275\261\345\212\251\346\211\213.csproj"	2026-08-04 22:15:18.000000000 +0000
++++ "/mnt/data/douban_p6_build/DoubanReview_0.9.0-preview.6_Source_2026-08-05/\350\247\202\345\275\261\345\212\251\346\211\213.csproj"	2026-08-05 00:00:04.875034798 +0000
+@@ -1,4 +1,4 @@
+-﻿<Project Sdk="Microsoft.NET.Sdk">
++<Project Sdk="Microsoft.NET.Sdk">
+   <PropertyGroup>
+     <OutputType>WinExe</OutputType>
+     <TargetFramework>net8.0-windows</TargetFramework>
+@@ -11,7 +11,7 @@
+     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+     <DebugType>none</DebugType>
+     <DebugSymbols>false</DebugSymbols>
+-    <Version>0.9.0-preview.4</Version>
++    <Version>0.9.0-preview.6</Version>
+     <AssemblyName>观影助手</AssemblyName>
+     <RootNamespace>QbPotDoubanAi</RootNamespace>
+   </PropertyGroup>

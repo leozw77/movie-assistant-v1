@@ -1,0 +1,19 @@
+BuildFix12 R2 Windows compile fix
+
+Observed on Windows .NET 8 Release build:
+- DoubanWebView2Connector.DeleteV2.cs(104,35): CS0173
+- DoubanWebView2Connector.DeleteV2.cs(143,31): CS0173
+
+Cause:
+Two anonymous diagnostic-object properties used a conditional expression whose branches were null and JsonElement. JsonElement is a non-nullable value type, so the compiler could not infer a common conditional-expression type.
+
+Fix:
+Both expressions now explicitly use nullable JsonElement on the null branch:
+  invoked.ValueKind == JsonValueKind.Undefined ? (JsonElement?)null : invoked
+
+Behavioral impact:
+None. This only changes the diagnostic serialization value type. The delete DOM click, settlement wait, official readback, history-list cross-check, tombstone update and failure semantics are unchanged.
+
+Validation:
+- BuildFix12 delete gate includes a regression guard for this CS0173 pattern.
+- Real Windows compilation still requires BUILD_PREVIEW.cmd on a Windows/.NET 8 machine.

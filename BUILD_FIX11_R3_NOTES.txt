@@ -1,0 +1,20 @@
+﻿BuildFix11 R3
+
+Scope: full-cast avatar completion only. Review transaction semantics are unchanged.
+
+Changes:
+1. FullCastParserVersion advances from 2 to 3 so old incomplete full-cast caches are selectively invalidated.
+2. FullCast missing avatars now have their own low-priority WorkerWebView enrichment chain.
+3. FullCast first reuses a valid avatar from another card for the same celebrity/profile, then PersonAvatarCache, then the person page as the final fallback.
+4. Person-page fetches are deduplicated per celebrity/profile while all role cards remain distinct and receive incremental updates.
+5. castAvatarUpdated now carries castScope=home/full; the front end stores the currently displayed FullCast list and updates the correct card only when SubjectId + RequestId still match.
+6. WorkerWebView uses a 1024x768 off-screen viewport instead of 1x1, improving compatibility with lazy/intersection-based page rendering without showing the worker UI.
+7. The R2 full-cast readImage loop was rechecked: its empty return is already outside the node loop, so no false parser rewrite was made.
+
+Validation in this environment:
+- BuildFix11 gate: 34/34
+- Review/source gate: 92/92
+- Embedded Douban JavaScript: 16/16
+- Review protocol: 6/6
+- app.js syntax: pass
+- Windows build/runtime: not available in this Linux container; run BUILD_PREVIEW.cmd on Windows.

@@ -1,0 +1,30 @@
+﻿BuildFix12 R8
+2026-08-09
+
+本轮基于已实机验证删除正确的 BuildFix12 R7，集中处理两项：
+
+1. WebView2 BrowserProcessExited 真恢复
+- Detail/Worker 任一收到 BrowserProcessExited 后，不再对旧 CoreWebView2 调 EnsureCoreWebView2Async。
+- 主窗口统一暂停 Worker 队列并合并两路崩溃事件。
+- 销毁失效的 DetailWebView/WorkerWebView 控件与连接器。
+- 使用原有 WebView2EnvironmentProvider 和同一 DoubanProfile 创建新的两个 WebView2 控件。
+- 重绑事件、预热 about:blank、检查 dbcl2 会话 Cookie 后恢复队列。
+- 前端显示“浏览器正在恢复”，成功后自动重新读取当前影片。
+- 浏览器崩溃不再回退 CDP 并误提示“未登录”。
+- 导航等待同时绑定浏览器生命周期令牌，BrowserProcessExited 后立即熔断，不再等待正常 30 秒超时。
+- 相同 HistoryRead 请求进行队列合并，减少恢复期/启动期重复导航压力。
+
+2. do / 在看删除性能
+- 保留 R7 已验证正确的个人 /do 列表两阶段真实鼠标点击。
+- 删除每一阶段取消旧约 2 秒被动轮询，改为短暂 grace period 后直接新鲜重载原 /do 页。
+- 第一击后若新鲜 do 页连续确认目标仍存在，第二击直接复用当前新鲜列表页，不再额外导航一次。
+- do 列表已经硬确认 SubjectId 消失后，不再重复扫描 wish/do/collect。
+- 删除后不再运行完整官方编辑表单读取两次；改为一次影片详情导航 + 两个轻量 DOM 稳定样本。
+- 仍要求：do 列表确认目标消失 + 影片详情连续确认 status/rating/comment/MarkedDate 均为空，才能更新本地 tombstone。
+
+未改变：
+- 普通评价 Keep/Set/Clear 协议。
+- 官方回读为唯一权威来源。
+- wish/collect 删除路径。
+- Detail/Worker 双 WebView2 职责分工。
+- 首页/完整演职员及头像逻辑。

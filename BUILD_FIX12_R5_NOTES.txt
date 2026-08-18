@@ -1,0 +1,13 @@
+BuildFix12 R5 - Windows compile fix
+
+Baseline: BuildFix12 R4 do-list deletion route.
+
+Fix:
+- DoubanWebView2Connector.DeleteV2.cs: rename the inner no-change advisory local from listWarning to preDeleteListWarning.
+- This resolves Windows C# compiler error CS0136 caused by redeclaring listWarning later in the enclosing DeleteDoubanEntryAsync scope.
+- No deletion routing, DOM selector, official readback, tombstone, review-save, cast, or dual-WebView2 behavior was changed.
+
+User-reported compiler error:
+DoubanWebView2Connector.DeleteV2.cs(52,21): CS0136.
+
+Packaging environment has no .NET SDK; Windows build must be rerun by the user.

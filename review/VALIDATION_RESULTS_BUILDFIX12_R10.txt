@@ -1,0 +1,17 @@
+﻿BuildFix12 R10 validation results
+
+- Automatic history sync gate: 14/14 PASS
+- Review/source pipeline gate: 98/98 PASS
+- BuildFix12 delete gate: 51/51 PASS
+- BuildFix11 dual-WebView2/cast regression: 34/34 PASS
+- BuildFix12 R8 recovery/performance gate: 18/18 PASS
+- BuildFix12 R9 compile-risk gate: 4/4 PASS
+- Embedded Douban JavaScript validation: PASS
+- MediaLibrary app.js node --check: PASS
+- Review protocol tests: 6/6 PASS
+- Windows launcher format validation: 3/3 PASS
+
+Not performed in this environment:
+- Windows/.NET 8 compilation
+- Real WebView2 automatic-sync regression
+- Real-account synchronization behavior

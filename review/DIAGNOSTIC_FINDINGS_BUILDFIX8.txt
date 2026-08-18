@@ -1,0 +1,25 @@
+Diagnostic findings from DoubanReview-Diagnostics-20260805-101354.zip
+====================================================================
+Time: 2026-08-05 10:13:14 - 10:13:16
+SubjectId: 3926132
+Before: status=do, rating=4, comment empty
+Requested: status=wish, rating Clear, comment Keep
+
+Observed official form:
+- ratingControlCount=6
+- visible rating nodes: IMG#star1 through IMG#star5
+- clearRatingControlCount=0
+- clearRatingViaWishSupported=true
+- hidden rating value remained 4 after selecting wish
+
+Old BuildFix7 result:
+- Submitted=False
+- Stage=submit
+- OfficialConfirmed=False
+- Error=官方表单无法可靠清除评分
+- Official snapshot remained do / 4 stars
+
+Conclusion:
+The rating is not cleared in the DOM before submission. The official server clears it as a
+consequence of settling the wish submission. Pre-submit hidden-field equality is therefore
+not a valid requirement for this one official server transition.

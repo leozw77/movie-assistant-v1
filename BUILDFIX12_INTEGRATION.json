@@ -1,0 +1,68 @@
+﻿{
+  "buildFix": "BuildFix12",
+  "revision": "R11",
+  "date": "2026-08-09",
+  "base": "BuildFix12 R9 + BuildFix11 R3",
+  "scope": "Release-candidate documentation/handoff finalization on the unchanged BuildFix12 R10 business baseline",
+  "routes": {
+    "do": "PersonalDoList",
+    "wish": "SubjectDetail",
+    "collect": "SubjectDetail"
+  },
+  "browserRecovery": {
+    "trigger": "CoreWebView2ProcessFailedKind.BrowserProcessExited",
+    "strategy": "host-level coalesced recreation of DetailWebView and WorkerWebView controls",
+    "profile": "reuse same WebView2EnvironmentProvider/DoubanProfile",
+    "queue": "pause, cancel stale pending/running navigation, resume after recreation",
+    "navigationFence": "browser lifetime cancellation token",
+    "historyRead": "coalesce duplicate status/page requests",
+    "ui": "show recovering state and automatically reread current subject"
+  },
+  "doDelete": {
+    "match": "exact SubjectId inside personal /do item",
+    "mutation": "Chromium Input.dispatchMouseEvent; max 2 trusted clicks in one user transaction",
+    "listProof": "550ms grace + fresh exact do-page reload + 2 stable absent samples",
+    "secondPass": "reuse current fresh do page when 2 stable present samples remain",
+    "detailProof": "one subject-page navigation + 2 stable lightweight absent DOM samples",
+    "redundantChecksRemoved": "no final wish/collect scan on PersonalDoList route"
+  },
+  "preserved": [
+    "normal ReviewWrite v2 Keep/Set/Clear",
+    "wish/collect SubjectDetail delete route",
+    "cast/avatar pipeline",
+    "tombstone local deletion model"
+  ],
+  "windowsBuildClaimed": false,
+  "windowsBuildVerified": false,
+  "realAccountR7DeleteVerifiedByUser": true,
+  "r8CrashRecoveryVerified": false,
+  "r8DeleteTimingVerified": false,
+  "compileFix": {
+    "error": "CS0157 control flow cannot leave finally clause",
+    "file": "WorkerJobQueue.cs",
+    "strategy": "set stopPumpAfterJob inside finally; return only after finally cleanup completes"
+  },
+  "autoSync": {
+    "startup": "render local cache first, then automatically refresh visible Douban tab",
+    "tabChange": "collect/wish/watching refresh automatically without manual click",
+    "throttle": "5 minute per-tab freshness window",
+    "frontendDedupe": "one automatic sync in flight per tab",
+    "backendDedupe": "WorkerJobQueue coalesces duplicate HistoryRead status/page jobs",
+    "priority": "HistoryRead stays low priority and preemptible by review read/write/delete",
+    "recovery": "auto-sync visible tab after login detection or BrowserProcessExited recovery",
+    "manual": "立即同步豆瓣 remains as force refresh"
+  },
+  "businessBaseline": "BuildFix12 R10",
+  "r11": {
+    "runtimeBehaviorChanged": false,
+    "canonicalDocs": [
+      "README.md",
+      "AI_HANDOFF.md",
+      "docs/STATUS.md",
+      "docs/DEVELOPMENT_HISTORY.md",
+      "docs/CURRENT_ARCHITECTURE.md",
+      "review/RELEASE_CANDIDATE_SUMMARY.md"
+    ],
+    "purpose": "freeze current architecture, update history/status/acceptance/package docs, and prepare formal v0.9.0 release handoff"
+  }
+}

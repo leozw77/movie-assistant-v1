@@ -1,0 +1,37 @@
+﻿BuildFix12 R3 - 删除误报诊断（2026-08-09）
+
+实机诊断包：DoubanReview-Diagnostics-20260809-082202.zip
+测试影片：巅峰对决 第一季 / Heated Rivalry Season 1
+SubjectId：37202886
+删除前官方状态：do（在看）
+
+关键时间线：
+- 08:20:46.542 删除前官方详情稳定读取：status=do，deleteControlCount=1。
+- 08:20:48.789 官方删除确认框被接受。
+- 08:20:49.115 导航到 /subject/37202886/remove。
+- 08:20:50.165 删除后返回影片详情页。
+- 删除事务内部已得到 Settled=True、OfficialExists=False。
+- 08:20:51.625 立即读取个人 do 列表时仍 Contains=True。
+- 因 R2 把个人列表复核当成硬性成功条件，最终误报：
+  OfficialConfirmed=False
+  LocalUpdated=False
+  Error=删除后仍在豆瓣 do 列表发现该影片，本地记录保持不变。
+- 08:21:03.471 再次读取同一影片官方详情时明确得到：
+  status=none
+  statusKnown=true
+  deleteControlFound=false
+  deleteControlCount=0
+  Exists=false
+
+结论：
+删除请求实际成功。误报来自豆瓣个人 wish/do/collect 列表与单影片详情页之间存在传播/缓存延迟。
+单影片详情页是针对该 Subject 的直接权威读取，R2 在已经连续确认详情页“无评价 + 删除控件消失”后，
+又允许短暂陈旧的个人列表反向否定结果，导致“在看直接删除”显示错误。
+
+R3 修正：
+1. 保留删除前官方状态、唯一删除控件、官方 DOM click、确认框、结算等待和连续两次详情页回读。
+2. 连续两次详情页确认 status=none 且 deleteControlCount=0 后，OfficialConfirmed=true。
+3. wish/do/collect 列表继续读取并写日志，但降级为 advisory diagnostics。
+4. 如果列表仍包含影片，记录“列表传播/缓存延迟”警告，不再阻止本地 tombstone。
+5. tombstone 继续阻止陈旧历史分页把已删除影片重新复活。
+6. 如果详情页本身未能稳定确认删除，仍然返回 failed/unconfirmed，绝不提前清本地。

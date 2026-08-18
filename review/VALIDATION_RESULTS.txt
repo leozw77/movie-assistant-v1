@@ -1,0 +1,57 @@
+观影助手 0.9.0-preview.6 第一阶段验证结果
+日期：2026-08-05
+
+验证对象：从 0.9.0-preview.4 完整源码合并后的 preview.6 源码树。
+验证环境：Linux 容器；Python 3；Node.js。
+环境限制：无可用 .NET SDK、Windows Forms 运行环境、Windows WebView2 Runtime 和已登录豆瓣账号。
+
+一、评价管线源码检查
+结果：45/45 通过。
+
+覆盖的关键边界：
+- VERSION、csproj 与运行日志版本一致。
+- 活动接口只暴露官方评价读取与 v2 保存。
+- WebMessage 白名单不再允许旧删除入口。
+- 前端删除按钮禁用，点击不发送删除 WebMessage。
+- 评分、短评采用 Keep / Set / Clear 明确协议。
+- 官方明确为空与字段读取未知分离。
+- 保存前先读取官方评价，并以官方当前值解析 Keep。
+- 仅详情页明确识别“无评价”时才允许清空本地；打开创建表单不作为无评价证据。
+- 官方读取不完整时阻止提交。
+- 提交使用官方可见表单、真实控件与 form.requestSubmit()。
+- 提交脚本不使用 fetch，不读取或复制 Cookie，不直接写隐藏评分值。
+- 提交前复核状态、评分和短评。
+- 结算需要连续两次稳定信号；超时返回不确定，不返回成功。
+- 最终成功必须由官方重新回读逐字段匹配。
+- 失败或不确定时不写入目标值。
+- 关键 C# 文件词法定界符检查通过。
+
+二、前端协议测试
+结果：6/6 通过。
+
+PASS: 未修改评分和短评发送 keep
+PASS: 清除评分发送 clear
+PASS: 设置评分发送 set 并携带值
+PASS: 清空短评发送 clear
+PASS: 设置短评发送 set 并携带内容
+PASS: 最终状态为 wish 时，将已有评分解析为清除目标
+
+三、JavaScript 与构建启动器
+PASS: WebAssets/MediaLibrary/app.js 语法检查
+PASS: BUILD_PREVIEW.cmd 为 ASCII、无 BOM、CRLF
+PASS: scripts/Build-Preview.ps1 为 UTF-8 BOM、CRLF
+PASS: 启动器使用明确的 Windows PowerShell 路径和带引号脚本路径
+PASS: PowerShell 脚本定界符平衡检查
+
+四、未执行项目
+NOT RUN: dotnet restore/build/publish（当前容器没有可用 .NET SDK）
+NOT RUN: 编译后的 --self-test
+NOT RUN: Windows WebView2 真实豆瓣账号写入回归
+NOT RUN: 电影与电视剧 wish/do/collect 全组合回归
+NOT RUN: 慢网络、登录失效、验证码和页面结构变化的真实回归
+NOT RUN: 删除事务（本阶段明确禁用，待第二阶段重写）
+
+结论：
+- 第一阶段源码集成、协议、静态安全边界和前端行为检查均通过。
+- 本结果不能替代 Windows 实际编译和真实豆瓣账号回归。
+- 本源码包不包含、也不声称已经生成可运行 preview.6 EXE。

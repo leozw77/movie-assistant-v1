@@ -1,0 +1,24 @@
+﻿BuildFix12 R9 validation results
+2026-08-09
+
+Scope
+- Fix Windows compile error CS0157 in WorkerJobQueue.cs introduced by R8 recovery fencing.
+- Preserve R8 BrowserProcessExited recovery and do-delete latency changes.
+
+Executed in current environment
+- BuildFix12 R9 compile-risk gate: 4/4 PASS
+- BuildFix12 R8 recovery/performance gate: 18/18 PASS
+- BuildFix12 delete gate: 51/51 PASS
+- BuildFix11 regression gate: 34/34 PASS
+- Aggregate source/review pipeline gate: 97/97 PASS
+- Embedded JavaScript validation: PASS
+- Protocol fixtures: PASS
+- Launcher encoding/format validation: PASS
+- app.js node --check: PASS
+
+Not executed here
+- Windows/.NET 8 WinForms compilation
+- WebView2 runtime regression
+- Real-account deletion timing
+
+The exact CS0157 pattern is prevented by tests/validate_buildfix12_r9.py.

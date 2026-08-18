@@ -1,0 +1,111 @@
+BuildFix9 source validation
+===========================
+
+Generated: 2026-08-05
+Environment: Linux container; Node.js and Python available; .NET SDK/Windows WebView2 unavailable
+
+1. Source/protocol validation
+-----------------------------
+PASS: csproj XML 可解析
+PASS: VERSION 为 preview.6 | 0.9.0-preview.6
+PASS: VERSION 与 csproj 一致
+PASS: VERSION 与运行日志版本一致
+PASS: 构建发布元数据标记为 BuildFix9
+PASS: 活动接口只暴露评价读取与 v2 保存
+PASS: 桥接白名单禁止旧删除
+PASS: 前端删除按钮明确禁用
+PASS: 旧写入入口降级为私有 legacy
+PASS: 模型定义 Keep/Set/Clear
+PASS: 空值与未知值分离
+PASS: 前端发送 ratingAction/commentAction
+PASS: 前端不再构造 setComment 旧协议
+PASS: 想看最终状态强制无评分
+PASS: Keep 从最新官方值合并
+PASS: 详情页评价区域独立读取官方评价
+PASS: 详情页缓存立即返回且资料评价分阶段
+PASS: 详情队列优先读取官方评价
+PASS: 元数据局部刷新不覆盖官方评价空值
+PASS: 影片资料刷新不再自动读取完整演职员
+PASS: 登录定时检查降频并在前台操作时跳过
+PASS: 详情官方快照可在十秒内一次性复用
+PASS: 短时官方快照不会跨影片累积
+PASS: 搜索结果缓存占位标题不覆盖可见标题
+PASS: 详情页元数据跳过重复状态能力表单
+PASS: 启动与切换标签不自动抢占隐藏WebView2
+PASS: 桥接日志可区分历史状态与前台详情操作
+PASS: 完整官方快照覆盖本地
+PASS: 官方明确无评价才清空本地
+PASS: 表单可见不被当成无评价证据
+PASS: 不完整官方读取阻止提交
+PASS: 管线顺序为读取→提交→结算→回读→验证→本地
+PASS: 提交使用官方 form.requestSubmit
+PASS: 提交不使用 fetch/private HTTP
+PASS: 提交不读取 cookie
+PASS: 隐藏评分只读取不直接赋值
+PASS: 目标想看时允许服务器提交后清除评分
+PASS: 在看或看过清分使用两段官方事务
+PASS: 不再依赖同一未提交表单的想看往返
+PASS: 提交前复核状态评分短评
+PASS: 结算要求连续两次稳定
+PASS: 超时返回不确定而非成功
+PASS: 最终成功必须官方逐字段匹配
+PASS: 失败/不确定不写目标值
+PASS: 官方确认与本地缓存状态分离
+PASS: 专项自检覆盖延迟缓存仍可官方确认
+PASS: 连接器延迟缓存不再误报最终失败
+PASS: 外层缓存写入后重建最终结果
+PASS: 最终桥接返回官方确认字段
+PASS: 成功导航不再打印Unknown错误
+PASS: UI 明示网页为准
+PASS: 清除评分文案真实
+PASS: 结果阶段包含 official-read/settlement
+PASS: 前端以官方确认而非连接器缓存标记判定成功
+PASS: 前端区分官方确认与本地缓存
+PASS: 删除点击不会发送 WebMessage
+PASS: DoubanConnector.cs 分隔符平衡
+PASS: DoubanWebView2Connector.cs 分隔符平衡
+PASS: DoubanWebView2Connector.ReviewWriteV2.cs 分隔符平衡
+PASS: HtmlMediaLibraryForm.cs 分隔符平衡
+PASS: ReviewWriteModels.cs 分隔符平衡
+PASS: ReviewTargetResolver.cs 分隔符平衡
+PASS: ReviewWriteCoordinator.cs 分隔符平衡
+PASS: ReviewSettlementPolicy.cs 分隔符平衡
+PASS: DoubanOfficialFormScripts.cs 分隔符平衡
+PASS: OfficialReviewCachePolicy.cs 分隔符平衡
+PASS: ReviewWriteVerifier.cs 分隔符平衡
+PASS: SelfTest.cs 分隔符平衡
+SUMMARY: 68 passed, 0 failed
+
+2. JavaScript syntax
+--------------------
+PASS: node --check WebAssets/MediaLibrary/app.js
+
+3. Keep/Set/Clear protocol fixtures
+-----------------------------------
+PASS: unchanged fields use keep
+PASS: rating clear is explicit
+PASS: rating set carries value
+PASS: comment clear is explicit
+PASS: comment set carries value
+PASS: wish resolves existing rating to clear
+ALL_PROTOCOL_TESTS_OK
+
+4. Windows launcher byte-format validation
+------------------------------------------
+PASS: BUILD_PREVIEW.cmd is ASCII-only, BOM-free, and CRLF-normalized
+PASS: Build-Preview.ps1 is UTF-8 BOM and CRLF-normalized
+PASS: launcher uses an explicit Windows PowerShell path and quoted script path
+
+5. HTML/JavaScript element consistency
+---------------------------------------
+HTML IDs: 57 total, 57 unique
+JavaScript ID references: 52
+Missing IDs: []
+Duplicate IDs: []
+PASS: all JavaScript element references exist and all HTML IDs are unique
+
+6. Build limitation
+-------------------
+NOT RUN: dotnet restore/build/publish, WinForms execution, WebView2 runtime tests, and live Douban account regression.
+Reason: no dotnet executable and no Windows WebView2 runtime are installed in this environment.
+No BuildFix9 EXE is included or claimed.

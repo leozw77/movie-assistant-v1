@@ -1,0 +1,38 @@
+BuildFix9 修改文件
+==================
+
+核心代码
+- HtmlMediaLibraryForm.cs
+  新增 detailCached/detailMetadata/detailReview 分阶段桥接；评价官方读取独立；避免元数据读取降低已确认能力信息；新增桥接操作类型与耗时日志。
+- DoubanWebView2Connector.cs
+  登录检查忙时非阻塞跳过；元数据同影片页复用；取消主详情自动完整演职员补全。
+- DoubanWebView2Connector.ReviewWriteV2.cs
+  新增 10 秒、同影片页、完整字段、一次性官方快照复用。
+- ReviewWriteCoordinator.cs
+  允许接收新鲜官方保存前快照；其余提交、结算、回读与验证流程不变。
+
+前端
+- WebAssets/MediaLibrary/app.js
+  缓存立即渲染；官方评价在隐藏 WebView2 队列中优先于元数据；资料刷新不覆盖官方评价空值；官方评价就绪前禁用写入；搜索结果占位标题保护；重新读取只刷新评价；登录检查降频。
+- WebAssets/MediaLibrary/index.html
+  新增影片资料和评价同步状态标签。
+- WebAssets/MediaLibrary/styles.css
+  新增同步状态样式。
+
+验证与构建
+- tests/validate_review_pipeline.py
+  增加 BuildFix9 分阶段详情、评价优先队列、元数据不覆盖评价、演职员延迟、登录跳过、短时快照、桥接日志和构建元数据检查。
+- scripts/Build-Preview.ps1
+  发布元数据与交付文档更新为 BuildFix9。
+
+交接文档
+- CHANGELOG.md
+- AI_HANDOFF.md
+- BUILD_STATUS.txt
+- PACKAGE_VERSION.txt
+- BUILDFIX9_INTEGRATION.json
+- BUILD_FIX9_NOTES.txt
+- review/DIAGNOSTIC_FINDINGS_BUILDFIX9.txt
+- review/CHANGED_FILES_BUILDFIX9.txt
+- review/ACCEPTANCE_CHECKLIST_BUILDFIX9.md
+- review/SOURCE_VALIDATION_BUILDFIX9.txt

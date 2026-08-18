@@ -1,0 +1,6 @@
+Package: MovieAssistant_1.0.0_CleanBaseline_2026-08-18
+Version: 1.0.0
+Build fix: Douban Plus stable integration
+Business baseline: v0.9.0 BuildFix12 R11
+Product channel: stable-v1.0.0; this is the clean personal development baseline
+Focus: unified Douban Plus personal pages, search cards, real subject details, infinite personal scrolling, source return navigation, and local watchlist integration

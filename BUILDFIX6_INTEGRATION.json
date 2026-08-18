@@ -1,0 +1,22 @@
+{
+  "package": "DoubanReview_0.9.0-preview.6_Source_Integrated_BuildFix6_2026-08-05",
+  "baseline": "BuildFix5 complete source",
+  "diagnostic_build": {
+    "restore": true,
+    "build": true,
+    "warnings": 0,
+    "errors": 0,
+    "publish": true,
+    "review_self_test": "14/14",
+    "legacy_self_test": "72/72"
+  },
+  "changes": {
+    "rating_clear_official_wish_roundtrip": true,
+    "no_direct_hidden_rating_write": true,
+    "detail_skips_duplicate_status_probe": true,
+    "startup_cache_first": true,
+    "manual_history_refresh": true,
+    "official_readback_required": true,
+    "delete_disabled": true
+  }
+}

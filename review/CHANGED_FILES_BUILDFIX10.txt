@@ -1,0 +1,53 @@
+﻿BuildFix10 修改文件
+==================
+
+核心运行代码
+------------
+BrowserCdpService.cs
+  首页演职员限制为原序 6 位；取消首次详情完整名单/人物页头像补全；完整名单支持官方空结果。
+CrashLogger.cs
+  新增 review-transactions.jsonl 事务日志。
+DetailCachePolicy.cs
+  新增基础资料 24h、首页演职员 7d、完整演职员 7d TTL；成功的官方空首页名单也可缓存。
+DoubanSubjectIdentity.cs
+  新增请求、URL 与缓存 SubjectId 一致性保护。
+DoubanWebView2Connector.cs / DoubanWebView2Connector.ReviewWriteV2.cs
+  首页 6 位提取；编辑表单唯一状态语义判断与 250ms 重采样；官方标题、ID、MarkedDate 快照。
+HtmlMediaLibraryForm.cs
+  详情缓存策略、完整演职员按需/空缓存语义、官方 MarkedDate 同步、NoChange 输出、身份检查和事务日志；桥接异常也记录事务行。
+Models.cs
+  Cast DisplayOrder；FullCastFetchedAt 空结果语义注释。
+MovieDetailForm.cs / MyWatchHistoryForm.cs
+  兼容界面同步使用 TTL、首页 6 位和完整名单按需策略；缺少官方可选字段不阻塞基础缓存。
+ReviewWriteModels.cs / ReviewWriteCoordinator.cs / ReviewPipelineSelfTest.cs
+  Submitted、NoChange、Changed、SubmitEventObserved 与 OfficialConfirmed 语义分离。
+SelfTest.cs
+  新增 BuildFix10 缓存、六位演职员、官方空名单、表单完整性、身份一致性自检；R1 修正占位头像关键词导致的旧综合自检误报。
+WebAssets/MediaLibrary/app.js
+  详情资料优先；完整演职员加载框架/失败重试；NoChange 独立提示。
+
+构建、诊断与验证
+----------------
+scripts/Collect-Diagnostics.ps1
+  收集事务日志并记录日志首尾时间、进程和会话验证时间。
+scripts/Build-Preview.ps1
+  BuildFix10 构建元数据并增加嵌入 JavaScript 检查。
+tests/validate_review_pipeline.py
+  BuildFix10 静态/协议门禁；增加旧综合自检误报回归检查。
+tests/validate_embedded_scripts.py
+  提取 C# 原始字符串中的豆瓣 JavaScript，并通过 Node.js 做真实语法检查。
+
+交付说明
+--------
+AI_HANDOFF.md
+BUILD_STATUS.txt
+README.md
+CHANGELOG.md
+PACKAGE_VERSION.txt
+BUILD_FIX10_NOTES.txt
+BUILDFIX10_INTEGRATION.json
+review/DIAGNOSTIC_FINDINGS_BUILDFIX10.txt
+review/SOURCE_VALIDATION_BUILDFIX10.txt
+review/ACCEPTANCE_CHECKLIST_BUILDFIX10.md
+review/CHANGED_FILES_BUILDFIX10.txt
+SOURCE_SHA256SUMS.txt

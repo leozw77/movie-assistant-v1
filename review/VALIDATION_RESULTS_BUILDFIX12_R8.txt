@@ -1,0 +1,31 @@
+﻿BuildFix12 R8 validation
+2026-08-09
+
+Current environment: Linux container, no Windows/.NET SDK available.
+No claim of Windows compilation or WebView2 runtime execution is made here.
+
+Static/source validations completed:
+- tests/validate_buildfix12_r8.py: 18/18 PASS
+- tests/validate_buildfix12_delete.py: 51/51 PASS
+- tests/validate_buildfix11.py: 34/34 PASS
+- tests/validate_review_pipeline.py: 96/96 PASS
+- WebAssets/MediaLibrary/app.js: node --check PASS
+
+R8-specific gates cover:
+- BrowserProcessExited host-level coalesced recovery.
+- Disposal/recreation of both Douban WebView2 controls.
+- Same EnvironmentProvider/Profile reuse after recreation.
+- Worker queue pause/fence/resume on browser restart.
+- HistoryRead coalescing.
+- No CDP fallback for browser-process restart errors.
+- Front-end recovery state + automatic current-detail reread.
+- Faster do-list fresh settlement.
+- Current-page reuse for automatic second delete pass.
+- Lightweight deleted-detail double sampling.
+- Removal of redundant wish/collect scans on do deletion route.
+
+Windows verification still required:
+1. BUILD_PREVIEW.cmd must compile and publish successfully.
+2. Reproduce/observe a BrowserProcessExited and confirm the library recovers without restarting the application.
+3. Verify current detail automatically rereads after recovery.
+4. Re-test do + rating + short comment deletion and record elapsed time.

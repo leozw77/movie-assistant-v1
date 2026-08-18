@@ -1,0 +1,68 @@
+/* ---------- Trailer Tile ---------- */
+.atv-trailer-tile {
+  position: relative;
+  overflow: hidden;
+  flex: 0 0 400px;
+  border-radius: var(--atv-radius-md);
+  aspect-ratio: 16 / 9;
+  background: var(--atv-bg-tertiary);
+  background-position: center;
+  background-size: cover;
+  cursor: pointer;
+  scroll-snap-align: start;
+  transition: transform var(--atv-duration-hover) var(--atv-ease-out);
+}
+
+.atv-trailer-play-overlay {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgb(0 0 0 / 12%);
+  inset: 0;
+}
+
+.atv-trailer-play-btn {
+  display: flex;
+  width: 56px;
+  height: 56px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgb(0 0 0 / 60%);
+}
+
+.atv-trailer-play-btn svg {
+  display: block;
+  width: 24px;
+  height: 24px;
+  margin-left: 3px;
+  color: var(--atv-text-primary);
+}
+
+.atv-trailer-label {
+  position: absolute;
+  bottom: 12px;
+  left: 12px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  backdrop-filter: blur(4px);
+  background: rgb(0 0 0 / 60%);
+  color: var(--atv-text-primary);
+  font-size: var(--atv-type-caption-sm);
+  font-weight: var(--atv-font-weight-medium);
+}
+
+/* ---------- Video Modal ---------- */
+.atv-modal-overlay.is-video {
+  backdrop-filter: none;
+  background: #000;
+}
+
+.atv-modal-video {
+  display: block;
+  max-width: 95vw;
+  max-height: 90vh;
+  border-radius: var(--atv-radius-lg);
+  box-shadow: 0 40px 80px rgb(0 0 0 / 75%);
+}

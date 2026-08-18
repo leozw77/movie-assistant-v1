@@ -1,0 +1,16 @@
+{
+  "package": "DoubanReview_0.9.0-preview.6_Source_Integrated_BuildFix8_2026-08-05",
+  "baseline": "BuildFix7 complete source",
+  "diagnosticSource": "DoubanReview-Diagnostics-20260805-101354.zip",
+  "rootCause": "Douban clears an existing rating only after the official wish submission settles; the hidden rating field stays populated before submit.",
+  "changes": [
+    "allow server-confirmed wish submission to clear rating",
+    "use two official transactions for do/collect rating clear",
+    "never write the hidden rating field directly",
+    "return authoritative intermediate official state if the final transaction fails",
+    "distinguish cache synchronization from successful target completion",
+    "add readable clear-rating transaction stages"
+  ],
+  "deleteEnabled": false,
+  "ilPatch": false
+}

@@ -1,0 +1,12 @@
+﻿BuildFix12 R9
+2026-08-09
+
+本轮仅修复 R8 在 Windows .NET 真实编译暴露出的 WorkerJobQueue.cs 编译错误：
+
+- 修复 CS0157：控制流不能从 finally 子句中离开。
+- R8 在 PumpAsync() 的 finally 内，当浏览器恢复暂停队列时直接 return；C# 禁止从 finally 直接 return。
+- R9 改为 finally 内只设置 stopPumpAfterJob 标记并完成 Cancellation.Dispose / dedupe 清理 / _running 清空；离开 finally 后再 return。
+- 保留 R8 的 BrowserProcessExited 双 WebView2 重建、队列熔断/HistoryRead 去重和 do 删除性能优化逻辑不变。
+- 增加 R9 编译风险门禁，防止 WorkerJobQueue 的 finally 再出现直接 return。
+
+本包尚未在当前 Linux 环境进行 Windows/.NET 编译；需在 Windows 运行 BUILD_PREVIEW.cmd 验证。

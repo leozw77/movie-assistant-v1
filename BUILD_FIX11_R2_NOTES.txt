@@ -1,0 +1,24 @@
+BuildFix11 R2
+Date: 2026-08-09
+
+Reason
+------
+R1 built successfully on Windows, but legacy comprehensive diagnostics reported 81/84 with exactly three failures.
+
+Fixes
+-----
+1. Full-cast avatar compatibility
+   - keep li.celebrity/card-local isolation
+   - add data-background
+   - add computed ::before and ::after background-image
+   - retain srcset/data-src/data-original/data-lazy-src/currentSrc support
+
+2. Layered TTL self-test fixture
+   - cacheProbe now sets current CastParserVersion and FullCastParserVersion
+
+3. Official-empty home-cast self-test fixture
+   - emptyHomeCastProbe now sets current CastParserVersion
+
+These two cache warnings were stale test-fixture failures introduced by the parser-version migration, not runtime TTL failures.
+
+No review transaction semantics were changed.

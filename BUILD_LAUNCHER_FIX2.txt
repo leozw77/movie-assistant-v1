@@ -1,0 +1,7 @@
+preview.6 BuildFix2
+
+修复：内置 self-test 结果解析不再依赖 PowerShell 全局 $Matches。
+旧脚本在使用 -notmatch 后读取残留捕获值，可能把实际 72/72 错报为 2/72。
+新脚本使用局部 [regex]::Match 对象读取 passed/total，并在真实失败时列出前 8 项失败内容。
+
+本修复不改动评价业务代码和已生成的 EXE 内容，只修复构建验收脚本。

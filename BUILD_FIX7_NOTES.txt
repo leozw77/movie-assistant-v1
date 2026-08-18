@@ -1,0 +1,20 @@
+0.9.0-preview.6 BuildFix7
+=========================
+
+Problem confirmed from diagnostics
+----------------------------------
+The Douban status mutation and authoritative readback were successful, but the connector logged LocalUpdated=False. That flag belonged only to the connector layer, whose cache writer intentionally defers the live in-memory update to HtmlMediaLibraryForm. The outer layer then successfully applied the official snapshot, but the connector's intermediate flag and successful WebView2 Error=Unknown text were misleading.
+
+Changes
+-------
+1. Adds an explicit OfficialConfirmed computed result property.
+2. Connector logs now say ConnectorCacheUpdate=Deferred instead of treating LocalUpdated=False as a final outcome.
+3. HtmlMediaLibraryForm applies the authoritative snapshot, rebuilds the final result with the real LocalUpdated value, and only then returns it to JavaScript.
+4. The bridge now returns officialConfirmed and cacheUpdate separately.
+5. The frontend uses officialConfirmed for success and displays official confirmation separately from local-cache completion.
+6. Successful WebView2 navigation no longer prints Error=Unknown; an error is logged only when IsSuccess is false.
+7. All BuildFix6 performance and rating-clear changes remain included. Delete remains disabled.
+
+Safety boundary
+---------------
+Official confirmation still requires requestSubmit, settlement, official readback, and field-by-field verification. This change does not relax submission verification.

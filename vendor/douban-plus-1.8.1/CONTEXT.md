@@ -1,0 +1,332 @@
+# douban-plus
+
+Userscript (v0.21.8) that enhances Douban movie/subject pages with richer metadata, ratings (IMDb, Metacritic, Rotten Tomatoes), streaming availability, cast info, and tight Apple TV-inspired layout.
+
+## Language
+
+**Host integration boundary**: The narrow layer where douban-plus reads or interoperates with Douban's existing document and browser platform APIs. _Avoid_: imperative UI, DOM-builder
+
+**作品标记**: 登录用户对当前作品作出的“想看”“在看”或“看过”状态，以及随状态提交或移除的评分、标签、短评和可见性。_Avoid_: 兴趣表单、原生按钮代理
+
+**私密作品标记**: 仅标记者本人可见的作品标记；在增强标记界面中，私密标记不能发布到豆瓣动态。_Avoid_: 未分享作品、隐藏条目
+
+**发布到豆瓣动态**: 将一条公开作品标记同步为自己的豆瓣动态；它仅适用于公开标记，且与第三方平台同步无关。_Avoid_: 第三方同步、隐私开关
+
+**我的标签**: 标记者已有的标签库，用于在编辑作品标记时提供可选建议；它不等同于当前作品已经使用的标签。_Avoid_: 热门标签、当前作品标签
+
+**作品标签**: 标记者赋予当前作品的零个或多个自由文本标签；同一标签可同时属于“我的标签”库。_Avoid_: 作品分类、热门标签
+
+**热门标签**: 豆瓣针对当前作品给出的可选标签建议；它可以为空，且不属于标记者的“我的标签”库。_Avoid_: 我的标签、当前作品标签
+
+**作品切换器**: 增强详情页 Sticky Nav 中可展开的影视作品搜索入口，接受任意非空作品查询（包括单字片名或简称）并提供最多五项作品候选；候选不可用、为空或失败时，仍可在新标签页打开豆瓣原生影视作品搜索结果。点击入口或按 `/` 聚焦，`↑` / `↓` 选择候选，`Enter` 打开已选择候选或提交兜底搜索，`Escape` 或点击外部时清空并收起；成功打开新标签页后也恢复为收起状态。_Avoid_: 作品推荐、站内全局搜索
+
+**片库检索轨**: 作品切换器展开时出现的候选作品列表。每一行以 2:3 海报、中文标题与年份（剧集另加集数）、可选原文名消除同名歧义；当前键盘选中行以海报与文字之间的绿色定位线标示。_Avoid_: 作品卡片网格、通用自动补全下拉菜单
+
+**登录可读编辑元信息**: 仅在登录后的 Douban 条目编辑页可读取、但不要求当前用户拥有编辑权限的作品资料字段。_Avoid_: 编辑者专属资料、公开详情元信息
+
+**页面分区**: 详情页中可独立导航的一组相关内容，同时拥有导航标签和页面标题；两者表达同一内容类别，但允许信息密度不同。
+
+**导航标签**: Sticky nav 中指向页面分区的紧凑类别名称，可以省略“热门”“作品”“详细”等范围修饰词，但必须保留“同”等关系词以及“影评 / 剧评”等类型差异。 _Avoid_: 行动提示、营销文案、与页面标题语义不同的别名
+
+**页面标题**: 页面分区内容上方的描述性标题，可以在对应导航标签上增加“热门”“详细”“作品”等范围修饰词。 _Avoid_: 为追求逐字一致而牺牲上下文
+
+**人物页**: 对豆瓣 `www.douban.com/personage/<id>/` 演职人员资料的独立增强页面；它提取并重新编排核心人物与作品数据，而非复刻原生社交、关注或维护功能。 _Avoid_: 原生人物页美化、人物页镜像
+
+**人物 Hero**: 人物页的身份起点，组合肖像、姓名、关键资料与人物简介的三行摘要；简介可在 Hero 内展开，不重复建立单独的简介分区。 _Avoid_: 作品海报 Hero、重复的人物简介区
+
+**人物页分区顺序**: 人物 Hero、常合作的人、图片、近期作品、代表作品、获奖。图片、近期作品、代表作品和获奖均保留各自的原生“查看全部”入口。顺序沿用作品页从人物/关系、影像、探索到详情收尾的阅读节奏。 _Avoid_: 按原生 DOM 顺序复刻、让合作署名退居作品轨之后、在重构页复制完整目录
+
+**人物页导航标签**: 固定导航使用紧凑标签“合作 / 图片 / 近期 / 代表 / 获奖”，对应分区标题保持完整的“常合作的人 / 图片 / 近期作品 / 代表作品 / 获奖”。 _Avoid_: 与分区无关的别名、在导航中重复“作品”等范围修饰词
+
+**作品图集总览页**: 豆瓣 `movie.douban.com/subject/<id>/all_photos` 上按剧照、海报和壁纸汇集当前作品图片的页面；它不包含各类型的分页列表或单张图片详情。 _Avoid_: 分类图片列表、图片详情页、作品详情页影像分区
+
+**作品短评总览页**: 豆瓣 `movie.douban.com/subject/<id>/comments` 上按观看状态、排序与评分筛选浏览当前作品短评的独立页面；它完整替代原生短评页，不是作品详情页短评分区的延伸。 _Avoid_: 详情页短评分区、单条短评页、影评列表
+
+**作品影评 / 剧评总览页**: 豆瓣 `movie.douban.com/subject/<id>/reviews` 上按排序与评分筛选浏览当前作品影评或剧评的独立页面；它完整替代原生影评 / 剧评页，不是作品详情页影评分区的延伸。 _Avoid_: 详情页影评分区、单篇影评页、短评列表
+
+**原生影评互动出口**: 作品影评 / 剧评总览页中由豆瓣原页面承担的“有用”“没用”投票、撰写评论、展开摘要与回应入口；增强页适配这些出口及其既有状态，但不重新实现账户写入协议。 _Avoid_: 增强影评编辑器、脚本投票 API、独立的影评展开协议
+
+**影评投票方向**: 同一篇影评当前选择的“有用”或“没用”之一；用户可从任一方向改投另一方向，但不能取消为未投票。 _Avoid_: 短评的一次性有用规则、双向同时选中、取消投票
+
+**影评投票登录续接**: 未登录用户发起影评投票时保留的单次互动意图；认证成功并获得新页面状态后，系统只恢复该篇影评的原目标方向一次。 _Avoid_: 要求用户再次点击、恢复写影评流程、重复投票、模糊的认证后重定向
+
+**影评浏览轴**: 作品影评 / 剧评总览页中彼此独立的单选浏览维度：排序与评分筛选。排序保留最受欢迎、最新发布和我关注的原生选项；两条轴不可合并为同一个筛选器。 _Avoid_: 单一综合筛选器、隐藏我关注的、脚本私有排序
+
+**影评关注排序登录续接**: 未登录用户选择“我关注的”排序时保留的单次浏览意图；认证成功后在当前影评 / 剧评总览页内无刷新获取并呈现该原生排序结果。 _Avoid_: 跳至豆瓣首页、要求再次选择、接管原生写作流程、脚本私有关注列表
+
+**影评页无刷新导航**: 在当前影评 / 剧评总览页内请求目标原生影评页、提取并替换阅读数据，同时同步规范 URL 与浏览器历史的导航方式；排序、评分筛选和分页均属于这一方式，不能触发整页刷新。新数据成功后才写入历史；浏览器前进与后退同样无刷新地恢复对应结果，完成后滚动到影评阅读流顶部。 _Avoid_: 整页跳转、脚本私有筛选状态、无限滚动、遮挡全页的加载层
+
+**影评阅读目录**: 作品影评 / 剧评总览页以长文标题和摘要为主体、以作者身份信息和互动出口作页边层级的阅读流；它与短评总览页共享同一设计语言，但不把长评伪装成放大的短评卡片。 _Avoid_: 海报 Hero、圆角大卡片网格、短评式正文密度、装饰性统计
+
+**影评页挂载保护**: 仅当作品身份、返回出口、原生浏览轴、写评论出口以及有效影评集或已验证空结果均可提取时，才以增强页替代原生页面；关键结构缺失时保留原生页面。 _Avoid_: 登录页或异常页的增强空壳、把空结果当成提取失败、先隐藏后提取
+
+**影评空目录**: 当前原生排序或评分筛选没有匹配影评时的有效总览结果；它保留作品身份和当前浏览轴，并提供回到全部剧评的原生筛选出口。 _Avoid_: 空白阅读流、回退原生页、把空结果报告为加载错误、虚构推荐内容
+
+**影评静默切换**: 影评页无刷新导航的局部加载反馈：被触发的导航控件即时按压、高亮目标并暂时锁定浏览轴；影评流固定位置显示短暂细状态轨，旧结果保留至新结果成功替换。失败时恢复原选择并在流内说明重试动作。它不使用 spinner、骨架屏、逐条入场或全页遮罩；辅助技术通过 `aria-live` 获得当前加载语义。 _Avoid_: 表演性加载过场、延迟输入反馈、静默失败、等待弹窗
+
+**原生短评互动出口**: 作品短评总览页中由豆瓣原页面承担写短评与“有用”投票的入口；增强页保留或适配这些入口，但不重新实现账户写入协议。 _Avoid_: 增强短评编辑器、脚本投票 API
+
+**短评共识刻度**: 作品短评总览页中在短评正文阅读边栏呈现的“有用”票数；它表达读者对一条短评的可见支持度，不等同于作品评分或作者星级。 _Avoid_: 作品评分、作者星级、点赞按钮装饰
+
+**短评浏览轴**: 作品短评总览页中彼此独立的单选浏览维度：观看状态、排序和评分筛选。每条轴都保留豆瓣原生选项与当前选择；三者不可合并为同一个筛选器。 _Avoid_: 单一综合筛选器、九宫格筛选
+
+**短评页无刷新导航**: 在当前短评总览页内请求目标原生短评页、提取并替换阅读数据，同时同步规范 URL 与浏览器历史的导航方式；排序、评分筛选、观看状态和分页均属于这一方式，不能触发整页刷新。新数据成功后才写入历史；浏览器前进与后退同样无刷新地恢复对应结果。请求期间只显示局部、短暂的加载反馈；完成后滚动到短评阅读流顶部。 _Avoid_: 整页跳转、脚本私有筛选状态、无限滚动、遮挡全页的加载层
+
+**短评静默切换**: 短评页无刷新导航的局部加载反馈：被触发的导航控件提供短促按压、即时高亮目标并暂时锁定浏览轴；短评流顶部显示 2px 进度细线，旧内容以 72% 不透明度保留，新结果以 160ms opacity cross-fade 替换。失败时恢复原选择。视觉上不使用 spinner、骨架屏或全页遮罩；辅助技术通过 `aria-live` 获得当前加载语义。 _Avoid_: 等待弹窗、旋转图标、逐条短评入场、长时动效
+
+**短评导航失败**: 无刷新导航无法获得可提取结果时的恢复状态：保留当前短评、当前选择与 URL，结束加载态，并在短评流顶部显示可重试的行内提示；不刷新页面，也不回退为原生页。 _Avoid_: 清空阅读流、整页错误页、自动整页刷新、静默失败
+
+**短评按需加载**: 短评总览页只在用户明确触发排序、评分、观看状态或分页导航后请求对应原生页；不预取相邻分页或未选筛选结果。 _Avoid_: 批量抓取、预测性预加载、陈旧缓存结果
+
+**短评导航最新意图**: 无刷新导航中的在途请求可被浏览器前进或后退打断；被打断请求的结果不得更新阅读流、选择状态或 URL，最新历史目标始终优先。 _Avoid_: 旧响应覆盖新选择、不可打断的加载、历史导航整页刷新
+
+**短评状态索引**: 作品短评总览页页头中按看过、在看、想看呈现的三项可点击统计；它是“观看状态”浏览轴的当前位置与各状态短评规模的共同表达。 _Avoid_: 不含数量的装饰性标签、与观看状态无关的作品统计
+
+**无海报短评页头**: 仅以短评类别、作品名、状态索引与原生出口建立身份的作品短评总览页页头；它不复刻作品详情页的海报 Hero。 _Avoid_: 缩小版作品 Hero、页头海报、详情页镜像
+
+**无侧栏短评阅读页**: 作品短评总览页以短评阅读流为唯一主体，不保留原生的海报、演职员或预告片摘要侧栏；作品详情由页头出口承接。 _Avoid_: 详情摘要侧栏、双重作品信息、与正文争夺注意力的辅助栏
+
+**移动端短评浏览控制台**: 作品短评总览页在移动端承载排序与评分两条浏览轴的并列控件；它优先完整展示选项，仅在可用宽度不足时以可见溢出提示横向浏览。 _Avoid_: 筛选抽屉、遮挡阅读的弹窗、始终横向滚动
+
+**短评页动效契约**: 作品短评总览页只以简短的页面淡入、按压反馈、悬停反馈和滚动时的导航材质变化表达状态；筛选、分页、键盘操作和短评阅读流不使用表演性动效。 _Avoid_: 逐条短评入场、筛选过场、分页加载秀、仅靠动效传达状态
+
+**短评完整阅读**: 作品短评总览页中直接呈现一条短评的全部可用正文，而非详情页短评分区中的截断预览或弹窗内容。 _Avoid_: 短评摘要、强制截断、以弹窗替代阅读流
+
+**原生短评分页导航**: 作品短评总览页末尾通向相邻短评页面的豆瓣原生链接集合；增强页重新编排其阅读节奏，但不以无限滚动取代 URL 化分页。 _Avoid_: 无限滚动、脚本内分页状态、不可链接的加载更多
+
+**原生上传入口**: 作品图集总览页中通往豆瓣剧照、海报或壁纸上传流程的原始链接；增强页保留此出口但不复刻上传表单、权限判断或提交行为。 _Avoid_: 增强上传器、脚本上传流程
+
+**图集预览集**: 作品图集总览页已经渲染的剧照、海报和壁纸预览项；增强页只消费这一集合，不后台枚举分类页或加载完整图片库。为在替换原生页前稳定瀑布流卡片几何，运行时可以读取这批已提取预览项对应的比例保留图片尺寸；它不访问分类页、不扩充预览集，也不预取完整图集。 _Avoid_: 完整图集抓取、分类页枚举、完整图片库预加载、分类页镜像
+
+**图集挂载保护**: 仅当作品图集总览页的标题、作品返回链接与至少一个图集分组均可提取时，才以增强页替代原生页面；任何提取缺失都会保留原生页面。 _Avoid_: 失败时的空白增强页、先隐藏后提取
+
+**页面模块所有权**: `subject`、`subject-comments`、`subject-reviews` 与 `personage` 各自拥有页面组件、领域数据类型、DOM 提取、页面语义的外部数据读写适配、运行时补全和页面专属样式。跨 subject 路由的作品标记与登录分别由 `shared/components/interest-form/` 和 `shared/components/login-modal/` 拥有；跨路由的影评阅读由独立 `domains/review-reader` 深模块拥有。三者都经公开入口服务多个页面，且不得反向导入任何页面模块。其余共享层只承载不含页面语义的设计 token、基础布局、通用导航、模态、小型交互原语及通用 HTTP、缓存、DOM 工具和样式。顶层入口只根据 URL 选择并挂载页面运行时；它只能使用模块公开入口，并通过唯一的样式清单加载模块与共享样式。页面模块彼此不依赖，模块内部实现不得被模块外部生产代码深层导入，共享层也不得反向依赖页面模块；白盒单元测试可作为模块实现的一部分直接测试内部 seam。跨越模块边界的领域类型只能经公开契约传递；为迁移创建的兼容转发必须随所属模块迁移完成而删除。 _Avoid_: 让人物页复用 subject 的数据契约、把非复用的页面语义请求适配留在共享层、让共享组件导入页面分区文案、在入口层堆积页面数据判断、跨模块或跨层深层导入、永久共享页面领域模型、把页面样式伪装成共享样式
+
+**影评阅读模块**: 为多个作品路由提供同一篇影评的目录卡片、完整阅读与可换边投票的独立深模块 (`domains/review-reader`)；它只通过公开契约接收影评呈现数据、账户守卫与原生互动适配，不拥有任一页面的路由、DOM 提取或目录构图。 _Avoid_: 把影评阅读塞进 shared、从一个 page module 深层导入到另一个、每个影评页面复制一套投票状态
+
+**人物页路由与挂载**: 脚本元数据覆盖 `www.douban.com/personage/*`，但只在规范人物主页 `/personage/<数字 ID>/`（允许尾随斜杠与查询参数）挂载；照片、全部作品等二级原生页保持原样。`subject` 与 `personage` 分别公开自己的挂载函数，顶层入口只做路径分发。每个模块仅在数据提取成功后创建增强根节点并隐藏原生 `#wrapper`；原生 DOM 随后仅作为数据源和“查看全部”出口。 _Avoid_: 在二级页重构、先隐藏原生页再尝试提取、跨页面共享挂载函数
+
+**近期作品 / 代表作品**: 人物页中并列的两条作品轨：近期作品按时间呈现人物正在参与的项目，代表作品按收藏热度呈现优先值得了解的项目。两者均不承担完整履历的职责。 _Avoid_: 单一“作品”轨、完整影视履历
+
+**常合作的人**: 人物页紧随 Hero 出现的合作署名分区，仅渲染当前主页已加载的常见合作者，不额外请求完整名单；保留原生“查看全部”完整名单入口。它按共同作品数降序排列，同数时保留原生顺序；排名、肖像、姓名与准确共同作品数共同构成可直接比较的两列署名表。每位合作者都提供明确的“查看共同作品”和“查看人物”出口；移动端变为单列。它不把一维共同作品数据伪装为二维网络，不使用节点、连线、选中态、画布操作或装饰性动画。 _Avoid_: 合作者横向轨、完整名单抓取、关系图、连续线宽、点击即跳转、方向键空间导航、可拖拽画布、装饰性动态网络图
+
+**观看平台**: 提供当前作品观看入口的第三方视频服务商，例如爱奇艺、腾讯视频或 Netflix。 _Avoid_: 播放源、在哪儿看、播放平台
+
+**已解析评论**: 保留原始短评字段、并带有已解析头像的短评呈现数据；页面分区与短评弹窗只消费该结果。 _Avoid_: 可变原始短评
+
+**首播平台**: 作品首次或预定首次发布的电视台或流媒体服务商，例如 Apple TV+、CBS、CCTV、FOX、FX、Showtime；不承诺该服务商拥有永久或排他的播放权。_Avoid_: 观看平台、制片公司
+
+**影像**: 当前作品的视觉媒体集合，包括动态预告片和静态剧照。 _Avoid_: 用“剧照”指代同时包含预告片的分区
+
+**影像卡片**: 影像轨中高度稳定、宽度由卡片进入轨道前已知的图片比例确定的视觉容器；静态剧照始终完整呈现，且图片加载不会改变已进入轨道的卡片几何尺寸。 _Avoid_: 固定比例剧照、加载后重排的卡片、额外遮幅颜色
+
+**预告片卡片**: 影像轨中通往动态预告片的固定 16:9 播放入口；它与影像卡片共用轨道高度和间距，但不参与静态剧照的比例解析。 _Avoid_: 比例驱动预告片、剧照比例探测
+
+**完整署名**: 当前作品详情信息中的完整导演、编剧或主演人员集合，包含豆瓣原生“更多...”控件后隐藏的条目；控件本身不属于署名。 _Avoid_: 更多链接、截断演职员表
+
+**榜单标记**: 豆瓣可选的编辑榜单定位，由名次与原生榜单目的地组成，显示在 Hero 中但不承诺所有作品都有。 _Avoid_: 豆瓣榜单描述、推荐标签
+
+**影评正文**: 一篇影评的完整可阅读内容，与列表卡片中的摘要不同；内容不可获得时必须明确失败，不以摘要替代。 _Avoid_: 影评摘要、截断正文
+
+**影评完整阅读入口**: 作品影评 / 剧评总览页中由影评卡片主体触发的当前上下文完整阅读；作者主页、投票、回应与豆瓣原文均保留为独立出口。 _Avoid_: 点击作者即打开正文、整张卡片劫持所有链接、与原生摘要展开并存的第二阅读协议
+
+**影评剧透校样提示**: 由原生剧透标记派生、在影评目录卡片与完整阅读中一致呈现的内容风险提示；它在正文前以文字与非颜色视觉线索说明可能剧透，但不隐藏或模糊内容。 _Avoid_: 评分金色、仅靠颜色、动画警告、剧透遮罩、第二道显示确认
+
+**小组讨论 / 讨论区**: 与当前作品关联的话题入口集合（来自"小组讨论"或"讨论区"两种 DOM 结构），增强页只展示话题摘要信息并跳转到豆瓣原生讨论页面；三种 DOM 变体（小组讨论 table + 讨论区 Type 1 `.mod .mv-discussion-list` + 讨论区 Type 2 `.section-discussion`）互斥出现，提取器自动检测。话题链接可能跨多个豆瓣子域名（小组话题使用 `www.douban.com/group/topic/`、条目讨论使用 `movie.douban.com/subject/…/discussion/`）；讨论提取器的 URL 安全验证允许任意 `*.douban.com` 子域名。 _Avoid_: 短评、影评、在增强页内加载正文或回复
+
+**讨论回应数**: 话题已有回应的数量；原生回应单元格留空表示零回应，而 `.mv-hot-discussion-list` 内的隐藏热门讨论行不会被计入，单元格缺失或内容无法解析表示数量未知。
+
+## Architecture
+
+GreaseMonkey-style userscript built with TypeScript, Vite, vite-plugin-monkey, and Preact. The active subject UI uses traditional TSX modules: components are functions returning JSX, filenames are kebab-case, and runtime orchestration renders Preact at narrow mount seams.
+
+`src/build/` was the legacy DOM-builder layer from the pre-Preact architecture and has been retired. Do not recreate it. Page-specific work belongs to its page module; only page-agnostic Preact primitives, plus the cross-subject `interest-form` and `login-modal` experiences, belong under `src/shared/components/`.
+
+External rating data flows through **extract → resolve → Preact render** within the `subject` page module. Its `resolve/` layer is the testable middle: it takes a `ResolutionContext`, runs HTTP fetches in parallel, and returns typed results without touching the DOM. `src/modules/subject/runtime/use-external-ratings.ts` owns the runtime lifecycle; there is no DOM `apply.ts` bridge.
+
+### Module layout
+
+```
+src/
+  main.ts              — route entry; imports only page-module public APIs and the stylesheet manifest
+  modules/
+    subject/           — subject page module
+      index.ts          — public route mount
+      domain.ts         — subject-owned domain types and values
+      api/              — subject-specific external reads and writes
+      extract/          — subject DOM extraction
+      navigation/       — section copy, derived nav sections, and sticky-nav presentation
+      resolve/          — subject rating resolution seam
+      runtime/          — subject host integration and lifecycle
+      styles/           — subject page styles
+      voting/           — reusable subject vote state and lifecycle
+      hero/ ratings/ media/ details/ comments/ reviews/ search/
+                       — subject UI experiences
+    personage/         — personage page module
+      domain.ts         — personage-owned domain types
+      extract/          — personage DOM extraction
+      index.ts          — public route mount
+      presentation/     — personage page composition and sections
+      runtime/          — personage host integration and lifecycle
+      styles/           — personage page styles
+  domains/
+    review-reader/     — cross-page deep domain module for review reading
+      domain.ts         — Review type and cross-page contracts
+      index.ts          — public API (ReviewCard, ReviewModal, vote state, …)
+      review-card.tsx
+      review-modal.tsx
+      review-vote.ts
+      review-vote-state.ts
+      review-vote-buttons.tsx
+      review-identity.ts
+      resume-review-vote.ts
+      use-review-content.ts
+      spoiler-note.tsx
+      review-content-modal.tsx
+  shared/
+    components/        — reusable leaf UI, layout, canonical modal primitives, and the cross-subject interest-form/login-modal experiences
+    hooks/             — reusable Preact hooks
+    runtime/           — page-agnostic enhanced-root and route-mount primitives
+    styles/            — token, base, layout, and modal styles
+    utils/             — generic cache, DOM, request, spring, and image helpers
+  styles.css           — single stylesheet manifest imported by main.ts
+```
+
+### Rating resolution strategy
+
+`resolveAll` in `orchestrate.ts` uses a **parallel-first** strategy:
+
+1. If H1 has an English title (95%+ of cases) → IMDb + RT + MC fire simultaneously via `Promise.allSettled`. One failure never blocks the others.
+2. If no H1 title but IMDb returns one → RT + MC retry with IMDb title as fallback.
+3. Error isolation: `Promise.allSettled` wraps every source. A null result means "not available", never "crashed".
+
+`resolveAll` accepts `ResolutionContext` and none of the rating resolution implementation touches the DOM. The small IMDb/RT/MC pass-through resolver modules were collapsed on 2026-07-09; `resolveAll` owns identifier guards and calls the fetch adapters directly. The subject runtime module loads async results; `ExternalRating({ source, rating, resolved })` owns the shared logo + loading/empty/loaded display state for IMDb, Metacritic, and Rotten Tomatoes.
+
+### Resolution seam tests (18 tests across 2 files)
+
+| File | What it covers |
+| --- | --- |
+| `tests/resolve/context.test.ts` | movie/TV H1 parsing, no-English-title, null imdbId, empty H1 |
+| `tests/resolve/orchestrate.test.ts` | fetch adapter calls, parallel resolution, fallback path, error isolation, no-identifiers, no-H1-no-IMDb-title |
+
+### QA / E2E harness
+
+`pnpm run test:e2e` runs `tests/qa.ts` against real Douban subject pages with Playwright Edge (`channel: "msedge"`). It injects the built userscript from `dist/douban-plus.user.js`, so the harness guards that `dist/` is fresh relative to `src/` and `vite.config.ts`; run `pnpm run build` first after source changes.
+
+The QA assertions are split by responsibility under `tests/qa/`:
+
+| File | Responsibility |
+| --- | --- |
+| `assert-core.ts` | root/hero/rating/title/sticky-nav/script-error checks |
+| `assert-sections.ts` | cast/photos/recommendations/comments/streaming/awards/info-grid |
+| `assert-interactions.ts` | inline expansion, comment overlay, voting, interest modal |
+| `assert-media.ts` | TV streaming popup, poster modal, trailer/video modal |
+| `assert-screenshots.ts` | screenshot lifecycle and screenshot-specific invariants |
+| `assert-scroll.ts` | scroll-flash regression: rapid scroll-up stacking order + will-change audit |
+| `assert-perf.ts` | per-page jank measurement: FPS monitor injection, slow/fast/micro/ nav-threshold / carousel / mobile scenarios |
+| `assert-helpers.ts` | shared helpers for warnings, failures, overlay cleanup |
+| `runner.ts` | external QA runner seam: launch browser, run scenarios, close browser, return exit code |
+| `scenario-runner.ts` | per-scenario orchestration: fresh context per attempt, userscript injection, assertion phases, retry/deadline |
+
+Warnings are categorized as `data-missing`, `auth-dependent`, or `browser-policy`. They do not fail CI by default. Interaction-blocked or product-uncertain behavior should be recorded as a failure, not downgraded to a warning.
+
+Screenshots are part of the e2e contract. Each scenario owns exactly three screenshots in `tests/screenshots/`: `hero`, `full`, and `mobile`. Before capture, the harness closes ATV overlays, removes external Douban login/backdrop overlays, restores the desktop viewport, and resets `scrollY` to `0`; the mobile capture also resets to the top after resizing. Stale screenshots for scenarios no longer in `SCENARIOS` are cleaned up before the run.
+
+### Standalone performance test runner
+
+`tests/perf-runner.ts` is a standalone performance and visual regression test that runs outside the QA harness:
+
+```
+npx tsx tests/perf-runner.ts
+```
+
+It tests **4 pages × 21 scenarios = 84 runs**, measuring FPS and jank via an injected `requestAnimationFrame` monitor:
+
+| Category | Scenarios |
+| --- | --- |
+| Baseline (8) | slow-scroll, fast-scroll, nav-threshold-x12, section-jump, carousel-scroll, vert+horiz-simult, micro-scroll-x20, mobile-scroll |
+| Direction & timing (5) | dir-reversal-x8, keyboard-pgdn-pgup, bottom-bounce-x6, inertia-decay, touch-flick-stop |
+| Page-state interference (4) | cold-scroll-immediate, tab-switch-resume, scroll+hover, fatigue-8s |
+| Extreme input (4) | wheel-spike, scroll-event-flood, resize+scroll, reduced-motion-scroll |
+
+Thresholds: avgFps ≥ 55 & jank ≤ 1% (PASS), jank ≤ 2.5% (WARN). The runner creates a headless Playwright Edge context, injects the built userscript (from `dist/douban-plus.user.js`), and measures per-scenario jank with a zero-dependency FPS monitor. Start with `pnpm run build` to ensure a fresh userscript build.
+
+The 21 scenarios are designed to isolate different performance dimensions: slow scrolling measures compositor jank, fast scrolling reveals layout storm, nav-threshold targets sticky-nav visibility transitions, micro-scroll targets scroll handler overhead, and extreme-input scenarios test resilience against rapid event delivery.
+
+`tests/qa.ts` is a thin CLI entry over `runQa()` (deepened 2026-07-08). The QA runner creates a fresh Playwright `BrowserContext` for every scenario attempt, so retries do not inherit cookies, storage, visited-link state, or mutated page state from a failed attempt. `runQa()` returns an exit code instead of exiting internally; only the CLI facade calls `process.exit()`.
+
+### Current deep modules
+
+1. **Subject page Preact module (2026-07-08)** — `src/modules/subject/` owns the active UI:
+   - External seam is `SubjectPage({ data, runtime })`; runtime passes extracted `DoubanData`, resolved host data, and user actions without leaking the Douban document.
+   - Internal modules follow user-facing experiences: `hero`, `ratings`, `media`, `details`, `comments`, `reviews`, `interest`, and `login`.
+   - Shared leaf primitives live in `src/shared/components/common`, `src/shared/components/layout`, and `src/shared/components/modal`.
+   - Tests live under `tests/modules/subject/` and exercise module interfaces, not retired builder internals.
+   - External rating display uses one deep module, `ratings/external-rating.tsx`: callers pass `source`, `rating`, and `resolved`; source-specific score renderers stay internal so skeleton/empty/loaded behavior has one owner.
+   - Review-content acquisition uses one deep runtime module, `runtime/use-review-content.ts`: native page HTML and fetched review-page HTML are internal adapters; `reviews/review-content-modal.tsx` passes its result to the visual `ReviewModal`, which receives only loading, loaded sanitized 影评正文, or error state.
+   - `SubjectPage` owns cross-surface UI state that must stay synchronized between cards and modals. The vote-state machine has one owner: `createVoteState` in `vote-state.ts` produces a `VoteApi`; `use-vote-state.ts` and `use-vote-action.ts` both consume that `VoteApi` directly — no hand-assembled strategy shape at the composition root. `comments/comment-vote-state.ts` exports `commentVoteApi`; `reviews/review-vote-state.ts` exports `reviewVoteApi`.
+   - Vote buttons support controlled and standalone modes. Inside `SubjectPage`, card and modal buttons must read/write the same owner state; standalone section tests can still rely on local button state. `use-vote-action.ts` accepts a `VoteTransitionApi` (the `optimistic`/`resolve`/`votedOf` subset of `VoteApi`) plus per-instance wiring, so the hook owns only the async orchestration and touches the half of the state machine it actually uses.
+
+2. **Resolved-comment runtime hook (2026-07-16)** — `modules/subject/runtime/use-resolved-comments.ts` remains a Preact hook and owns profile-link deduplication, GM profile fetches, detached HTML parsing, cache reads/writes, cancellation, avatar fallback, and the resolved-comment projection. `SubjectPageRuntime` supplies resolved comments through the runtime value; the page only renders those values in comment cards and the comment modal. No profile lookup, profile-link key, avatar Map, document, or network lifecycle leaks through the page-composition seam.
+
+3. **Trailer acquisition runtime hook (2026-07-13)** — `modules/subject/runtime/use-trailer-acquisition.ts` owns trailer-page fetches, detached LD+JSON parsing, cancellation, failure fallback, and native-window opening while retaining Preact's lifecycle. The subject media module owns both `TrailerModal` and its subject-specific `VideoModal`; the latter renders controlled acquisition state and routes dismissal through the canonical shared modal close lifecycle without host/network knowledge.
+
+4. **Native-summary adoption runtime hook (2026-07-16)** — `modules/subject/runtime/use-native-summary.ts` owns selecting Douban's native expansion trigger, reading the pre-expansion visible text, clicking, rereading the post-expansion visible text, and falling back to extracted text. `SubjectPageRuntime` provides the adopted summary result through the runtime value; `HeroSummary` only controls its own collapsed/expanded presentation and never receives a host callback or document knowledge.
+
+5. **External rating fetcher factory (2026-07-09)** — `src/modules/subject/api/rating-fetcher.ts` owns the common provider algorithm:
+   - External seam is `createRatingFetcher({ cache, parse, referer, slugSeparator, urls })`
+   - The shared implementation handles empty titles, slug normalization, cache-key construction, TTL cache lookup/write, sequential URL fallback, network-error isolation, and parser-null fallback
+   - Provider modules keep only site-specific knowledge: Metacritic URL shapes + JSON-LD parser; Rotten Tomatoes URL shapes + script JSON parser
+   - Preserve sequential fallback. These provider URLs are alternatives, not independent sources, so do not parallelize them.
+
+6. **Canonical modal module (2026-07-09)** — `src/shared/components/modal/modal-shell.tsx` is the single modal implementation:
+   - `ModalShell` owns dialog semantics, `aria-modal`, body scroll lock, outside-click close, Escape close, close-transition timing, and focus trap behavior
+   - `ModalSession` localizes same-instance reopen detection. `useModalRequest` creates a fresh request object per open; page composition wraps each active semantic modal in its local session, while `ModalShell` consumes the private session through context to reset a closing animation. Semantic modal interfaces carry only domain data and `onClose`, never animation request numbers.
+   - Comment, review, interest, login, poster, and video modals all render through `ModalShell`
+   - Poster/video no longer use the retired DOM `createOverlay` seam; their imperative openers render Preact content into a temporary host and restore trigger focus on close
+7. **Subject page runtime module (2026-07-08)** — `src/main.ts` is a thin startup facade over the public `src/modules/subject/index.ts` entry:
+   - External runtime seam is `mountSubject(doc?)`: guard duplicate mounts, extract `DoubanData`, render Preact, insert DOM, and start post-render effects
+   - Runtime effects are localized: avatars, review-content and late-series acquisition, sticky nav reveal, and active-section tracking each live behind a small internal module
+   - External rating resolution, first-broadcast lookup, native summary expansion, and sticky-nav browser lifecycle live in `SubjectPageRuntime` under `src/modules/subject/runtime/`; `useSeriesRuntime` owns the initial/late series result, current-series identity, more-link adoption, DOM observation, and cleanup
+   - Web API lifecycle matches the platform contracts: `useSeriesRuntime` observes late series DOM and disconnects on unmount; `IntersectionObserver` owns active-section updates for the sticky nav
+
+8. **作品标记 module (2026-07-28)** — `src/shared/components/interest-form/` owns the complete "想看 / 在看 / 看过" flow:
+   - External seam is `useInterestMarking({ subjectId, subjectTitle, loggedIn, onLoginRequired, adapters })`; it returns the Hero callbacks and optional Interest form, so Subject page does not learn form lifecycle or writes.
+   - The module localizes the account gate, login request, modal state, save/remove callbacks, API result handling, and successful page-state projection after every successful write; page composition supplies the rendered interest state without owning form lifecycle or writes.
+   - All hero actions open the enhanced form after login; original Douban interest-button proxying is not part of the flow
+   - Tests inject write adapters at the module seam, exercising login, failure, save, and removal without reaching through the implementation
+
+9. **QA scenario runner module (2026-07-08)** — `tests/qa.ts` is a CLI facade over `tests/qa/runner.ts` and `tests/qa/scenario-runner.ts`:
+   - External seam is `runQa(options?)`, which owns browser startup, reporter lifecycle, screenshot cleanup, scenario fan-out, browser shutdown, summary printing, and exit-code calculation
+   - `runScenario(browser, scenario)` owns page navigation, userscript injection, ATV error collection, phased assertions, retry, deadline, and cleanup
+   - Each attempt gets a fresh Playwright context and closes both page and context in `finally`, matching Playwright's isolation model and avoiding state carry-over from failed attempts
+   - Screenshot capture remains part of the scenario assertion phases, not an optional post-process
+
+10. **Account-gated actions (2026-07-28)** — 作品标记 owns its account gate in `src/shared/components/interest-form/use-interest-marking.tsx`; short-comment and review voting keep their page-level guards, while all three reuse `src/shared/components/login-modal/` for login presentation:
+
+- Account-gated actions are: interest marking, short-comment voting, and review useful/useless voting
+  - Logged-out attempts open an ATV modal shell, and `mountNativeLoginFrame` creates the official `accounts.douban.com/passport/login_popup` iframe directly. The login module owns iframe creation, trusted-origin/path validation, styling, load/error state, `ck` session detection, and cleanup; it never discovers or mutates host-page login triggers, native dialog wrappers, or masks.
+  - This keeps the authentication provider at the account-origin boundary. Subject pages, review pages, and other callers only request a login session and receive the authenticated continuation; they do not depend on which Douban page DOM happens to be mounted.
+  - The userscript also matches `accounts.douban.com/passport/login*` and runs only `src/shared/components/login-modal/login-frame-theme.ts` there, so the iframe receives ATV login styling without copying login DOM, reading credentials, binding submit handlers, or running the subject app in the account origin
+  - Comment and review vote controls receive preflight guards so counts do not briefly change and roll back when the user is logged out
+  - API modules still keep their `ck` checks as the final safety net
+
+### Resolved-comment host integration
+
+`modules/subject/runtime/use-resolved-comments.ts` is the explicit host integration owner for resolved comments while retaining Preact's hook lifecycle. It uses the host document only for the profile-request referer, parses profile HTML into detached documents, and returns comments with resolved-avatar fallback applied to `SubjectPageRuntime`. The page-composition seam receives resolved comments and never starts requests, reads browser globals, or selects profile-link keys. Runtime tests cover profile lookup and fallback through the rendered page; Subject tests pass resolved comments directly.
+
+### InfoBlock extraction
+
+`modules/subject/extract/info.ts` is the only owner of `#info` markup traversal. Its internal adapters handle semantic `v:*` fields, label-adjacent text, label-adjacent links, and the selected season; `extractInfo(doc)` is the sole extractor interface, and `modules/subject/runtime/extract-data.ts` receives only the resulting `InfoBlock`. Do not recreate a shared label-traversal seam until a second production extractor actually needs it.
+
+### Key design decisions
+
+- **Preact TSX modules**: UI components are functions returning TSX. Filenames are kebab-case; component identifiers stay PascalCase.
+- **Deep subject seam**: Runtime calls `SubjectPageRuntime({ data, doc })`, which calls `SubjectPage({ data, runtime })`; Subject page internals own layout, local UI state, modals, voting affordances, and rating panels without touching the Douban document or network.
+- **Style ownership boundary**: CSS follows page ownership under `src/modules/<page>/styles/`, while page-agnostic token, base, layout, and modal styles live in `src/shared/styles/`; the cross-subject `interest-form` and `login-modal` own their complete component styles there, while subject Hero's interest panel remains subject-owned. `src/styles.css` is the only manifest. Do not import CSS from TSX modules, do not use CSS Modules for ATV selectors, and do not wrap ATV styles in cascade layers because unlayered Douban author CSS would outrank layered userscript styles. Experience files keep page-specific selectors and states.
+- **Scrapers are async**: Each external source gets its own resolver/scraper module. Remote work happens at explicit seams, not inside extractors.
+- **No config/layout coupling**: Every rating panel has its own state and display rules. No shared visibility model.
+- **250-LOC ceiling**: All modules stay under 250 LOC to avoid AI-slop-style oversized files.
+- **Bottom exports**: All exports are declared at the bottom of each file via a single `export { ... }` block. Never use `export const` or `export function` inline. This makes the module's public API immediately visible at a glance.
+- **`@/` import alias**: `@/` maps to `src/`. Use `@/shared/components/foo` or the current module's absolute path instead of deep relative imports that go up 2+ levels. Short relative imports (`./foo`, `../bar`) can stay relative. Configured in `tsconfig.json` (paths), `vite.config.ts` (resolve.alias), and `vitest.config.ts` (resolve.alias).
+- **Platform brand dual-icon pattern**: `PlatformBrand` supports an optional `heroIcon` for the first-broadcast display, separate from the default `Icon` used by the streaming provider. Hero area reads `brand.heroIcon ?? brand.Icon`; streaming provider always uses `brand.Icon`. Set both when a platform needs a symbol/wordmark for the hero and a combined (text+logo) icon for the watch-provider list. Currently used by: tencent-video, iqiyi, youku, bilibili.

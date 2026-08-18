@@ -1,0 +1,24 @@
+BuildFix12 R4 static validation
+
+- BuildFix12 delete route/transaction gate: 44/44
+- BuildFix11 dual-WebView/cast regression: 34/34
+- Review/source pipeline: 95/95
+- Review protocol: 6/6
+- Embedded Douban JavaScript: PASS
+- Windows launcher format: 3/3
+
+R4 assertions covered:
+- official do routes only to PersonalDoList
+- exact SubjectId target-card matching
+- finite do-list pagination
+- unique target-card delete control
+- official DOM click only, no fetch/private POST
+- fresh do-page hard absence proof
+- two complete official subject readbacks
+- final do-list hard cross-check
+- DeleteRoute diagnostics
+- old wish/collect SubjectDetail route remains present
+
+Environment limitation:
+- no .NET SDK / Windows WinForms / WebView2 runtime in packaging environment
+- no Windows compile or real-account R4 delete result claimed

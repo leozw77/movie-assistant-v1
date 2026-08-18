@@ -1,0 +1,17 @@
+﻿BuildFix11 R3 changed files
+
+HtmlMediaLibraryForm.cs
+- FullCast missing-avatar scheduler and incremental updates
+- WorkerWebView normal off-screen viewport
+
+WebAssets/MediaLibrary/app.js
+- state.fullCast
+- scope-aware castAvatarUpdated handling
+
+DetailCachePolicy.cs
+- CurrentFullCastParserVersion = 3
+
+tests/validate_buildfix11.py
+- R3 FullCast/avatar/viewport/version gates
+
+Build/package documentation and hashes updated for R3.

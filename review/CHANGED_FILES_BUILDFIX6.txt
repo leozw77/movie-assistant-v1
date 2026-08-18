@@ -1,0 +1,37 @@
+﻿BuildFix6 changed files relative to the complete BuildFix5 source
+
+Source files modified:
+- DoubanConnector.cs
+- DoubanOfficialFormScripts.cs
+- DoubanWebView2Connector.cs
+- DoubanWebView2Connector.ReviewWriteV2.cs
+- HtmlMediaLibraryForm.cs
+- ReviewPipelineSelfTest.cs
+- WebAssets/MediaLibrary/app.js
+- tests/validate_review_pipeline.py
+
+Build and package files modified:
+- scripts/Build-Preview.ps1
+- README.md
+- CHANGELOG.md
+- PACKAGE_VERSION.txt
+- BUILD_STATUS.txt
+- SOURCE_SHA256SUMS.txt
+- PACKAGE_SHA256SUMS.txt
+
+Files added:
+- BUILD_FIX6_NOTES.txt
+- BUILDFIX6_INTEGRATION.json
+- review/ACCEPTANCE_CHECKLIST_BUILDFIX6.md
+- review/CHANGED_FILES_BUILDFIX6.txt
+- review/DIAGNOSTIC_FINDINGS_BUILDFIX6.txt
+- review/PERFORMANCE_ANALYSIS_BUILDFIX6.md
+- review/SOURCE_VALIDATION_BUILDFIX6.txt
+
+Behavioral changes:
+- Rating Clear uses an explicit official clear control when available.
+- Otherwise it uses only official visible interest controls for a verified wish round-trip; the hidden rating field is read-only.
+- Detail metadata skips the old duplicate status-capability form probe because the v2 official review read follows immediately.
+- Startup and tab switching are local-cache-first; online history synchronization is triggered by Refresh.
+- Official requestSubmit, settlement, authoritative readback and local-cache protection remain mandatory.
+- Delete remains disabled.

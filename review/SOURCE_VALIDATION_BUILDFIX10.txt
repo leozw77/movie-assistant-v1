@@ -1,0 +1,73 @@
+BuildFix10 R1 source validation
+===============================
+
+Validation date: 2026-08-05
+Source base: 0.9.0-preview.6 BuildFix9
+Target: 0.9.0-preview.6 BuildFix10 R1
+
+R1 correction
+-------------
+The Windows legacy comprehensive self-test previously treated the literal
+`personage-default` inside the subject-page DOM script as evidence that the
+application visited person-profile pages. That literal is only a rejection
+pattern for Douban's default placeholder avatar.
+
+The corrected test now:
+- rejects actual profile-page fallback/navigation indicators such as
+  `matching-img`, `fetch(profileUrl`, `location.href=profileUrl`, and
+  `window.open(profileUrl`;
+- separately verifies that `personage-default` placeholder images continue to
+  be filtered.
+
+No detail-loading, cast-loading, review-writing, caching, or WebView2 runtime
+logic changed in R1.
+
+Completed checks
+----------------
+1. `python3 scripts/Validate-Source.py`
+   Result: PASS, 89/89 checks.
+   Coverage includes detail ordering, TTL separation, six-person home cast,
+   explicit full-cast loading, cached-empty semantics, form initialization
+   guard, official MarkedDate, NoChange, SubjectId protection, transaction
+   logging, diagnostics, write transaction invariants, disabled deletion, C#
+   delimiter balance, and the legacy self-test false-positive regression.
+
+2. `node --check WebAssets/MediaLibrary/app.js`
+   Result: PASS.
+
+3. `node tests/review-protocol.test.js`
+   Result: PASS, 6/6 protocol cases.
+
+4. `python3 scripts/Validate-Fixtures.py`
+   Result: PASS, 6/6 protocol fixture cases.
+
+5. `python3 scripts/Validate-Launcher.py`
+   Result: PASS.
+   - BUILD_PREVIEW.cmd: ASCII-only, BOM-free, CRLF.
+   - Build-Preview.ps1: UTF-8 BOM, CRLF.
+   - Explicit Windows PowerShell launcher path and quoted script path verified.
+
+6. `python3 tests/validate_embedded_scripts.py`
+   Result: PASS, 15/15 embedded JavaScript programs accepted by Node.js syntax checking.
+
+7. `python3 -m py_compile tests/*.py scripts/*.py`
+   Result: PASS.
+
+Environment capability check
+----------------------------
+- `dotnet`: unavailable.
+- `csc` / `mcs`: unavailable.
+- Windows PowerShell / PowerShell Core: unavailable.
+- Windows WinForms and WebView2 Runtime: unavailable in this Linux environment.
+
+Therefore this report does NOT claim:
+- successful .NET compilation or publish;
+- a BuildFix10 R1 EXE;
+- Windows runtime verification;
+- live Douban account regression;
+- measured Windows detail-page timing.
+
+The package is intended to be built in a fresh Windows directory with
+`BUILD_PREVIEW.cmd`. On the same Windows machine that produced 78/79 solely
+because of the old false-positive assertion, the corrected source is expected
+to report 80/80; that result still requires an actual rebuild on Windows.

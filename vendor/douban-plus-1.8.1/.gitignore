@@ -1,0 +1,16 @@
+node_modules/
+.pnpm-store
+.sisyphus/
+session-*.md
+*.Zone.Identifier
+.omo
+.mimocode
+.idea
+.vscode
+.playwright-mcp
+.playwright-cli
+.DS_Store
+*/.DS_Store
+coverage
+plans/
+.workbuddy

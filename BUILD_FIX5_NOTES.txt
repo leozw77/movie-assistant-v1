@@ -1,0 +1,28 @@
+DoubanReview 0.9.0-preview.6 Source Integrated BuildFix5
+Generated: 2026-08-05
+
+This is a complete source package. No manual hotfix copy is required.
+
+Merged changes:
+1. BuildFix3 full-source build pipeline.
+2. BuildFix4 rating Clear support for Douban visible img#star0.
+3. BuildFix5 review/detail performance optimization:
+   - reuse an already loaded complete subject page;
+   - reduce official form stability requirement from three identical samples to two;
+   - use faster adaptive settlement polling;
+   - avoid heavy inline detail read while navigation is incomplete;
+   - retain mandatory post-submit official form readback.
+4. One-click diagnostic collector included.
+
+Safety invariants retained:
+- Local data is only an offline cache.
+- Douban web data is authoritative after successful online read.
+- requestSubmit/navigation/form disappearance alone never means success.
+- State, rating, and comment must match official readback before local cache update.
+- Delete remains intentionally disabled pending stage-2 transaction rewrite.
+
+Build on Windows:
+Double-click BUILD_PREVIEW.cmd
+
+Collect diagnostics:
+Double-click COLLECT_DIAGNOSTICS.cmd

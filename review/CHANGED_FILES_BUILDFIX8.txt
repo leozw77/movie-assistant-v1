@@ -1,0 +1,22 @@
+BuildFix8 changed files
+=======================
+DoubanOfficialFormScripts.cs
+ReviewWriteCoordinator.cs
+ReviewPipelineSelfTest.cs
+HtmlMediaLibraryForm.cs
+WebAssets/MediaLibrary/app.js
+tests/validate_review_pipeline.py
+PACKAGE_VERSION.txt
+BUILD_FIX8_NOTES.txt
+BUILDFIX8_INTEGRATION.json
+CHANGELOG.md
+review/ACCEPTANCE_CHECKLIST_BUILDFIX8.md
+review/CHANGED_FILES_BUILDFIX8.txt
+review/DIAGNOSTIC_FINDINGS_BUILDFIX8.txt
+review/SOURCE_VALIDATION_BUILDFIX8.txt
+review/PROTOCOL_VALIDATION_BUILDFIX8.txt
+review/LAUNCHER_VALIDATION_BUILDFIX8.txt
+review/APP_JS_VALIDATION_BUILDFIX8.txt
+review/FIXTURE_VALIDATION_BUILDFIX8.txt
+SOURCE_SHA256SUMS.txt
+PACKAGE_SHA256SUMS.txt

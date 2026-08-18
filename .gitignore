@@ -1,0 +1,22 @@
+﻿bin/
+obj/
+.appdata/
+.build-appdata/
+*.user
+*.suo
+.vs/
+*.log
+*.tmp
+*.bak
+*.zip
+*.rar
+release/*
+!release/README.md
+!release/观影助手.exe
+.release-work-*/
+artifacts/
+
+# Local immutable release executables are generated from the committed manifest.
+# Metadata and checksums under this directory remain tracked.
+发布版本/**/观影助手-*.exe
+

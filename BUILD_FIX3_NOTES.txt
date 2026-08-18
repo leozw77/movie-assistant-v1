@@ -1,0 +1,25 @@
+DoubanReview preview.6 BuildFix3
+================================
+
+Reason for this revision
+------------------------
+BuildFix2 proved that the legacy built-in self-test itself reports 2/72 on the user machine.
+The previous claim that this was only a parser problem was incorrect.
+
+The legacy self-test mixes:
+- machine-dependent Chrome/Edge discovery
+- WebView2 Runtime detection
+- writable profile and temporary filesystem checks
+- historical player/import/image tests
+- preview.6 review-pipeline tests
+
+It is useful as diagnostics, but it is not a valid all-or-nothing release gate for the review-pipeline change.
+
+BuildFix3 behavior
+------------------
+1. Compile and publish normally.
+2. Run --review-self-test. All deterministic preview.6 review-pipeline checks must pass.
+3. Run --self-test and retain self-test-result.txt. Failures are warnings and are printed correctly as UTF-8.
+4. Generate hashes, BUILD_INFO.txt and the release ZIP.
+
+The old 72-item diagnostic is not deleted or hidden. Its result remains in the published folder for investigation.

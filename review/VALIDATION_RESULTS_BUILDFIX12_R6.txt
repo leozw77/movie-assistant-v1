@@ -1,0 +1,26 @@
+﻿BuildFix12 R6 validation results
+
+Source/static validation completed in packaging environment:
+
+- BuildFix12 delete-v2 validation: 48/48 PASS
+- BuildFix11 dual-WebView2/cast regression: 34/34 PASS
+- Review protocol: 6/6 PASS
+- Embedded JavaScript syntax: PASS
+- Review pipeline/source gate: 95/95 PASS
+
+R6-specific gates:
+- do first page uses exact https://movie.douban.com/people/{ProfileId}/do URL
+- do delete no longer uses synthetic HTMLElement.click()
+- target delete element is matched by SubjectId inside its own item
+- scrollIntoView + elementFromPoint hit-test before clicking
+- Chromium Input.dispatchMouseEvent trusted mouse path is used
+- no fetch / HttpClient / manual POST write path added
+- fresh do-list disappearance remains a hard success condition
+- two complete subject-detail absent readbacks remain a hard success condition
+
+Not performed here:
+- Windows .NET 8 compile
+- WebView2 runtime execution
+- authenticated real Douban deletion
+
+Run BUILD_PREVIEW.cmd on Windows before real-account testing.

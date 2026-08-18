@@ -1,0 +1,2 @@
+﻿BuildFix12 R11：请先阅读“先看这里.md”和 AI_HANDOFF.md。
+Windows 构建：双击 BUILD_PREVIEW.cmd。

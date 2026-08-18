@@ -1,0 +1,10 @@
+{
+  "description": "interactive 阶段卡片和头像仍在变化，只有 complete 后连续两次签名相同才可返回。",
+  "samples": [
+    {"readyState": "interactive", "hydrationComplete": false, "cardCount": 3, "cardsSignature": "a|b|c", "avatarSignature": "a||", "accepted": false},
+    {"readyState": "complete", "hydrationComplete": false, "cardCount": 5, "cardsSignature": "a|b|c|d|e", "avatarSignature": "a|b|c||", "accepted": false},
+    {"readyState": "complete", "hydrationComplete": true, "cardCount": 5, "cardsSignature": "a|b|c|d|e", "avatarSignature": "a|b|c|d|", "accepted": false},
+    {"readyState": "complete", "hydrationComplete": true, "cardCount": 5, "cardsSignature": "a|b|c|d|e", "avatarSignature": "a|b|c|d|", "accepted": false},
+    {"readyState": "complete", "hydrationComplete": true, "cardCount": 5, "cardsSignature": "a|b|c|d|e", "avatarSignature": "a|b|c|d|", "accepted": true}
+  ]
+}

@@ -1,0 +1,106 @@
+.atv-actions {
+  display: flex;
+  flex-wrap: wrap;
+  margin-bottom: 26px;
+  gap: 12px;
+}
+
+.atv-btn {
+  display: inline-flex;
+  height: 44px;
+  align-items: center;
+  padding: 0 22px;
+  border: none;
+  border-radius: 999px;
+  appearance: none;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: var(--atv-type-body-sm);
+  font-weight: var(--atv-font-weight-semibold);
+  gap: 8px;
+  letter-spacing: 0.01em;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    transform var(--atv-duration-press) var(--atv-ease-out),
+    background var(--atv-duration-feedback) ease,
+    color var(--atv-duration-feedback) ease;
+}
+
+.atv-btn:active {
+  transform: scale(0.97);
+}
+
+.atv-btn-primary {
+  background: var(--atv-accent);
+  box-shadow: 0 8px 24px var(--atv-accent-glow);
+  color: var(--atv-text-on-accent);
+}
+
+.atv-btn-secondary {
+  border: 1px solid var(--atv-border-medium);
+  backdrop-filter: blur(10px);
+  background: var(--atv-bg-elevated);
+  color: var(--atv-text-primary);
+}
+
+.atv-btn.is-active {
+  border: 1px solid var(--atv-accent);
+  background: var(--atv-bg-elevated);
+  color: var(--atv-text-primary);
+}
+
+.atv-btn.is-active:hover {
+  border-color: var(--atv-accent-bright);
+  background: var(--atv-bg-hover-strong);
+}
+
+.atv-hero-summary {
+  margin-top: 16px;
+}
+
+.atv-hero-teaser {
+  display: -webkit-box;
+  overflow: hidden;
+  max-width: 660px;
+  margin: 0 0 12px;
+  -webkit-box-orient: vertical;
+  color: var(--atv-text-secondary);
+  font-size: var(--atv-type-body);
+  line-height: var(--atv-line-height-body-loose);
+  overflow-wrap: break-word;
+  white-space: pre-wrap;
+}
+
+.atv-hero-teaser.is-clamped {
+  -webkit-line-clamp: 3;
+}
+
+.atv-hero-more {
+  display: inline-flex;
+  align-items: center;
+  padding: 0;
+  border: none;
+  appearance: none;
+  background: none;
+  color: var(--atv-accent-bright);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--atv-type-caption);
+  font-weight: var(--atv-font-weight-semibold);
+  gap: 6px;
+  letter-spacing: 0.02em;
+}
+
+.atv-hero-more:hover {
+  color: var(--atv-accent);
+}
+
+.atv-hero-more svg {
+  transition: transform var(--atv-duration-hover) var(--atv-ease-in-out);
+}
+
+.atv-hero-more.is-open svg {
+  transform: rotate(180deg);
+}

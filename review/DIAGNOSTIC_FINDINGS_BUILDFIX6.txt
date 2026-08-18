@@ -1,0 +1,30 @@
+﻿BuildFix5 diagnostic review -> BuildFix6
+Source diagnostic: 2026-08-05 09:33-09:35
+
+BUILD
+PASS - dotnet restore
+PASS - Release build
+PASS - 0 warnings / 0 errors
+PASS - win-x64 single-file publish
+PASS - review pipeline self-test 14/14
+PASS - legacy diagnostics 72/72
+EXE SHA256 - 594D2E03194AF0EE067D7DF72566DF0F5FCA0650770C04B5D90A09D5F0AFA552
+
+PERFORMANCE
+- A normal state/rating save from the first official read to confirmed result took about 7.2 seconds.
+- The submit/settlement/readback portion was about 4.2 seconds.
+- BuildFix5 page reuse and adaptive settlement were active.
+- Detail was still delayed by startup history navigation and duplicate official-form reads.
+
+RATING CLEAR ROOT CAUSE
+- Observed form: ratingControlCount=6, clearRatingControlCount=0.
+- No explicit zero/clear rating control was present.
+- BuildFix4/5 incorrectly assumed a visible img#star0 control.
+- The failure was safe: no request was submitted and local cache was overwritten from the current official value.
+
+BUILDFIX6 RESPONSE
+- Use only official visible status controls to perform a verified wish round-trip when no explicit clear control exists.
+- Verify hidden rating becomes empty as a read-only observation.
+- Restore the requested final status and verify rating remains empty before requestSubmit().
+- Preserve settlement and authoritative official readback.
+- Remove startup automatic history navigation and duplicate metadata capability form read.

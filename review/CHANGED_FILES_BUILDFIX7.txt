@@ -1,0 +1,22 @@
+BuildFix7 changed files
+- ReviewWriteModels.cs
+- ReviewPipelineSelfTest.cs
+- DoubanWebView2Connector.ReviewWriteV2.cs
+- HtmlMediaLibraryForm.cs
+- WebAssets/MediaLibrary/app.js
+- tests/validate_review_pipeline.py
+- README.md
+- CHANGELOG.md
+- 先看这里.txt
+- PACKAGE_VERSION.txt
+- BUILD_STATUS.txt
+- BUILD_FIX7_NOTES.txt
+- BUILDFIX7_INTEGRATION.json
+- review/ACCEPTANCE_CHECKLIST_BUILDFIX7.md
+- review/CHANGED_FILES_BUILDFIX7.txt
+- review/SOURCE_VALIDATION_BUILDFIX7.txt
+- review/PROTOCOL_VALIDATION_BUILDFIX7.txt
+- review/LAUNCHER_VALIDATION_BUILDFIX7.txt
+- review/FIXTURE_VALIDATION_BUILDFIX7.txt
+- SOURCE_SHA256SUMS.txt
+- PACKAGE_SHA256SUMS.txt

@@ -1,0 +1,15 @@
+﻿BuildFix12 R7 validation
+
+Source-derived diagnostic fix:
+- First R6 delete pass: /do target remained and row text contained short comment before click.
+- Retry began with official detail already none while /do target still existed; row text no longer contained the short comment.
+- Second trusted /do click removed the row, after which detail and list readback both confirmed deletion.
+
+Static validation:
+- BuildFix12 delete-v2: 51/51
+- BuildFix11 regression: 34/34
+- Review pipeline: 95/95
+- Embedded JavaScript: all valid
+- Review protocol Node tests: ALL_PROTOCOL_TESTS_OK
+
+Windows compile/runtime validation: not performed in this Linux environment.

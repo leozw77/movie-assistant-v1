@@ -1,0 +1,24 @@
+{
+  "package": "DoubanReview_0.9.0-preview.6_Source_Integrated_BuildFix5_2026-08-05",
+  "generated": "2026-08-05T09:25:00+08:00",
+  "checks": {
+    "BuildFix4 star0 submit": true,
+    "BuildFix4 star0 probe": true,
+    "same-page reuse": true,
+    "two stable samples": true,
+    "adaptive settlement polling": true,
+    "complete navigation guard": true,
+    "official readback": true,
+    "requestSubmit retained": true,
+    "no fetch submission": true,
+    "no cookie access": true,
+    "hidden rating read-only": true,
+    "delete disabled": true,
+    "collector cmd ascii bom-free": true,
+    "collector ps utf8-bom": true
+  },
+  "python_source_validation": "45/45 passed",
+  "javascript_protocol_validation": "ALL_PROTOCOL_TESTS_OK",
+  "windows_build_executed": false,
+  "reason": "Windows .NET 8 WinForms/WebView2 toolchain is not available in this Linux packaging environment."
+}

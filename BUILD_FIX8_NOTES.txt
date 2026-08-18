@@ -1,0 +1,39 @@
+0.9.0-preview.6 BuildFix8
+=========================
+
+Problem confirmed from the 2026-08-05 10:13 diagnostic package
+----------------------------------------------------------------
+The request was: current official state do with 4 stars -> target wish with rating Clear.
+The official form exposed star1..star5 but no independent clear-rating control. Selecting the
+official wish radio did not synchronously clear the hidden rating field; Douban clears the
+rating only after the official wish form is submitted and the server settles it.
+
+BuildFix6/7 incorrectly required the hidden rating to become null before submit. For a target
+wish request it therefore stopped with:
+  官方表单无法可靠清除评分
+  clearCandidateCount=0
+
+Changes
+-------
+1. Target wish + rating clear:
+   - selects the official wish control;
+   - permits requestSubmit even while the old hidden rating value is still visible;
+   - only reports success after settlement and an official readback confirms status=wish and rating=null.
+2. Target do/collect + rating clear while an old rating exists:
+   - transaction A submits wish and verifies the server cleared the rating;
+   - transaction B submits the final do/collect state and verifies the final status, null rating, and comment.
+3. The hidden rating input remains read-only. No direct assignment, fetch, cookie access, or private HTTP request is used.
+4. If transaction A succeeds but transaction B fails, the confirmed intermediate wish snapshot is returned as the
+   authoritative official state so the local cache does not preserve stale data.
+5. A failed operation that merely refreshes the cache from the current official snapshot now displays:
+   本地缓存：已同步官方当前值（本次目标未确认）
+   instead of the misleading:
+   本地缓存：已完成
+6. Result-stage labels now distinguish the clear-rating transaction from the final-state transaction.
+7. BuildFix7 officialConfirmed/cache-result fixes and BuildFix6 performance changes remain included.
+8. Delete remains disabled.
+
+Safety boundary
+---------------
+No JavaScript click, submit event, URL change, fixed wait, or hidden-field mutation can independently produce success.
+Every transaction must settle and its official form readback must match status, rating, and comment.

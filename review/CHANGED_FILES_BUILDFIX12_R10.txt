@@ -1,0 +1,21 @@
+﻿BuildFix12 R10 changed files
+
+WebAssets/MediaLibrary/app.js
+- Restores cache-first automatic Douban history refresh at startup and on tab changes.
+- Adds five-minute stale throttling, per-tab in-flight guard, login/recovery resync and periodic visible-tab refresh.
+
+WebAssets/MediaLibrary/index.html
+- Renames the optional manual action from “手动同步豆瓣” to “立即同步豆瓣”.
+
+tests/validate_buildfix12_r10.py
+- Adds automatic-sync regression gate.
+
+scripts/Build-Preview.ps1
+- Adds R10 build label, validation invocation and package metadata.
+
+Metadata/docs
+- BUILD_FIX12_R10_NOTES.txt
+- BUILD_STATUS.txt
+- PACKAGE_VERSION.txt
+- BUILDFIX12_INTEGRATION.json
+- README.md / CHANGELOG.md / AI_HANDOFF.md / 先看这里.txt

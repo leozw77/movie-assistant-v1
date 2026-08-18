@@ -1,0 +1,20 @@
+﻿BuildFix12 R9 changed files
+
+WorkerJobQueue.cs
+- Replaced direct `return` inside PumpAsync finally with stopPumpAfterJob flag and post-finally return.
+
+tests/validate_buildfix12_r9.py
+- New guard for forbidden direct control-flow exit from PumpAsync finally.
+
+tests/validate_review_pipeline.py
+- Aggregate R9 compile-risk gate.
+
+scripts/Build-Preview.ps1
+- R9 build label, R9 validation invocation and R9 notes/report packaging.
+
+Metadata/docs
+- BUILD_FIX12_R9_NOTES.txt
+- PACKAGE_VERSION.txt
+- BUILD_STATUS.txt
+- BUILDFIX12_INTEGRATION.json
+- README.md / AI_HANDOFF.md / BUILD_REQUIRED.txt / 先看这里.txt / CHANGELOG.md

@@ -1,0 +1,549 @@
+/* ── Review content images (Douban image-container) ── */
+.atv-review-modal-body .image-container {
+  margin: 24px 0;
+  clear: both;
+}
+
+.atv-review-modal-body .image-container.image-float-left {
+  max-width: 50%;
+  margin: 8px 24px 8px 0;
+  float: left;
+}
+
+.atv-review-modal-body .image-container.image-float-right {
+  max-width: 50%;
+  margin: 8px 0 8px 24px;
+  float: right;
+}
+
+.atv-review-modal-body .image-wrapper {
+  overflow: hidden;
+  border-radius: var(--atv-radius-sm);
+  line-height: 0;
+}
+
+.atv-review-modal-body .image-wrapper img {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  height: auto;
+  margin: 0 auto;
+}
+
+.atv-review-modal-body .image-caption-wrapper {
+  margin-top: 8px;
+  text-align: center;
+}
+
+.atv-review-modal-body .image-caption {
+  display: inline-block;
+  color: var(--atv-text-tertiary);
+  font-size: var(--atv-type-caption);
+  font-style: italic;
+  font-weight: var(--atv-font-weight-regular);
+  letter-spacing: 0.02em;
+  line-height: 1.6;
+}
+
+/* ── Review content subject reference (Douban subject-container) ── */
+.atv-review-modal-body .subject-container {
+  overflow: hidden;
+  padding-left: 2px;
+  border: 1px solid var(--atv-border-subtle);
+  border-radius: var(--atv-radius-md);
+  border-left: 2px solid var(--atv-accent);
+  margin: 24px 0;
+  background: linear-gradient(
+    105deg,
+    var(--atv-accent-hover),
+    color-mix(in srgb, var(--atv-bg-card) 94%, transparent) 42%
+  );
+}
+
+.atv-review-modal-body .subject-wrapper > a,
+.atv-review-modal-body .subject-wrapper > a:link,
+.atv-review-modal-body .subject-wrapper > a:visited {
+  display: grid;
+  padding: 12px;
+  border-bottom: 0;
+  background: transparent;
+  color: inherit;
+  gap: 12px;
+  grid-template-columns: 56px minmax(0, 1fr);
+  text-decoration: none;
+  transition: none;
+}
+
+.atv-review-modal-body .subject-wrapper > a:hover,
+.atv-review-modal-body .subject-wrapper > a:active {
+  border-bottom: 0;
+  background: var(--atv-bg-hover);
+  color: inherit;
+}
+
+.atv-review-modal-body .subject-wrapper > a:focus-visible {
+  outline: 2px solid var(--atv-accent-bright);
+  outline-offset: -2px;
+}
+
+.atv-review-modal-body .subject-cover {
+  overflow: hidden;
+  width: 56px;
+  height: 84px;
+  border-radius: 5px;
+  background: var(--atv-bg-tertiary);
+  box-shadow: 0 8px 20px rgb(0 0 0 / 30%);
+}
+
+.atv-review-modal-body .subject-cover img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.atv-review-modal-body .subject-info {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.atv-review-modal-body .subject-title {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: baseline;
+  color: var(--atv-text-primary);
+  font-size: var(--atv-type-title);
+  font-weight: var(--atv-font-weight-semibold);
+  gap: 4px;
+  letter-spacing: 0.01em;
+  line-height: 1.35;
+}
+
+.atv-review-modal-body .title-tail {
+  color: var(--atv-text-tertiary);
+  font-size: var(--atv-type-caption);
+  font-weight: var(--atv-font-weight-medium);
+}
+
+.atv-review-modal-body .subject-rating {
+  display: flex;
+  align-items: center;
+  margin-top: 7px;
+  gap: 1px;
+  line-height: 1;
+}
+
+.atv-review-modal-body .rating-star1::before,
+.atv-review-modal-body .rating-star2::before,
+.atv-review-modal-body .rating-star0::before {
+  content: "★";
+  font-size: var(--atv-type-caption);
+}
+
+.atv-review-modal-body .rating-star1::before {
+  color: var(--atv-rating-gold);
+}
+
+.atv-review-modal-body .rating-star2::before {
+  background: linear-gradient(
+    90deg,
+    var(--atv-rating-gold) 50%,
+    var(--atv-rating-empty) 50%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.atv-review-modal-body .rating-star0::before {
+  color: var(--atv-rating-empty);
+}
+
+.atv-review-modal-body .rating-score {
+  margin-left: 6px;
+  color: var(--atv-text-secondary);
+  font-size: var(--atv-type-caption-sm);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--atv-font-weight-semibold);
+}
+
+.atv-review-modal-body .subject-summary {
+  margin-top: 7px;
+  color: var(--atv-text-tertiary);
+  font-size: var(--atv-type-caption-sm);
+  line-height: 1.55;
+}
+
+.atv-review-modal-body .subject-caption-wrapper {
+  padding: 0 12px 12px 80px;
+}
+
+.atv-review-modal-body .subject-caption {
+  color: var(--atv-text-secondary);
+  font-size: var(--atv-type-caption-sm);
+  font-style: italic;
+  line-height: 1.55;
+}
+
+/* ── Review content links (Douban a.link / generic) ── */
+.atv-review-modal-body a:link,
+.atv-review-modal-body a:visited {
+  border-bottom: 1px solid var(--atv-accent-border);
+  background: transparent;
+  color: var(--atv-accent);
+  overflow-wrap: break-word;
+  text-decoration: none;
+  transition:
+    border-color var(--atv-duration-feedback) ease,
+    color var(--atv-duration-feedback) ease;
+}
+
+.atv-review-modal-body a:hover,
+.atv-review-modal-body a:active {
+  border-bottom-color: var(--atv-accent-bright);
+  background: transparent;
+  color: var(--atv-accent-bright);
+}
+
+/* ============================================
+   7. Review Content Typography — All Elements
+      Target ALL HTML tags that may appear inside
+      Douban review rich-text content.
+   ============================================ */
+
+/* --- Headings --- */
+.atv-review-modal-body h3 {
+  margin: 28px 0 12px;
+  color: var(--atv-text-primary);
+  font-size: var(--atv-type-title-md);
+  font-weight: var(--atv-font-weight-semibold);
+  line-height: 1.4;
+}
+
+.atv-review-modal-body h4 {
+  margin: 24px 0 10px;
+  color: var(--atv-text-primary);
+  font-size: var(--atv-type-title);
+  font-weight: var(--atv-font-weight-semibold);
+  line-height: 1.4;
+}
+
+.atv-review-modal-body h5,
+.atv-review-modal-body h6 {
+  margin: 20px 0 8px;
+  color: var(--atv-text-secondary);
+  font-size: var(--atv-type-body-sm);
+  font-weight: var(--atv-font-weight-semibold);
+  line-height: 1.4;
+}
+
+/* --- Horizontal Rule --- */
+.atv-review-modal-body hr {
+  height: 0;
+  border: none;
+  border-top: 1px solid var(--atv-border-subtle);
+  margin: 28px 0;
+}
+
+/* --- Lists --- */
+.atv-review-modal-body ul,
+.atv-review-modal-body ol {
+  padding-left: 24px;
+  margin: 0 0 16px;
+  line-height: 1.7;
+}
+
+.atv-review-modal-body ul {
+  list-style: disc;
+}
+
+.atv-review-modal-body ol {
+  list-style: decimal;
+}
+
+.atv-review-modal-body li {
+  margin-bottom: 6px;
+  line-height: 1.7;
+}
+
+.atv-review-modal-body li:last-child {
+  margin-bottom: 0;
+}
+
+/* --- Inline Text Semantics --- */
+.atv-review-modal-body strong,
+.atv-review-modal-body b {
+  color: var(--atv-text-primary);
+  font-weight: var(--atv-font-weight-bold);
+}
+
+.atv-review-modal-body em,
+.atv-review-modal-body i {
+  font-style: italic;
+}
+
+.atv-review-modal-body small {
+  color: var(--atv-text-tertiary);
+  font-size: 0.85em;
+}
+
+.atv-review-modal-body q {
+  font-style: italic;
+}
+
+.atv-review-modal-body q::before {
+  content: "\201C";
+}
+
+.atv-review-modal-body q::after {
+  content: "\201D";
+}
+
+.atv-review-modal-body u {
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+.atv-review-modal-body s,
+.atv-review-modal-body del {
+  color: var(--atv-text-tertiary);
+  text-decoration: line-through;
+}
+
+.atv-review-modal-body sup {
+  font-size: 0.75em;
+  line-height: 1;
+  vertical-align: super;
+}
+
+.atv-review-modal-body sub {
+  font-size: 0.75em;
+  line-height: 1;
+  vertical-align: sub;
+}
+
+/* --- Code --- */
+.atv-review-modal-body code {
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--atv-bg-elevated);
+  font-family: var(--atv-font-mono);
+  font-size: 0.9em;
+  overflow-wrap: break-word;
+}
+
+.atv-review-modal-body pre {
+  padding: 16px 20px;
+  border: 1px solid var(--atv-border-subtle);
+  border-radius: var(--atv-radius-sm);
+  margin: 0 0 20px;
+  background: var(--atv-bg-card);
+  line-height: 1.6;
+  -webkit-overflow-scrolling: touch;
+  overflow-x: auto;
+}
+
+.atv-review-modal-body pre code {
+  padding: 0;
+  background: none;
+  font-size: var(--atv-type-body-sm);
+  word-break: normal;
+}
+
+/* --- Tables --- */
+.atv-review-modal-body table {
+  width: 100%;
+  margin: 20px 0;
+  border-collapse: collapse;
+  line-height: 1.6;
+}
+
+.atv-review-modal-body thead {
+  border-bottom: 2px solid var(--atv-border-medium);
+}
+
+.atv-review-modal-body th {
+  padding: 10px 14px;
+  color: var(--atv-text-primary);
+  font-weight: var(--atv-font-weight-semibold);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.atv-review-modal-body td {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--atv-border-subtle);
+  color: var(--atv-text-emphasis);
+}
+
+.atv-review-modal-body tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.atv-review-modal-body .review-content,
+.atv-review-modal-body .review-content p,
+.atv-review-modal-body .review-content div,
+.atv-review-modal-body .review-content span {
+  color: var(--atv-text-emphasis);
+}
+
+.atv-review-modal-body .spoiler-tip {
+  margin-bottom: 12px;
+  color: var(--atv-content-caution);
+  font-size: var(--atv-type-caption);
+  font-weight: var(--atv-font-weight-semibold);
+  letter-spacing: 0.03em;
+}
+
+.atv-review-modal-body .main-hd {
+  display: flex;
+  align-items: center;
+  margin-bottom: 16px;
+  gap: 10px;
+}
+
+.atv-review-modal-body .main-hd a.name {
+  color: var(--atv-accent);
+  font-size: var(--atv-type-body-sm);
+  font-weight: var(--atv-font-weight-medium);
+  text-decoration: none;
+}
+
+.atv-review-modal-body .main-hd a.name:hover {
+  text-decoration: underline;
+}
+
+.atv-review-modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 20px;
+  border-top: 1px solid var(--atv-border-subtle);
+  margin-top: 28px;
+}
+
+.atv-review-modal-votes {
+  display: flex;
+  gap: 14px;
+}
+
+.atv-review-modal-link {
+  display: flex;
+  align-items: center;
+}
+
+#atv-douban-root .atv-review-modal-link-a {
+  background: transparent;
+  color: var(--atv-text-tertiary);
+  font-size: var(--atv-type-caption);
+  text-decoration: none;
+  transition: color var(--atv-duration-feedback) ease;
+}
+
+#atv-douban-root .atv-review-modal-link-a:link,
+#atv-douban-root .atv-review-modal-link-a:visited {
+  background: transparent;
+  color: var(--atv-text-tertiary);
+}
+
+#atv-douban-root .atv-review-modal-link-a:hover,
+#atv-douban-root .atv-review-modal-link-a:active {
+  background: transparent;
+  color: var(--atv-accent);
+}
+
+.atv-review-modal-stars {
+  display: inline-flex;
+  align-items: center;
+  color: var(--atv-rating-gold);
+  gap: 2px;
+}
+
+.atv-review-modal-stars svg {
+  display: block;
+  width: 14px;
+  height: 14px;
+}
+
+.atv-review-modal-body.is-loading {
+  position: relative;
+  min-height: 140px;
+  color: transparent;
+}
+
+.atv-review-modal-body.is-loading::before,
+.atv-review-modal-body.is-loading::after {
+  display: block;
+  height: 14px;
+  border-radius: 4px;
+  background: var(--atv-bg-elevated);
+  content: "";
+}
+
+.atv-review-modal-body.is-loading::before {
+  width: 92%;
+  margin-bottom: 14px;
+}
+
+.atv-review-modal-body.is-loading::after {
+  width: 68%;
+}
+
+.atv-review-modal-body.is-error {
+  display: flex;
+  min-height: 140px;
+  align-items: center;
+  justify-content: center;
+  color: var(--atv-text-tertiary);
+  text-align: center;
+}
+
+.atv-review-modal-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+.atv-review-modal-error p {
+  margin: 0;
+}
+
+.atv-review-modal-retry {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 18px;
+  border: 1px solid var(--atv-border-subtle);
+  border-radius: 999px;
+  appearance: none;
+  background: var(--atv-bg-elevated);
+  color: var(--atv-text-secondary);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--atv-type-caption);
+  font-weight: var(--atv-font-weight-semibold);
+  transition:
+    color var(--atv-duration-feedback) ease,
+    border-color var(--atv-duration-feedback) ease,
+    background var(--atv-duration-feedback) ease;
+}
+
+.atv-review-modal-retry:hover,
+.atv-review-modal-retry:focus-visible {
+  border-color: var(--atv-accent-border);
+  background: var(--atv-accent-hover);
+  color: var(--atv-accent);
+}
+
+.atv-review-modal-retry:focus-visible,
+.atv-review-modal .atv-modal-close:focus-visible,
+#atv-douban-root .atv-review-modal-link-a:focus-visible {
+  outline: 2px solid var(--atv-accent);
+  outline-offset: 3px;
+}

@@ -1,0 +1,4 @@
+PASS: 完整演职员头像脚本覆盖新版懒加载与背景图
+PASS: BuildFix10 详情缓存 TTL 分层生效
+PASS: 首页演职员官方空结果可按七天缓存
+SUMMARY: 3/3 targeted legacy warnings addressed statically

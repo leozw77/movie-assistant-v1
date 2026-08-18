@@ -1,0 +1,78 @@
+.atv-personage .atv-section {
+  /* Inter-group 56px (bottom) vs intra-group 28px (header margin) = 2:1.
+     Horizontal inset matches the hero's max(28px, 7vw) so section content
+     aligns with the identity column. */
+  padding: 36px max(28px, 7vw) 56px;
+}
+
+.atv-personage .atv-section + .atv-section {
+  padding-top: 0;
+}
+
+.atv-personage .atv-section-h {
+  padding-left: 0;
+  margin-bottom: 28px;
+  color: var(--atv-text-secondary);
+  font-size: var(--atv-type-title-lg);
+  font-weight: var(--atv-font-weight-semibold);
+  letter-spacing: 0.02em;
+}
+
+.atv-personage .atv-section-h::before {
+  display: none;
+}
+
+.atv-personage .atv-section-h-row {
+  margin-bottom: 28px;
+}
+
+.atv-carousel.atv-personage-gallery-rail {
+  /* Compound selector outranks the shared `.atv-carousel` gap (see work rail). */
+  gap: 12px;
+  list-style: none;
+}
+
+@keyframes atv-gallery-tile-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.atv-personage-gallery-rail li {
+  min-width: 0;
+  height: 256px;
+  flex: 0 0 auto;
+  aspect-ratio: var(--atv-personage-gallery-aspect-ratio, 4 / 3);
+  scroll-snap-align: start;
+}
+
+.atv-section-reveal.is-revealed .atv-personage-gallery-rail li {
+  animation: atv-gallery-tile-in 200ms var(--atv-ease-out) both;
+  animation-delay: min(calc(var(--stagger-index, 0) * 40ms + 20ms), 100ms);
+}
+
+.atv-personage-gallery-rail button {
+  display: block;
+  overflow: hidden;
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: var(--atv-radius-sm);
+  appearance: none;
+  background: var(--atv-bg-tertiary);
+  cursor: pointer;
+}
+
+.atv-personage-gallery-rail img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}

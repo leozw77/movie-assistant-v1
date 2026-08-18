@@ -1,0 +1,28 @@
+{
+  "package": "DoubanReview_0.9.0-preview.6_Source_Integrated_BuildFix9_2026-08-05",
+  "version": "0.9.0-preview.6",
+  "buildFix": "BuildFix9",
+  "generated": "2026-08-05",
+  "baseline": "BuildFix8 complete source",
+  "purpose": "cache-first staged detail loading and foreground WebView2 performance priority",
+  "changes": [
+    "render local detail cache immediately",
+    "queue official review before lower-priority metadata refresh",
+    "refresh metadata and official review independently without metadata overwriting authoritative review values",
+    "defer full-cast navigation until explicit user request",
+    "reuse safe same-subject metadata page",
+    "reuse a complete official review snapshot once within 10 seconds when the hidden WebView remains on the same subject",
+    "reduce login-cookie polling to 60 seconds and skip it while foreground navigation is busy",
+    "add bridge operation timing logs that identify detail, history, search, and save operations without logging user review text"
+  ],
+  "authorityBoundary": "Douban official readback remains the only success authority; local cache is display/offline only",
+  "delete": "disabled",
+  "validation": {
+    "sourceChecks": "68/68 passed",
+    "javascriptProtocol": "6/6 passed",
+    "javascriptSyntax": "passed",
+    "windowsBuild": "not run in this Linux environment",
+    "launcherFormat": "passed",
+    "htmlElementReferences": "passed"
+  }
+}

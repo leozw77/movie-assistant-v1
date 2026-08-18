@@ -1,0 +1,26 @@
+BuildFix11 findings and implemented corrections
+Date: 2026-08-05
+
+1. Previous architecture used one Douban WebView2 for metadata, full cast, person pages and review transactions. Navigation-heavy tasks serialized and displaced the detail page.
+   Correction: DetailWebView and WorkerWebView are long-lived and share the same CoreWebView2Environment/Profile.
+
+2. Home-cast extraction deduplicated by profile/person identity, removing a repeated card when one person appeared in multiple jobs.
+   Correction: card-order extraction keeps up to six official cards and performs no person-level deduplication.
+
+3. Full-cast ancestor scoring could select a shared parent and assign one card's first image to a neighboring person.
+   Correction: direct li.celebrity traversal; image extraction is restricted to the current card.
+
+4. Full-cast extraction returned on the first complete-looking sample before lazy avatars stabilized.
+   Correction: readyState complete plus consecutive card/avatar signature stability at 250 ms intervals.
+
+5. Bad Cast/FullCast results could stay cached for seven days.
+   Correction: parser versions are upgraded to 2 and only Cast/FullCast fields/timestamps are invalidated.
+
+6. Background avatar work could block review writes.
+   Correction: a single-consumer priority queue preempts cancelable low-priority jobs; an official submission is non-cancelable once started.
+
+7. Old async results could arrive after switching subjects.
+   Correction: SubjectId + RequestId validation in both C# and JavaScript; stale results may persist to their own cache but cannot update the current UI.
+
+8. Missing/placeholder avatar checks were fragmented.
+   Correction: BrowserCdpService.IsValidPersonAvatarUrl is the shared gate and PersonAvatarCache stores only accepted URLs.

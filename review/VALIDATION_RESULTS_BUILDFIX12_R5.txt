@@ -1,0 +1,27 @@
+BuildFix12 R5 validation results
+Date: 2026-08-09
+
+Purpose:
+- Fix Windows C# compiler error CS0136 in DoubanWebView2Connector.DeleteV2.cs reported from BuildFix12 R4.
+- Preserve R4 do-list deletion behavior unchanged.
+
+Fix verified statically:
+- Inner no-change branch now uses preDeleteListWarning.
+- Later enclosing-scope listWarning remains unique.
+- Added regression gate preventing the same listWarning shadowing/redeclaration pattern.
+
+Validation run in packaging environment:
+- scripts/Validate-Source.py: 95/95 PASS
+- scripts/Validate-Fixtures.py: ALL_PROTOCOL_TESTS_OK (6/6)
+- tests/validate_buildfix12_delete.py: 45/45 PASS
+- tests/validate_embedded_scripts.py: all embedded scripts valid
+- tests/validate_review_pipeline.py: 95/95 PASS
+- scripts/Validate-Launcher.py: PASS (launcher format / PowerShell path)
+
+Not run in packaging environment:
+- Windows .NET 8 build
+- WinForms/WebView2 runtime
+- real-account Douban deletion regression
+
+Required next step:
+Run BUILD_PREVIEW.cmd on Windows. The previous R4 CS0136 failure was at [3/8] Building Release; R5 is intended to clear that compiler error.

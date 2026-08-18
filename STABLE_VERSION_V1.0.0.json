@@ -1,0 +1,27 @@
+{
+  "product": "观影助手",
+  "status": "stable",
+  "version": "1.0.0",
+  "stableTag": "stable-v1.0.0",
+  "sourceBaseline": "clean rebaseline from the user-accepted Douban native search stable source",
+  "businessBaseline": "v0.9.0 BuildFix12 R11",
+  "releaseDate": "2026-08-18",
+  "runtime": "net8.0-windows win-x64 framework-dependent single-file",
+  "selfContained": false,
+  "previousStableVersion": "0.9.0",
+  "previousStableTag": "stable-v0.9.0",
+  "included": [
+    "Unified DoubanShell",
+    "Douban native movie search with native pagination",
+    "Personal-page and Explore-page existing infinite scroll",
+    "Same-window real Douban subject detail navigation",
+    "Local watchlist integration"
+  ],
+  "excluded": [
+    "Explore-page /explore adapter",
+    "Search-page infinite scroll",
+    "New real-time AI UI"
+  ],
+  "userAcceptance": "Inherited from the user-confirmed stable source; the v1.0.0 rebaseline package requires the same acceptance boundary",
+  "policy": "clean-personal-baseline"
+}

@@ -1,0 +1,133 @@
+:root {
+  color-scheme: dark;
+  font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+  background: #101318;
+  color: #f1f3f5;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 760px; background: #101318; }
+button { font: inherit; }
+
+.qb-shell {
+  min-height: 100vh;
+  background: linear-gradient(180deg, #151a22 0%, #101318 280px);
+}
+
+.qb-shell-header {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  min-height: 72px;
+  padding: 14px 28px;
+  background: rgba(21, 26, 34, .96);
+  border-bottom: 1px solid #2c3440;
+  backdrop-filter: blur(12px);
+}
+
+.qb-shell-brand { min-width: 180px; }
+.qb-shell-title { margin: 0; font-size: 21px; letter-spacing: .02em; }
+.qb-shell-subtitle { margin: 4px 0 0; color: #8f9baa; font-size: 12px; }
+.qb-shell-nav { display: flex; flex: 1; gap: 8px; align-items: center; }
+.qb-shell-nav button,
+.qb-shell-login {
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 9px 13px;
+  color: #cbd3dd;
+  background: transparent;
+  cursor: pointer;
+}
+.qb-shell-nav button:hover:not(:disabled),
+.qb-shell-nav button.qb-active { color: #fff; background: #273343; border-color: #3d5068; }
+.qb-shell-nav button:disabled { color: #697585; cursor: not-allowed; }
+.qb-shell-login { margin-left: auto; border-color: #40536b; background: #202c3a; white-space: nowrap; }
+.qb-shell-login:hover { background: #2b3b4d; }
+
+.qb-shell-search { display: flex; align-items: center; gap: 6px; min-width: 250px; margin-left: auto; }
+.qb-shell-search-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.qb-shell-search-input { min-width: 0; width: 180px; border: 1px solid #40536b; border-radius: 8px; padding: 8px 10px; color: #edf3fb; background: #151d28; outline: none; }
+.qb-shell-search-input::placeholder { color: #7e8b9b; }
+.qb-shell-search-input:focus { border-color: #75a8df; box-shadow: 0 0 0 2px rgba(117, 168, 223, .2); }
+.qb-shell-search-submit { border: 1px solid #557ba5; border-radius: 8px; padding: 8px 11px; color: #fff; background: #294767; cursor: pointer; white-space: nowrap; }
+.qb-shell-search-submit:hover { background: #345b84; }
+
+.qb-shell-main { max-width: 1440px; margin: 0 auto; padding: 28px; }
+.qb-shell-toolbar { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin-bottom: 22px; }
+.qb-shell-heading { margin: 0; font-size: 26px; }
+.qb-shell-description { margin: 7px 0 0; color: #9da8b5; font-size: 14px; }
+.qb-shell-status { min-height: 24px; color: #9da8b5; font-size: 13px; text-align: right; }
+.qb-shell-status.qb-error { color: #ff9c91; }
+
+.qb-shell-filters { display: flex; flex-wrap: wrap; align-items: center; column-gap: 24px; row-gap: 10px; margin-bottom: 22px; padding: 14px 16px; border: 1px solid #2f3a49; border-radius: 12px; background: rgba(26, 32, 41, .82); }
+.qb-shell-filter-row { display: flex; flex: 0 0 auto; flex-wrap: nowrap; align-items: center; gap: 8px; }
+.qb-shell-filter-label { min-width: auto; color: #8f9baa; font-size: 12px; }
+.qb-shell-filter-button,
+.qb-shell-filter-option { border: 1px solid #3a4859; border-radius: 999px; padding: 5px 10px; color: #b9c7d8; background: #202a36; cursor: pointer; }
+.qb-shell-filter-button:hover:not(:disabled),
+.qb-shell-filter-option:hover:not(:disabled),
+.qb-shell-filter-button.qb-active,
+.qb-shell-filter-option.qb-active { color: #fff; border-color: #6b9bd0; background: #2b4057; }
+.qb-shell-filter-button:disabled,
+.qb-shell-filter-option:disabled { cursor: wait; opacity: .55; }
+.qb-shell-filter-options { display: flex; flex: 1 0 100%; flex-wrap: wrap; gap: 8px; padding: 0; }
+.qb-shell-filter-hint { color: #7e8b9b; font-size: 12px; }
+
+.qb-personal-view .qb-shell-filters {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #6b9bd0 transparent;
+}
+.qb-personal-view .qb-shell-filter-row { flex: 0 0 auto; flex-wrap: nowrap; }
+.qb-personal-view .qb-shell-filter-label { min-width: auto; }
+
+.qb-shell-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 18px;
+}
+.qb-shell-empty { padding: 48px 16px; color: #9da8b5; text-align: center; border: 1px dashed #364252; border-radius: 12px; }
+.qb-shell-loading { padding: 48px 16px; color: #9da8b5; text-align: center; }
+
+.qb-shell .qb-media-card {
+  min-height: 0;
+  overflow: visible;
+  border: 1px solid #2f3a49;
+  border-radius: 12px;
+  background: #1a2029;
+  cursor: pointer;
+  transition: border-color .15s ease, transform .15s ease, box-shadow .15s ease;
+}
+.qb-shell .qb-media-card:hover,
+.qb-shell .qb-media-card:focus-visible {
+  border-color: #6b9bd0;
+  outline: none;
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, .28);
+}
+.qb-shell .qb-media-card-poster { aspect-ratio: 2 / 3; height: auto; overflow: visible; border-radius: 12px 12px 0 0; background: #252d38; }
+.qb-shell .qb-media-card-poster img { width: 100%; height: 100%; object-fit: contain; display: block; border-radius: inherit; }
+.qb-shell .qb-media-card-body { padding: 10px 12px 11px; }
+.qb-shell .qb-media-card-title { margin: 0; color: var(--qb-card-title-accent); font-size: var(--qb-card-title-size); line-height: var(--qb-card-title-line-height); }
+.qb-shell .qb-media-card-context { min-height: 20px; margin: 7px 0 10px; color: #a8b2bf; font-size: 12px; }
+.qb-shell .qb-media-card-footer { display: flex; min-height: 28px; align-items: center; gap: 6px; margin-top: auto; }
+.qb-shell .qb-media-card-chip { padding: 3px 7px; border-radius: 999px; color: #b9c7d8; background: #293646; font-size: 11px; }
+.qb-shell .qb-media-card-score { margin: 0; color: var(--qb-card-accent); font-size: 20px; font-weight: 700; }
+.qb-shell-paging { display: flex; justify-content: center; min-height: 72px; padding: 24px 0 8px; }
+.qb-shell-paging button { border: 1px solid #40536b; border-radius: 8px; padding: 9px 18px; color: #e7edf5; background: #202c3a; cursor: pointer; }
+.qb-shell-paging button:hover:not(:disabled) { background: #2b3b4d; }
+.qb-shell-paging button:disabled { cursor: wait; opacity: .55; }
+.qb-shell-paging-sentinel { display: block; width: 1px; height: 1px; flex: 0 0 1px; }
+
+@media (max-width: 980px) {
+  .qb-shell-header { flex-wrap: wrap; gap: 10px 16px; }
+  .qb-shell-nav { order: 3; flex-basis: 100%; overflow-x: auto; }
+  .qb-shell-main { padding: 20px; }
+}

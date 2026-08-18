@@ -1,0 +1,671 @@
+--- a/BrowserCdpService.cs
++++ b/BrowserCdpService.cs
+@@ -33,6 +33,9 @@
+     public string ImdbId { get; init; } = "";
+     public string Summary { get; init; } = "";
+     public List<DoubanStatusOption> StatusOptions { get; init; } = [];
++    public bool StatusCapabilitiesKnown { get; init; }
++    public string StatusCapabilitySource { get; init; } = "detail-metadata";
++    public string StatusCapabilityError { get; init; } = "";
+     public string ConnectorSource { get; init; } = "cdp";
+ }
+ public sealed record BrowserMediaSnapshot(string TargetId, string Url, string Title, int? Year, string Genre, double Duration, double CurrentTime, bool Paused)
+
+--- a/DoubanConnector.cs
++++ b/DoubanConnector.cs
+@@ -33,7 +33,9 @@
+     int? RequestedRating = null,
+     bool RequestedComment = false,
+     int RequestedCommentLength = 0,
+-    bool LocalUpdated = false);
++    bool LocalUpdated = false,
++    bool Settled = false,
++    List<DoubanStatusOption>? StatusOptions = null);
+ 
+ internal sealed class DoubanConnectorRouter : IDoubanConnector
+ {
+
+--- a/DoubanWebView2Connector.cs
++++ b/DoubanWebView2Connector.cs
+@@ -282,10 +282,21 @@
+         {
+             Year = String(value, "year"), Genres = String(value, "genres"), Directors = String(value, "directors"), Actors = String(value, "actors"),
+             Cast = BrowserCdpService.ReadCast(value), Runtime = String(value, "runtime"), Countries = String(value, "countries"), ImdbId = String(value, "imdbId"),
+-            Summary = String(value, "summary"), StatusOptions = BrowserCdpService.ReadStatusOptions(value), ConnectorSource = "webview2"
++            Summary = String(value, "summary"), StatusOptions = BrowserCdpService.ReadStatusOptions(value),
++            StatusCapabilitiesKnown = false, StatusCapabilitySource = "detail-metadata", ConnectorSource = "webview2"
+         };
+         if (captchaResult) throw new InvalidOperationException("豆瓣要求验证码，已停止读取并保留本地数据。");
+         if (!loggedIn) return result with { Error = "内置豆瓣 Profile 尚未登录。" };
++
++        var subjectId = ExtractSubjectId(subjectUrl);
++        var capabilities = await ProbeOfficialStatusCapabilitiesAsync(subjectUrl, subjectId, result.StatusOptions);
++        result = result with
++        {
++            StatusOptions = capabilities.Options.Count > 0 ? capabilities.Options : result.StatusOptions,
++            StatusCapabilitiesKnown = capabilities.Known,
++            StatusCapabilitySource = capabilities.Source,
++            StatusCapabilityError = capabilities.Error
++        };
+         if (result.Cast.Any(x => string.IsNullOrWhiteSpace(x.AvatarUrl)))
+         {
+             var all = await ReadAllCastCoreAsync(subjectUrl);
+@@ -319,6 +330,7 @@
+         await _navigationGate.WaitAsync();
+         var stage = "snapshot";
+         var submitted = false;
++        var settled = false;
+         try
+         {
+             await EnsureInitializedAsync();
+@@ -356,13 +368,17 @@
+             if (!Boolean(open, "clicked"))
+                 return EntryWriteResult(false, subjectUrl, normalizedRequest, "blocked", stage, String(open, "error", "官方表单入口缺失。"));
+ 
+-            var form = await WaitForOfficialFormAsync(subjectId);
++            var formWait = await WaitForOfficialFormAsync(subjectId);
++            var form = formWait.Form;
++            DiagnosticLogger.Write($"Douban unified save form probe; SubjectId={subjectId}; Stable={formWait.Stable}; Attempts={formWait.Attempts}; StableSamples={formWait.StableSamples}; Form={form}");
+             if (Boolean(form, "captcha"))
+                 return EntryWriteResult(false, subjectUrl, normalizedRequest, "blocked", stage, "豆瓣要求人工验证，请完成验证后重试。");
+             if (Boolean(form, "loginPage"))
+                 return EntryWriteResult(false, subjectUrl, normalizedRequest, "blocked", stage, "内置豆瓣 Profile 登录已失效。");
+             if (!Boolean(form, "ready"))
+                 return EntryWriteResult(false, subjectUrl, normalizedRequest, "blocked", stage, String(form, "error", "官方编辑表单没有出现。"));
++            if (!formWait.Stable)
++                return EntryWriteResult(false, subjectUrl, normalizedRequest, "blocked", stage, "官方编辑表单字段在等待时间内未稳定，未执行提交。请重试。");
+             if (!FormOffersStatus(form, normalizedRequest.Status))
+                 return EntryWriteResult(false, subjectUrl, normalizedRequest, "blocked", stage, "官方表单不提供请求状态。");
+             if (normalizedRequest.Rating is not null && (Int(form, "ratingControlCount") ?? 0) <= 0)
+@@ -387,83 +403,211 @@
+             DiagnosticLogger.Write($"Douban unified save submitted; RequestedStatus={normalizedRequest.Status}; RequestedRating={normalizedRequest.Rating?.ToString() ?? "null"}; RequestedComment={normalizedRequest.SetComment}; Submit={submit}");
+ 
+             var settle = await WaitForSubmitSettlementAsync();
+-            DiagnosticLogger.Write($"Douban unified save settle; Result={settle}");
++            DiagnosticLogger.Write($"Douban unified save settle; Settled={settle.Settled}; State={settle.State}; Attempts={settle.Attempts}; Probe={settle.Probe}");
++            if (!settle.Settled)
++            {
++                var settleError = settle.State switch
++                {
++                    "captcha" => "官方提交后出现人工验证，写入可能已触发但尚未确认，本地数据未更新。",
++                    "login" => "官方提交后登录失效，写入可能已触发但尚未确认，本地数据未更新。",
++                    _ => "官方提交后页面在等待时间内未稳定，写入可能已触发但尚未确认，本地数据未更新。"
++                };
++                return EntryWriteResult(false, subjectUrl, normalizedRequest, "unconfirmed", stage, settleError, settled: false);
++            }
+ 
++            settled = true;
+             stage = "readback";
+             await NavigateAsync(subjectUrl);
+             var afterSnapshot = await EvaluateAsync(DoubanWriteSnapshotScript.Replace("__PROFILE_ID__", JsonSerializer.Serialize(fixedProfileId)));
+             if (Boolean(afterSnapshot, "captcha"))
+-                return EntryWriteResult(false, subjectUrl, normalizedRequest, "unconfirmed", stage, "提交后豆瓣要求人工验证，官方回读未确认写入。");
++                return EntryWriteResult(false, subjectUrl, normalizedRequest, "unconfirmed", stage, "提交后豆瓣要求人工验证，官方回读未确认写入。", settled: true);
+             var afterDetectedProfileId = String(afterSnapshot, "detectedProfileId");
+             if (!string.IsNullOrWhiteSpace(afterDetectedProfileId) && !string.Equals(afterDetectedProfileId, fixedProfileId, StringComparison.Ordinal))
+-                return EntryWriteResult(false, subjectUrl, normalizedRequest, "unconfirmed", stage, "写入后用户快照不一致，本地数据未更新。");
++                return EntryWriteResult(false, subjectUrl, normalizedRequest, "unconfirmed", stage, "写入后用户快照不一致，本地数据未更新。", settled: true);
+ 
+             var readbackOpen = await EvaluateAsync(DoubanWriteOpenScriptV2
+                 .Replace("__SUBJECT_ID__", JsonSerializer.Serialize(subjectId))
+                 .Replace("__STATUS__", JsonSerializer.Serialize(normalizedRequest.Status)));
+             if (!Boolean(readbackOpen, "clicked"))
+-                return EntryWriteResult(false, subjectUrl, normalizedRequest, "unconfirmed", stage, "官方详情页回读无法重新打开编辑表单：" + String(readbackOpen, "error", "入口缺失"));
+-            var official = await WaitForOfficialFormAsync(subjectId);
++                return EntryWriteResult(false, subjectUrl, normalizedRequest, "unconfirmed", stage, "官方详情页回读无法重新打开编辑表单：" + String(readbackOpen, "error", "入口缺失"), settled: true);
++            var officialWait = await WaitForOfficialFormAsync(subjectId);
++            var official = officialWait.Form;
++            DiagnosticLogger.Write($"Douban unified save readback form; SubjectId={subjectId}; Stable={officialWait.Stable}; Attempts={officialWait.Attempts}; StableSamples={officialWait.StableSamples}; Form={official}");
+             var officialStatus = String(official, "selectedInterest");
+             var officialRating = Boolean(official, "ratingKnown") ? Int(official, "rating") : null;
+             var officialReview = Boolean(official, "commentKnown") ? String(official, "comment") : "";
+-            var verified = OfficialFormMatches(official, normalizedRequest);
++            var officialStatusOptions = ReadOfficialFormStatusOptions(official);
++            var verified = officialWait.Stable && OfficialFormMatches(official, normalizedRequest);
+ 
+             try { await NavigateAsync(subjectUrl); }
+             catch (Exception restoreException) { DiagnosticLogger.Write("Douban unified save restore subject failed; Error=" + restoreException.Message); }
+ 
+             if (!verified)
+-                return EntryWriteResult(false, subjectUrl, normalizedRequest, "unconfirmed", stage, "官方详情页回读未确认全部请求字段，本地数据未更新。", officialStatus, officialRating, officialReview);
++            {
++                var readbackError = officialWait.Stable
++                    ? "官方详情页回读未确认全部请求字段，本地数据未更新。"
++                    : "官方详情页回读字段在等待时间内未稳定，本地数据未更新。";
++                return EntryWriteResult(false, subjectUrl, normalizedRequest, "unconfirmed", stage, readbackError, officialStatus, officialRating, officialReview, settled: true, statusOptions: officialStatusOptions);
++            }
+ 
+             SetLoggedIn(fixedProfileId);
+-            return EntryWriteResult(true, subjectUrl, normalizedRequest, "confirmed", stage, "", officialStatus, officialRating, officialReview);
++            return EntryWriteResult(true, subjectUrl, normalizedRequest, "confirmed", stage, "", officialStatus, officialRating, officialReview, settled: true, statusOptions: officialStatusOptions);
+         }
+         catch (Exception ex)
+         {
+             DiagnosticLogger.Write($"Douban unified save FAILED; Stage={stage}; Submitted={submitted}; URL={_worker.Source}; Error={ex}");
+             return EntryWriteResult(false, subjectUrl, normalizedRequest, submitted ? "unconfirmed" : "failed", stage,
+-                submitted ? "官方提交动作可能已经触发，但回读失败，本地数据未更新：" + ex.Message : ex.Message);
++                submitted ? "官方提交动作可能已经触发，但回读失败，本地数据未更新：" + ex.Message : ex.Message, settled: settled);
+         }
+         finally { _navigationGate.Release(); }
+     }
+ 
+-    private async Task<JsonElement> WaitForOfficialFormAsync(string subjectId)
++    private sealed record OfficialFormWaitResult(JsonElement Form, bool Stable, int Attempts, int StableSamples);
++    private sealed record SubmitSettlementWaitResult(JsonElement Probe, bool Settled, string State, int Attempts);
++    private sealed record StatusCapabilityProbeResult(List<DoubanStatusOption> Options, bool Known, string Source, string Error);
++
++    private async Task<OfficialFormWaitResult> WaitForOfficialFormAsync(string subjectId)
+     {
+         JsonElement form = default;
+-        for (var attempt = 0; attempt < 40; attempt++)
++        var previousSignature = "";
++        var stableSamples = 0;
++        for (var attempt = 1; attempt <= 48; attempt++)
+         {
+-            await Task.Delay(200);
++            await Task.Delay(attempt == 1 ? 100 : 250);
+             form = await EvaluateAsync(DoubanWriteFormProbeScript.Replace("__SUBJECT_ID__", JsonSerializer.Serialize(subjectId)));
+-            if (Boolean(form, "ready") || Boolean(form, "captcha") || Boolean(form, "loginPage")) break;
++            if (Boolean(form, "captcha") || Boolean(form, "loginPage"))
++                return new(form, false, attempt, 0);
++            if (!Boolean(form, "ready"))
++            {
++                previousSignature = "";
++                stableSamples = 0;
++                continue;
++            }
++
++            var signature = OfficialFormSignature(form);
++            stableSamples = signature.Length > 0 && string.Equals(signature, previousSignature, StringComparison.Ordinal) ? stableSamples + 1 : 1;
++            previousSignature = signature;
++            if (stableSamples >= 3) return new(form, true, attempt, stableSamples);
+         }
+-        return form;
++        return new(form, false, 48, stableSamples);
+     }
+ 
+-    private async Task<JsonElement> WaitForSubmitSettlementAsync()
++    private async Task<SubmitSettlementWaitResult> WaitForSubmitSettlementAsync()
+     {
+         JsonElement probe = default;
+-        for (var attempt = 0; attempt < 40; attempt++)
++        var previousSignature = "";
++        var stableSamples = 0;
++        for (var attempt = 1; attempt <= 48; attempt++)
+         {
+             await Task.Delay(250);
+             try
+             {
+                 probe = await EvaluateAsync(DoubanWritePostSubmitProbeScript);
+-                if (Boolean(probe, "captcha") || Boolean(probe, "loginPage") ||
+-                    (Boolean(probe, "subjectPage") && !Boolean(probe, "formOpen") && !string.Equals(String(probe, "readyState"), "loading", StringComparison.OrdinalIgnoreCase)))
+-                    break;
++                if (Boolean(probe, "captcha")) return new(probe, false, "captcha", attempt);
++                if (Boolean(probe, "loginPage")) return new(probe, false, "login", attempt);
++
++                var candidate = Boolean(probe, "subjectPage") && !Boolean(probe, "formOpen") &&
++                    !string.Equals(String(probe, "readyState"), "loading", StringComparison.OrdinalIgnoreCase);
++                if (!candidate)
++                {
++                    previousSignature = "";
++                    stableSamples = 0;
++                    continue;
++                }
++                var signature = $"{String(probe, "href")}|{String(probe, "readyState")}|{Boolean(probe, "formOpen")}";
++                stableSamples = string.Equals(signature, previousSignature, StringComparison.Ordinal) ? stableSamples + 1 : 1;
++                previousSignature = signature;
++                if (stableSamples >= 2) return new(probe, true, "settled", attempt);
+             }
+             catch (Exception ex)
+             {
+-                DiagnosticLogger.Write($"Douban unified save settlement probe transient failure; Attempt={attempt + 1}; Error={ex.Message}");
++                DiagnosticLogger.Write($"Douban unified save settlement probe transient failure; Attempt={attempt}; Error={ex.Message}");
++            }
++        }
++        return new(probe, false, "timeout", 48);
++    }
++
++    private async Task<StatusCapabilityProbeResult> ProbeOfficialStatusCapabilitiesAsync(string subjectUrl, string subjectId, List<DoubanStatusOption> metadataOptions)
++    {
++        var opened = false;
++        try
++        {
++            var open = await EvaluateAsync(DoubanWriteOpenCapabilityScript.Replace("__SUBJECT_ID__", JsonSerializer.Serialize(subjectId)));
++            opened = Boolean(open, "clicked");
++            if (!opened)
++            {
++                var error = String(open, "error", "官方编辑表单入口缺失。");
++                DiagnosticLogger.Write($"Douban status capability open failed; SubjectId={subjectId}; Open={open}");
++                return new(metadataOptions, false, "detail-metadata", error);
+             }
++
++            var wait = await WaitForOfficialFormAsync(subjectId);
++            DiagnosticLogger.Write($"Douban status capability form; SubjectId={subjectId}; Stable={wait.Stable}; Attempts={wait.Attempts}; StableSamples={wait.StableSamples}; Form={wait.Form}");
++            if (Boolean(wait.Form, "captcha")) return new(metadataOptions, false, "official-form", "豆瓣要求人工验证，状态能力未确认。");
++            if (Boolean(wait.Form, "loginPage")) return new(metadataOptions, false, "official-form", "豆瓣登录已失效，状态能力未确认。");
++            if (!wait.Stable) return new(metadataOptions, false, "official-form", "官方编辑表单字段未稳定，状态能力将在保存前再次确认。");
++
++            var options = ReadOfficialFormStatusOptions(wait.Form);
++            if (options.Count == 0) return new(metadataOptions, false, "official-form", "官方编辑表单没有返回可识别的状态选项。");
++            return new(options, true, "official-form", "");
++        }
++        catch (Exception ex)
++        {
++            DiagnosticLogger.Write($"Douban status capability probe failed; SubjectId={subjectId}; Error={ex}");
++            return new(metadataOptions, false, "detail-metadata", "状态能力探测失败，将在保存前再次确认：" + ex.Message);
++        }
++        finally
++        {
++            if (opened)
++            {
++                try { await NavigateAsync(subjectUrl); }
++                catch (Exception ex) { DiagnosticLogger.Write($"Douban status capability restore failed; SubjectId={subjectId}; Error={ex.Message}"); }
++            }
++        }
++    }
++
++    private static List<DoubanStatusOption> ReadOfficialFormStatusOptions(JsonElement form)
++    {
++        var labels = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
++        {
++            ["wish"] = "想看", ["do"] = "在看", ["collect"] = "看过"
++        };
++        var selected = String(form, "selectedInterest");
++        var result = new List<DoubanStatusOption>();
++        if (!form.TryGetProperty("interestOptions", out var options) || options.ValueKind != JsonValueKind.Array) return result;
++        foreach (var option in options.EnumerateArray())
++        {
++            var value = String(option, "value");
++            if (!labels.TryGetValue(value, out var text) || result.Any(x => x.Text.Equals(text, StringComparison.Ordinal))) continue;
++            result.Add(new DoubanStatusOption(text, string.Equals(value, selected, StringComparison.OrdinalIgnoreCase) || Boolean(option, "checked")));
+         }
+-        return probe;
++        return result;
++    }
++
++    private static string OfficialFormSignature(JsonElement form)
++    {
++        if (form.ValueKind != JsonValueKind.Object) return "";
++        var interests = form.TryGetProperty("interestOptions", out var options) && options.ValueKind == JsonValueKind.Array
++            ? string.Join(",", options.EnumerateArray().Select(x => $"{String(x, "type")}:{String(x, "value")}:{Boolean(x, "checked")}"))
++            : "";
++        return string.Join("|", new[]
++        {
++            interests,
++            String(form, "selectedInterest"),
++            Boolean(form, "ratingKnown").ToString(),
++            String(form, "ratingRaw"),
++            Boolean(form, "commentKnown").ToString(),
++            NormalizeText(String(form, "comment")),
++            (Int(form, "ratingControlCount") ?? 0).ToString(),
++            (Int(form, "commentControlCount") ?? 0).ToString(),
++            String(form, "actionPath")
++        });
+     }
+ 
+     private static DoubanWriteResult EntryWriteResult(bool success, string subjectUrl, DoubanEntryWriteRequest request, string phase, string stage, string error,
+-        string officialStatus = "", int? officialRating = null, string officialReview = "") =>
++        string officialStatus = "", int? officialRating = null, string officialReview = "", bool settled = false, List<DoubanStatusOption>? statusOptions = null) =>
+         new(success, subjectUrl, "save", officialStatus, officialRating, officialReview, false, error, phase, stage,
+-            request.Status, request.Rating, request.SetComment, request.SetComment ? request.Comment.Length : 0, false);
++            request.Status, request.Rating, request.SetComment, request.SetComment ? request.Comment.Length : 0, false, settled, statusOptions);
+ 
+     internal static string ValidateEntryRequest(DoubanEntryWriteRequest request)
+     {
+@@ -767,6 +911,27 @@
+     controls,statusControls:controls,personalCandidates};
+ })()
+ """;
++    internal const string DoubanWriteOpenCapabilityScript = """
++(() => {
++  const subjectId=__SUBJECT_ID__;
++  const personal=[...document.querySelectorAll('#interest_sect_level,.interest_sect_level,#interest_sect,[class*="interest"]')]
++    .find(x=>!x.closest('#interest_sectl,.rating_wrap'));
++  if(!personal)return {clicked:false,error:'官方个人状态区域缺失'};
++  const normalize=value=>String(value||'').replace(/\s+/g,'').trim();
++  const generic=personal.querySelector(`[name="pbtn-${subjectId}"]`);
++  const statuses=['wish','do','collect'];
++  const named=statuses.map(status=>personal.querySelector(`[name="pbtn-${subjectId}-${status}"]`)).filter(Boolean);
++  const isSelected=node=>node.checked===true||node.getAttribute('aria-pressed')==='true'||node.getAttribute('aria-selected')==='true'||
++    /(?:^|\s)(?:selected|active|on|current)(?:\s|$)/i.test(String(node.className||''))||/已想看|已在看|已看过|修改/.test(normalize(node.value||node.textContent));
++  const selected=named.find(isSelected);
++  const fallback=[...personal.querySelectorAll('a,button,input')].find(node=>/^(想看|在看|看过|修改)$/.test(normalize(node.value||node.textContent)));
++  const button=generic||selected||named[0]||fallback;
++  if(!button)return {clicked:false,error:'官方编辑表单入口缺失',genericFound:!!generic,namedCount:named.length};
++  if(!['A','BUTTON','INPUT'].includes(button.tagName))return {clicked:false,error:'官方编辑入口类型不受支持',tag:button.tagName};
++  button.click();
++  return {clicked:true,generic:button===generic,selected:button===selected,tag:button.tagName,name:button.getAttribute('name')||'',text:normalize(button.value||button.textContent)};
++})()
++""";
+     internal const string DoubanWriteOpenScriptV2 = """
+ (() => {
+   const subjectId = __SUBJECT_ID__; const status = __STATUS__;
+
+--- a/HtmlMediaLibraryForm.cs
++++ b/HtmlMediaLibraryForm.cs
+@@ -276,7 +276,11 @@
+         subjectId = record.SubjectId, subjectUrl = record.SubjectUrl, title = string.IsNullOrWhiteSpace(record.Title) ? $"豆瓣条目 {record.SubjectId}" : record.Title,
+         year = record.Year, genres = record.Genres, directors = record.Directors, imdbId = record.ImdbId, runtime = record.Runtime, countries = record.Countries,
+         summary = record.Summary, doubanScore = record.DoubanScore, rating = record.Rating, posterUrl = _avatars.RegisterPoster(record.PosterUrl), markedDate = record.MarkedDate, tags = record.Tags, comment = record.Comment,
+-        statusOptions = record.DoubanStatusOptions.Select(StatusDto).ToList(), cast = record.Cast.Take(8).Select(CastDto).ToList(), fullCastAvailable = record.FullCast.Count > 0,
++        statusOptions = record.DoubanStatusOptions.Select(StatusDto).ToList(),
++        statusCapabilitiesKnown = record.DoubanStatusCapabilitiesKnown,
++        statusCapabilitySource = record.DoubanStatusCapabilitySource,
++        statusCapabilityError = record.DoubanStatusCapabilityError,
++        cast = record.Cast.Take(8).Select(CastDto).ToList(), fullCastAvailable = record.FullCast.Count > 0,
+         connectorSource
+     };
+ 
+@@ -302,6 +306,7 @@
+                 operation = result.Action,
+                 requested = new { status = requestedStatus, rating = requestedRating, commentLength = requestedCommentLength },
+                 official = new { status = result.Status, rating = result.Rating, comment = result.Review },
++                settled = result.Settled,
+                 localUpdated = localUpdated || result.LocalUpdated,
+                 error = result.Error
+             }
+@@ -326,7 +331,7 @@
+             ["do"] = "在看",
+             ["collect"] = "看过"
+         };
+-        var options = record.DoubanStatusOptions
++        var options = (result.StatusOptions is { Count: > 0 } ? result.StatusOptions : record.DoubanStatusOptions)
+             .Where(option => labels.Values.Contains(option.Text, StringComparer.Ordinal))
+             .ToList();
+         if (!options.Any(option => string.Equals(option.Text, labels[status], StringComparison.Ordinal)))
+@@ -334,6 +339,12 @@
+         record.DoubanStatusOptions = options
+             .Select(option => option with { Selected = string.Equals(option.Text, labels[status], StringComparison.Ordinal) })
+             .ToList();
++        if (result.StatusOptions is { Count: > 0 })
++        {
++            record.DoubanStatusCapabilitiesKnown = true;
++            record.DoubanStatusCapabilitySource = "confirmed-write-form";
++            record.DoubanStatusCapabilityError = "";
++        }
+     }
+ 
+     private object CastDto(DoubanCastMember person)
+@@ -365,6 +376,9 @@
+         if (metadata.Cast.Count > 0) { record.Cast = metadata.Cast; record.CastFetchedAt = DateTime.Now; }
+         if (metadata.FullCast.Count > 0) { record.FullCast = metadata.FullCast; record.FullCastFetchedAt = DateTime.Now; }
+         if (metadata.StatusOptions.Count > 0) record.DoubanStatusOptions = metadata.StatusOptions;
++        record.DoubanStatusCapabilitiesKnown = metadata.StatusCapabilitiesKnown;
++        record.DoubanStatusCapabilitySource = metadata.StatusCapabilitySource;
++        record.DoubanStatusCapabilityError = metadata.StatusCapabilityError;
+         record.DetailMetadataFetched = MyWatchHistoryForm.HasCompleteDetailMetadata(record);
+         record.FullDetailsFetchedAt = DateTime.Now;
+         record.FullDetailsLastError = "";
+
+--- a/Models.cs
++++ b/Models.cs
+@@ -71,6 +71,9 @@
+     public string SubjectUrl { get; set; } = "";
+     public string Status { get; set; } = "";
+     public List<DoubanStatusOption> DoubanStatusOptions { get; set; } = [];
++    public bool DoubanStatusCapabilitiesKnown { get; set; }
++    public string DoubanStatusCapabilitySource { get; set; } = "";
++    public string DoubanStatusCapabilityError { get; set; } = "";
+     public int? Rating { get; set; }
+     public double? DoubanScore { get; set; }
+     public int ScoreFetchAttempts { get; set; }
+@@ -182,4 +185,4 @@
+     private T? Load<T>(string name) { try { var p = Path.Combine(_dir, name); return File.Exists(p) ? JsonSerializer.Deserialize<T>(File.ReadAllText(p)) : default; } catch { return default; } }
+     private static string SafeName(string s) => string.Concat(s.Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c));
+ }
+-
++
+
+--- a/WebAssets/MediaLibrary/app.js
++++ b/WebAssets/MediaLibrary/app.js
+@@ -298,15 +298,25 @@
+   $("writePanel").classList.remove("hidden");
+   const statusLabels = { wish: "想看", do: "在看", collect: "看过" };
+   const options = Array.isArray(detail.statusOptions) ? detail.statusOptions : [];
++  const capabilitiesKnown = detail.statusCapabilitiesKnown === true;
+   const selectedStatusText = options.find(option => option.selected)?.text || "";
+   const selectedStatus = Object.keys(statusLabels).find(status => statusLabels[status] === selectedStatusText) || "";
+   document.querySelectorAll("#writeStatuses button").forEach(button => {
+-    const available = options.length > 0 ? options.some(option => option.text === statusLabels[button.dataset.status]) : button.dataset.status !== "do";
+-    button.classList.toggle("hidden", !available);
++    const available = options.some(option => option.text === statusLabels[button.dataset.status]);
++    button.classList.remove("hidden");
++    button.dataset.capabilityBlocked = capabilitiesKnown && !available ? "true" : "false";
++    button.disabled = state.writeBusy || button.dataset.capabilityBlocked === "true";
++    button.classList.toggle("unsupported", button.dataset.capabilityBlocked === "true");
+     button.classList.toggle("selected", selectedStatus === button.dataset.status);
++    button.title = button.dataset.capabilityBlocked === "true"
++      ? `官方编辑表单不提供“${statusLabels[button.dataset.status]}”`
++      : capabilitiesKnown ? "已由官方编辑表单确认可用" : "状态能力将在保存前通过官方编辑表单再次确认";
+   });
+   state.writeBaseline = { status: selectedStatus, rating: detail.rating ? Number(detail.rating) : null, comment: String(detail.comment || "").trim() };
+-  $("statusCurrent").textContent = `当前：${selectedStatusText || "—"}`;
++  const capabilityNote = capabilitiesKnown
++    ? "官方表单能力已确认"
++    : (detail.statusCapabilityError || "状态能力将在保存前确认");
++  $("statusCurrent").textContent = `当前：${selectedStatusText || "—"} · ${capabilityNote}`;
+   $("ratingCurrent").textContent = `当前：${detail.rating ? `${detail.rating} 星` : "未评分"}`;
+   $("reviewCurrent").textContent = `当前：${detail.comment || "空"}`;
+   $("writeReview").value = detail.comment || "";
+@@ -356,7 +366,7 @@
+ }
+ 
+ function selectedWriteStatus() {
+-  return document.querySelector("#writeStatuses button.selected:not(.hidden)")?.dataset.status || "";
++  return document.querySelector("#writeStatuses button.selected:not(.hidden):not(:disabled)")?.dataset.status || "";
+ }
+ 
+ function statusText(status) {
+@@ -364,6 +374,8 @@
+ }
+ 
+ function setWriteStatus(status) {
++  const target = document.querySelector(`#writeStatuses button[data-status="${status}"]`);
++  if (!target || target.disabled || target.dataset.capabilityBlocked === "true") return;
+   document.querySelectorAll("#writeStatuses button[data-status]").forEach(button => {
+     button.classList.toggle("selected", button.dataset.status === status);
+   });
+@@ -425,7 +437,10 @@
+   state.writeBusy = Boolean(busy);
+   const panel = $("writePanel");
+   if (!panel) return;
+-  panel.querySelectorAll("button:not(#deleteEntry),textarea").forEach(control => control.disabled = state.writeBusy);
++  panel.querySelectorAll("button:not(#deleteEntry),textarea").forEach(control => {
++    const capabilityBlocked = control instanceof HTMLButtonElement && control.dataset.capabilityBlocked === "true";
++    control.disabled = state.writeBusy || capabilityBlocked;
++  });
+   $("deleteEntry").disabled = state.writeBusy;
+   $("saveDoubanEntry").textContent = state.writeBusy ? "正在保存…" : "保存到豆瓣";
+   updateWritePending();
+@@ -458,7 +473,8 @@
+   const labels = { submitting: "提交中", confirmed: "官方已确认", blocked: "已阻止", unconfirmed: "未确认", failed: "失败" };
+   const stages = { snapshot: "固定用户与影片快照", formProbe: "探测官方表单", domFill: "填写官方表单", submit: "等待官方提交", readback: "官方回读确认" };
+   panel.className = `write-outcome ${outcome.phase || ""}`;
+-  panel.textContent = `${labels[outcome.phase] || "结果"}\n操作：${outcome.operation || "—"}\n阶段：${stages[outcome.stage] || outcome.stage || "—"}\n请求：\n${formatRequested(outcome.requested)}\n官方回读：\n${formatOfficial(outcome.official)}\n本地更新：${outcome.localUpdated ? "是" : "否"}\n时间：${new Date().toLocaleString()}${outcome.error ? `\n错误：${outcome.error}` : ""}`;
++  const settledText = outcome.settled == null ? "未报告" : (outcome.settled ? "是" : "否");
++  panel.textContent = `${labels[outcome.phase] || "结果"}\n操作：${outcome.operation || "—"}\n阶段：${stages[outcome.stage] || outcome.stage || "—"}\n提交稳定：${settledText}\n请求：\n${formatRequested(outcome.requested)}\n官方回读：\n${formatOfficial(outcome.official)}\n本地更新：${outcome.localUpdated ? "是" : "否"}\n时间：${new Date().toLocaleString()}${outcome.error ? `\n错误：${outcome.error}` : ""}`;
+ 
+   if (["blocked", "unconfirmed", "failed"].includes(outcome.phase) && state.lastWrite) {
+     const actions = document.createElement("div");
+
+--- a/WebAssets/MediaLibrary/styles.css
++++ b/WebAssets/MediaLibrary/styles.css
+@@ -1,9 +1,9 @@
+-:root{font-family:"Microsoft YaHei UI","Segoe UI",sans-serif;color:#202634;background:#f5f6f8;line-height:1.5}*{box-sizing:border-box}body{margin:0;min-width:760px}.topbar{height:96px;background:#fff;border-bottom:1px solid #e7e9ee;display:flex;align-items:center;justify-content:space-between;padding:16px 28px}.topbar h1{margin:0;font-size:27px}.topbar p{margin:4px 0 0;color:#747c8b;font-size:14px}.top-actions{display:flex;gap:10px}button{font:inherit;border:0;border-radius:9px;padding:9px 16px;background:#087f5b;color:#fff;cursor:pointer}button:hover{filter:brightness(.96)}button:disabled{cursor:not-allowed;opacity:.45}.secondary{background:#edf6f2;color:#087f5b}.ghost{background:#f1f2f5;color:#565e6c}.tabs{height:58px;display:flex;gap:4px;align-items:end;background:#fff;padding:0 28px;border-bottom:1px solid #e6e8ed}.tabs button{height:47px;background:transparent;color:#656d7b;border-radius:0;padding:10px 17px;border-bottom:3px solid transparent}.tabs button.active{color:#087f5b;border-bottom-color:#087f5b;font-weight:700}.tabs span{font-size:12px;color:#969dab;margin-left:4px}main{padding:22px 28px 40px}.toolbar,.searchbar{display:flex;gap:10px;align-items:center;margin-bottom:18px}.toolbar input,.searchbar input{height:40px;border:1px solid #d9dce3;border-radius:9px;padding:0 13px;font:inherit;background:#fff;outline:none}.toolbar input{width:310px}.searchbar input{width:380px}.toolbar input:focus,.searchbar input:focus{border-color:#087f5b;box-shadow:0 0 0 3px #dff2eb}.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:18px}.card{background:#fff;border:1px solid #e5e7ec;border-radius:13px;overflow:hidden;box-shadow:0 3px 12px rgba(30,38,52,.04);cursor:pointer;transition:.15s transform,.15s box-shadow}.card:hover{transform:translateY(-2px);box-shadow:0 8px 22px rgba(30,38,52,.1)}.poster{height:245px;background:#e9ebef;display:flex;align-items:center;justify-content:center;color:#8b929e;overflow:hidden}.poster img{width:100%;height:100%;object-fit:cover}.card-body{padding:13px}.card h2{margin:0 0 5px;font-size:16px;line-height:1.35}.subtitle{font-size:13px;color:#087f5b;margin:0 0 7px}.meta{font-size:12px;color:#737b89;margin:0;white-space:pre-line;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}.rating{margin-top:9px;color:#db8500;font-size:13px}.empty,.notice{padding:26px;border-radius:12px;background:#fff;color:#747c8a;text-align:center}.notice{text-align:left;padding:13px 16px;margin-bottom:16px}.search-results{display:flex;flex-direction:column;gap:13px}.result{display:grid;grid-template-columns:92px 1fr;gap:18px;background:#fff;border:1px solid #e2e5ea;border-radius:12px;padding:12px;cursor:pointer}.result:hover{border-color:#7fbda7}.result img{width:92px;height:138px;object-fit:cover;background:#e9ebef}.result-text{white-space:pre-line;font-size:14px;color:#4f5868}.status-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}.status{border:1px solid #cdd3da;background:#fff;color:#69717f;border-radius:99px;padding:4px 11px;font-size:13px}.status.selected{background:#087f5b;border-color:#087f5b;color:#fff;font-weight:700}.overlay{position:fixed;inset:0;background:rgba(17,22,31,.54);display:flex;align-items:center;justify-content:center;padding:28px;z-index:20}.detail{position:relative;width:min(1080px,100%);height:min(730px,100%);overflow:auto;background:#fff;border-radius:18px;box-shadow:0 24px 80px rgba(0,0,0,.26)}.close{position:absolute;right:16px;top:12px;width:38px;height:38px;padding:0;border-radius:50%;background:#f0f2f5;color:#5d6572;font-size:25px;z-index:2}.detail-grid{display:grid;grid-template-columns:280px 1fr;min-height:100%}.poster-column{background:#f3f4f6;padding:34px 25px}.poster-column img{width:100%;height:350px;object-fit:contain;background:#e3e6ea}.score{text-align:center;margin-top:15px;color:#087f5b;font-size:18px;font-weight:700}.detail-body{padding:38px 40px}.detail-body h2{font-size:28px;margin:0 0 7px}.facts,.credits{color:#626b79}.plot{white-space:pre-line;color:#444d5b}.section-heading{display:flex;align-items:center;justify-content:space-between;margin-top:24px}.section-heading h3{margin:0}.cast-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:12px;margin-top:12px;max-height:385px;overflow:auto}.person{text-align:center}.person img,.avatar-placeholder{width:92px;height:110px;object-fit:cover;background:#e8eaee;border-radius:8px;margin:auto;display:flex;align-items:center;justify-content:center;color:#a0a6b1;font-size:12px}.person strong{font-size:13px;display:block;margin-top:5px}.person small{color:#858c98}.detail-actions{display:flex;gap:12px;align-items:center;margin-top:25px;color:#8b929e;font-size:12px}.toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);background:#202630;color:#fff;padding:11px 18px;border-radius:9px;z-index:40;box-shadow:0 8px 24px rgba(0,0,0,.2)}.hidden{display:none!important}@media(max-width:900px){.detail-grid{grid-template-columns:220px 1fr}.poster-column{padding:30px 18px}.detail-body{padding:34px 24px}.cards{grid-template-columns:repeat(auto-fill,minmax(170px,1fr))}}
++﻿:root{font-family:"Microsoft YaHei UI","Segoe UI",sans-serif;color:#202634;background:#f5f6f8;line-height:1.5}*{box-sizing:border-box}body{margin:0;min-width:760px}.topbar{height:96px;background:#fff;border-bottom:1px solid #e7e9ee;display:flex;align-items:center;justify-content:space-between;padding:16px 28px}.topbar h1{margin:0;font-size:27px}.topbar p{margin:4px 0 0;color:#747c8b;font-size:14px}.top-actions{display:flex;gap:10px}button{font:inherit;border:0;border-radius:9px;padding:9px 16px;background:#087f5b;color:#fff;cursor:pointer}button:hover{filter:brightness(.96)}button:disabled{cursor:not-allowed;opacity:.45}.secondary{background:#edf6f2;color:#087f5b}.ghost{background:#f1f2f5;color:#565e6c}.tabs{height:58px;display:flex;gap:4px;align-items:end;background:#fff;padding:0 28px;border-bottom:1px solid #e6e8ed}.tabs button{height:47px;background:transparent;color:#656d7b;border-radius:0;padding:10px 17px;border-bottom:3px solid transparent}.tabs button.active{color:#087f5b;border-bottom-color:#087f5b;font-weight:700}.tabs span{font-size:12px;color:#969dab;margin-left:4px}main{padding:22px 28px 40px}.toolbar,.searchbar{display:flex;gap:10px;align-items:center;margin-bottom:18px}.toolbar input,.searchbar input{height:40px;border:1px solid #d9dce3;border-radius:9px;padding:0 13px;font:inherit;background:#fff;outline:none}.toolbar input{width:310px}.searchbar input{width:380px}.toolbar input:focus,.searchbar input:focus{border-color:#087f5b;box-shadow:0 0 0 3px #dff2eb}.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:18px}.card{background:#fff;border:1px solid #e5e7ec;border-radius:13px;overflow:hidden;box-shadow:0 3px 12px rgba(30,38,52,.04);cursor:pointer;transition:.15s transform,.15s box-shadow}.card:hover{transform:translateY(-2px);box-shadow:0 8px 22px rgba(30,38,52,.1)}.poster{height:245px;background:#e9ebef;display:flex;align-items:center;justify-content:center;color:#8b929e;overflow:hidden}.poster img{width:100%;height:100%;object-fit:cover}.card-body{padding:13px}.card h2{margin:0 0 5px;font-size:16px;line-height:1.35}.subtitle{font-size:13px;color:#087f5b;margin:0 0 7px}.meta{font-size:12px;color:#737b89;margin:0;white-space:pre-line;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}.rating{margin-top:9px;color:#db8500;font-size:13px}.empty,.notice{padding:26px;border-radius:12px;background:#fff;color:#747c8a;text-align:center}.notice{text-align:left;padding:13px 16px;margin-bottom:16px}.search-results{display:flex;flex-direction:column;gap:13px}.result{display:grid;grid-template-columns:92px 1fr;gap:18px;background:#fff;border:1px solid #e2e5ea;border-radius:12px;padding:12px;cursor:pointer}.result:hover{border-color:#7fbda7}.result img{width:92px;height:138px;object-fit:cover;background:#e9ebef}.result-text{white-space:pre-line;font-size:14px;color:#4f5868}.status-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}.status{border:1px solid #cdd3da;background:#fff;color:#69717f;border-radius:99px;padding:4px 11px;font-size:13px}.status.selected{background:#087f5b;border-color:#087f5b;color:#fff;font-weight:700}.overlay{position:fixed;inset:0;background:rgba(17,22,31,.54);display:flex;align-items:center;justify-content:center;padding:28px;z-index:20}.detail{position:relative;width:min(1080px,100%);height:min(730px,100%);overflow:auto;background:#fff;border-radius:18px;box-shadow:0 24px 80px rgba(0,0,0,.26)}.close{position:absolute;right:16px;top:12px;width:38px;height:38px;padding:0;border-radius:50%;background:#f0f2f5;color:#5d6572;font-size:25px;z-index:2}.detail-grid{display:grid;grid-template-columns:280px 1fr;min-height:100%}.poster-column{background:#f3f4f6;padding:34px 25px}.poster-column img{width:100%;height:350px;object-fit:contain;background:#e3e6ea}.score{text-align:center;margin-top:15px;color:#087f5b;font-size:18px;font-weight:700}.detail-body{padding:38px 40px}.detail-body h2{font-size:28px;margin:0 0 7px}.facts,.credits{color:#626b79}.plot{white-space:pre-line;color:#444d5b}.section-heading{display:flex;align-items:center;justify-content:space-between;margin-top:24px}.section-heading h3{margin:0}.cast-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:12px;margin-top:12px;max-height:385px;overflow:auto}.person{text-align:center}.person img,.avatar-placeholder{width:92px;height:110px;object-fit:cover;background:#e8eaee;border-radius:8px;margin:auto;display:flex;align-items:center;justify-content:center;color:#a0a6b1;font-size:12px}.person strong{font-size:13px;display:block;margin-top:5px}.person small{color:#858c98}.detail-actions{display:flex;gap:12px;align-items:center;margin-top:25px;color:#8b929e;font-size:12px}.toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);background:#202630;color:#fff;padding:11px 18px;border-radius:9px;z-index:40;box-shadow:0 8px 24px rgba(0,0,0,.2)}.hidden{display:none!important}@media(max-width:900px){.detail-grid{grid-template-columns:220px 1fr}.poster-column{padding:30px 18px}.detail-body{padding:34px 24px}.cards{grid-template-columns:repeat(auto-fill,minmax(170px,1fr))}}
+ :root{font-family:"Microsoft YaHei UI","Segoe UI",sans-serif;color:#202634;background:#f5f6f8;line-height:1.5}*{box-sizing:border-box}body{margin:0;min-width:760px}.topbar{height:96px;background:#fff;border-bottom:1px solid #e7e9ee;display:flex;align-items:center;justify-content:space-between;padding:16px 28px}.topbar h1{margin:0;font-size:27px}.topbar p{margin:4px 0 0;color:#747c8b;font-size:14px}.top-actions{display:flex;gap:10px}button{font:inherit;border:0;border-radius:9px;padding:9px 16px;background:#087f5b;color:#fff;cursor:pointer}button:hover{filter:brightness(.96)}button:disabled{cursor:not-allowed;opacity:.45}.secondary{background:#edf6f2;color:#087f5b}.ghost{background:#f1f2f5;color:#565e6c}.tabs{height:58px;display:flex;gap:4px;align-items:end;background:#fff;padding:0 28px;border-bottom:1px solid #e6e8ed}.tabs button{height:47px;background:transparent;color:#656d7b;border-radius:0;padding:10px 17px;border-bottom:3px solid transparent}.tabs button.active{color:#087f5b;border-bottom-color:#087f5b;font-weight:700}.tabs span{font-size:12px;color:#969dab;margin-left:4px}main{padding:22px 28px 40px}.toolbar,.searchbar{display:flex;gap:10px;align-items:center;margin-bottom:18px}.toolbar input,.searchbar input{height:40px;border:1px solid #d9dce3;border-radius:9px;padding:0 13px;font:inherit;background:#fff;outline:none}.toolbar input{width:310px}.searchbar input{width:380px}.toolbar input:focus,.searchbar input:focus{border-color:#087f5b;box-shadow:0 0 0 3px #dff2eb}.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:18px}.card{background:#fff;border:1px solid #e5e7ec;border-radius:13px;overflow:hidden;box-shadow:0 3px 12px rgba(30,38,52,.04);cursor:pointer;transition:.15s transform,.15s box-shadow}.card:hover{transform:translateY(-2px);box-shadow:0 8px 22px rgba(30,38,52,.1)}.poster{height:245px;background:#e9ebef;display:flex;align-items:center;justify-content:center;color:#8b929e;overflow:hidden}.poster img{width:100%;height:100%;object-fit:cover}.card-body{padding:13px}.card h2{margin:0 0 5px;font-size:16px;line-height:1.35}.subtitle{font-size:13px;color:#087f5b;margin:0 0 7px}.meta{font-size:12px;color:#737b89;margin:0;white-space:pre-line;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}.rating{margin-top:9px;color:#db8500;font-size:13px}.empty,.notice{padding:26px;border-radius:12px;background:#fff;color:#747c8a;text-align:center}.notice{text-align:left;padding:13px 16px;margin-bottom:16px}.search-results{display:flex;flex-direction:column;gap:13px}.result{display:grid;grid-template-columns:92px 1fr;gap:18px;background:#fff;border:1px solid #e2e5ea;border-radius:12px;padding:12px;cursor:pointer}.result:hover{border-color:#7fbda7}.result img{width:92px;height:138px;object-fit:cover;background:#e9ebef}.result-text{white-space:pre-line;font-size:14px;color:#4f5868}.status-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}.status{border:1px solid #cdd3da;background:#fff;color:#69717f;border-radius:99px;padding:4px 11px;font-size:13px}.status.selected{background:#087f5b;border-color:#087f5b;color:#fff;font-weight:700}.overlay{position:fixed;inset:0;background:rgba(17,22,31,.54);display:flex;align-items:center;justify-content:center;padding:28px;z-index:20}.detail{position:relative;width:min(1080px,100%);height:min(730px,100%);overflow:auto;background:#fff;border-radius:18px;box-shadow:0 24px 80px rgba(0,0,0,.26)}.close{position:absolute;right:16px;top:12px;width:38px;height:38px;padding:0;border-radius:50%;background:#f0f2f5;color:#5d6572;font-size:25px;z-index:2}.detail-grid{display:grid;grid-template-columns:280px 1fr;min-height:100%}.poster-column{background:#f3f4f6;padding:34px 25px}.poster-column img{width:100%;height:350px;object-fit:contain;background:#e3e6ea}.score{text-align:center;margin-top:15px;color:#087f5b;font-size:18px;font-weight:700}.detail-body{padding:38px 40px}.detail-body h2{font-size:28px;margin:0 0 7px}.facts,.credits{color:#626b79}.plot{white-space:pre-line;color:#444d5b}.section-heading{display:flex;align-items:center;justify-content:space-between;margin-top:24px}.section-heading h3{margin:0}.cast-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:12px;margin-top:12px;max-height:385px;overflow:auto}.person{text-align:center}.person img,.avatar-placeholder{width:92px;height:110px;object-fit:cover;background:#e8eaee;border-radius:8px;margin:auto;display:flex;align-items:center;justify-content:center;color:#a0a6b1;font-size:12px}.person strong{font-size:13px;display:block;margin-top:5px}.person small{color:#858c98}.detail-actions{display:flex;gap:12px;align-items:center;margin-top:25px;color:#8b929e;font-size:12px}.toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);background:#202630;color:#fff;padding:11px 18px;border-radius:9px;z-index:40}.hidden{display:none!important}@media(max-width:900px){.detail-grid{grid-template-columns:220px 1fr}.poster-column{padding:30px 18px}.detail-body{padding:34px 24px}.cards{grid-template-columns:repeat(auto-fill,minmax(170px,1fr))}}
+ .score{white-space:pre-line}.my-rating{color:#b57600}.toast{box-shadow:0 8px 24px rgba(0,0,0,.2)}
+ .login-status{display:inline-flex;align-items:center;min-height:34px;padding:0 11px;border-radius:999px;font-size:13px;white-space:nowrap;border:1px solid #d9dce3;background:#f7f8fa;color:#69717f}.login-status.state-logged-in{background:#e6f6ee;border-color:#9bd8ba;color:#087f5b}.login-status.state-cookie-saved{background:#edf6f2;border-color:#b7dfce;color:#087f5b}.login-status.state-verifying{background:#fff8e6;border-color:#f0d58b;color:#9a6b00}.login-status.state-not-logged-in,.login-status.state-captcha{background:#fff1f0;border-color:#efb6b1;color:#b42318}.login-status.state-connection-error{background:#fff4e5;border-color:#f1c27d;color:#9a4d00}
+ .data-source{font-size:13px;color:#747c8b;padding:7px 0 14px}.data-source.live{color:#087f5b}.data-source.cache{color:#9a6b00}.data-source.error{color:#b42318}
+-.write-panel{margin-top:24px;padding:16px;border:1px solid #e2e6eb;border-radius:12px;background:#fafbfc}.write-panel h3{margin:0 0 12px}.write-row{display:flex;align-items:center;gap:10px;margin:10px 0;flex-wrap:wrap}.write-row>label,.write-row>span{min-width:88px;color:#596273;font-size:13px}.write-statuses{display:flex;gap:7px}.write-statuses button{background:#fff;color:#596273;border:1px solid #ccd3dc;padding:6px 11px}.write-statuses button.selected{background:#087f5b;color:#fff;border-color:#087f5b}.write-row select,.write-row textarea{border:1px solid #ccd3dc;border-radius:8px;padding:7px;font:inherit;background:#fff}.write-review{align-items:flex-start}.write-review textarea{flex:1;min-width:240px;resize:vertical}.danger{background:#fff1f0;color:#b42318;border:1px solid #efb6b1}.danger-row{border-top:1px solid #e8eaee;padding-top:12px}
++.write-panel{margin-top:24px;padding:16px;border:1px solid #e2e6eb;border-radius:12px;background:#fafbfc}.write-panel h3{margin:0 0 12px}.write-row{display:flex;align-items:center;gap:10px;margin:10px 0;flex-wrap:wrap}.write-row>label,.write-row>span{min-width:88px;color:#596273;font-size:13px}.write-statuses{display:flex;gap:7px}.write-statuses button{background:#fff;color:#596273;border:1px solid #ccd3dc;padding:6px 11px}.write-statuses button.selected{background:#087f5b;color:#fff;border-color:#087f5b}.write-statuses button.unsupported{background:#f3f4f6;color:#8a919c;border-style:dashed;cursor:not-allowed;text-decoration:line-through}.write-row select,.write-row textarea{border:1px solid #ccd3dc;border-radius:8px;padding:7px;font:inherit;background:#fff}.write-review{align-items:flex-start}.write-review textarea{flex:1;min-width:240px;resize:vertical}.danger{background:#fff1f0;color:#b42318;border:1px solid #efb6b1}.danger-row{border-top:1px solid #e8eaee;padding-top:12px}
+ .write-grid{display:grid;grid-template-columns:88px minmax(220px,1fr) minmax(230px,auto);gap:12px 14px;align-items:start}.write-label{color:#596273;font-size:13px;padding-top:9px}.write-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.write-actions span,.review-editor>span{font-size:12px;color:#69717f}.review-editor{display:flex;flex-direction:column;gap:6px}.review-editor textarea{width:100%;min-width:220px;resize:vertical;border:1px solid #ccd3dc;border-radius:8px;padding:7px;font:inherit}.danger-row p{margin:0 0 8px;color:#8c4b4b;font-size:13px}
+ .star-picker{display:flex;gap:2px}.star-picker button{background:transparent;color:#d08a00;padding:2px 4px;font-size:25px;line-height:1}.star-picker button.selected{color:#d08a00}.star-picker button:focus-visible{outline:2px solid #087f5b;outline-offset:2px}.write-outcome{margin-top:12px;padding:10px;border-radius:8px;background:#f0f2f5;color:#596273;font-size:13px;white-space:pre-line}.write-outcome.confirmed{background:#e6f6ee;color:#087f5b}.write-outcome.failed{background:#fff1f0;color:#b42318}.write-outcome.unconfirmed{background:#fff8e6;color:#9a6b00}
+ .write-outcome-actions{display:flex;gap:8px;margin-top:8px}
+
+--- a/scripts/Validate-Fixtures.py
++++ b/scripts/Validate-Fixtures.py
+@@ -1,4 +1,4 @@
+-from pathlib import Path
++﻿from pathlib import Path
+ import json, re, sys, traceback, shutil, os
+ from playwright.sync_api import sync_playwright
+ 
+@@ -12,6 +12,7 @@
+     for k,v in (repl or {}).items(): js=js.replace(k,v)
+     return js
+ 
++CAPABILITY_OPEN=extract('DoubanWriteOpenCapabilityScript', {'__SUBJECT_ID__': json.dumps('1292052')})
+ FORM_PROBE=extract('DoubanWriteFormProbeScript', {'__SUBJECT_ID__': json.dumps('1292052')})
+ SUBMIT_TEMPLATE=extract('DoubanWriteSubmitScriptV2')
+ 
+@@ -39,6 +40,19 @@
+ 
+ MISSING_RATING_HTML=BASE_HTML.replace('<div id="stars">\n<img id="star1" title="1 星"><img id="star2" title="2 星"><img id="star3" title="3 星"><img id="star4" title="4 星"><img id="star5" title="5 星">\n</div>','<div id="stars"></div>')
+ 
++CAPABILITY_HTML='''<!doctype html><html><body>
++<div id="interest_sect_level" class="interest_sect_level">
++<button id="editInterest" name="pbtn-1292052" type="button">修改</button>
++<form id="interestForm" action="data:text/html,/subject/1292052/interest" style="display:none">
++<label><input type="radio" name="interest" value="wish">想看</label>
++<label><input type="radio" name="interest" value="do" checked>在看</label>
++<label><input type="radio" name="interest" value="collect">看过</label>
++<input type="hidden" name="rating" value="30">
++<textarea name="comment">旧短评</textarea><button type="submit">保存</button>
++</form></div>
++<script>document.getElementById('editInterest').addEventListener('click',()=>{document.getElementById('interestForm').style.display='block';});</script>
++</body></html>'''
++
+ def route_subject(route): route.fulfill(status=200, content_type='text/html', body=route_subject.body)
+ route_subject.body=BASE_HTML
+ 
+@@ -57,6 +71,14 @@
+     context=browser.new_context()
+     page=context.new_page()
+ 
++    # detail capability must come from the generic official edit form
++    page.set_content(CAPABILITY_HTML)
++    opened=page.evaluate(CAPABILITY_OPEN)
++    probe=page.evaluate(FORM_PROBE)
++    check(opened.get('clicked') is True and opened.get('generic') is True, '详情能力探测优先打开官方通用编辑入口', json.dumps(opened,ensure_ascii=False))
++    values=[item.get('value') for item in probe.get('interestOptions',[])]
++    check(probe.get('ready') is True and values==['wish','do','collect'] and probe.get('selectedInterest')=='do', '官方编辑表单返回完整 wish/do/collect 能力', json.dumps(probe,ensure_ascii=False))
++
+     # unified normal submit
+     route_subject.body=BASE_HTML
+     page.set_content(route_subject.body)
+@@ -110,15 +132,15 @@
+           window.__sentMessages.push(JSON.parse(JSON.stringify(message)));
+           const detail=window.__detail;
+           let envelope={id:message.id,ok:true,data:{}};
+-          if(message.op==='init') envelope.data={version:'0.9.0-preview.1',tabs:{collect:[],wish:[],watching:[],software:[]},login:{state:'logged-in',text:'豆瓣：已登录'}};
++          if(message.op==='init') envelope.data={version:'0.9.0-preview.2',tabs:{collect:[],wish:[],watching:[],software:[]},login:{state:'logged-in',text:'豆瓣：已登录'}};
+           else if(message.op==='libraryPage') envelope.data={items:[],hasMore:false,source:'webview2',login:{state:'logged-in',text:'豆瓣：已登录'}};
+           else if(message.op==='sessionStatus') envelope.data={state:'logged-in',text:'豆瓣：已登录'};
+           else if(message.op==='saveDoubanEntry') {
+-            if(window.__backendMode==='blocked') envelope.data={detail,write:{phase:'blocked',stage:'formProbe',requested:message.payload,official:{},localUpdated:false,error:'官方评分控件缺失'}};
+-            else envelope.data={detail:{...detail,rating:message.payload.rating,comment:message.payload.comment,statusOptions:[{text:message.payload.status==='wish'?'想看':message.payload.status==='do'?'在看':'看过',selected:true}]},write:{phase:'confirmed',stage:'readback',requested:{status:message.payload.status,rating:message.payload.rating,commentLength:message.payload.setComment?message.payload.comment.length:null},official:{status:message.payload.status,rating:message.payload.rating,comment:message.payload.comment},localUpdated:true,error:''}};
++            if(window.__backendMode==='blocked') envelope.data={detail,write:{phase:'blocked',stage:'formProbe',requested:message.payload,official:{},settled:false,localUpdated:false,error:'官方评分控件缺失'}};
++            else envelope.data={detail:{...detail,rating:message.payload.rating,comment:message.payload.comment,statusOptions:[{text:message.payload.status==='wish'?'想看':message.payload.status==='do'?'在看':'看过',selected:true}]},write:{phase:'confirmed',stage:'readback',requested:{status:message.payload.status,rating:message.payload.rating,commentLength:message.payload.setComment?message.payload.comment.length:null},official:{status:message.payload.status,rating:message.payload.rating,comment:message.payload.comment},settled:true,settled:true,localUpdated:true,error:''}};
+           } else if(message.op==='deleteEntry') {
+             if(window.__backendMode==='deleteError') envelope={id:message.id,ok:false,error:'删除确认失败'};
+-            else envelope.data={detail,write:{phase:'confirmed',stage:'readback',requested:{},official:{status:'deleted',rating:null,comment:''},localUpdated:true,error:''}};
++            else envelope.data={detail,write:{phase:'confirmed',stage:'readback',requested:{},official:{status:'deleted',rating:null,comment:''},settled:true,settled:true,localUpdated:true,error:''}};
+           }
+           Promise.resolve().then(()=>this.handlers.forEach(handler=>handler({data:envelope})));
+         }
+@@ -128,13 +150,25 @@
+     combined=__import__('re').sub(r'<meta http-equiv="Content-Security-Policy"[^>]*>', '', combined)
+     combined=combined.replace('<script src="app.js"></script>', f'<script>{bridge_js}</script><script>{app}</script>')
+     page.set_content(combined)
+-    page.wait_for_function("document.getElementById('summary').textContent.includes('0.9.0-preview.1')")
+-    detail={'subjectId':'1292052','subjectUrl':'https://movie.douban.com/subject/1292052/','title':'测试影片','year':'2002','genres':'剧情','directors':'导演','imdbId':'tt1234567','runtime':'120分钟','countries':'中国','summary':'简介','doubanScore':8.1,'rating':3,'posterUrl':'','markedDate':'','tags':'','comment':'旧短评','statusOptions':[{'text':'想看','selected':False},{'text':'在看','selected':False},{'text':'看过','selected':True}],'cast':[],'fullCastAvailable':False,'connectorSource':'fixture'}
++    page.wait_for_function("document.getElementById('summary').textContent.includes('0.9.0-preview.2')")
++    detail={'subjectId':'1292052','subjectUrl':'https://movie.douban.com/subject/1292052/','title':'测试影片','year':'2002','genres':'剧情','directors':'导演','imdbId':'tt1234567','runtime':'120分钟','countries':'中国','summary':'简介','doubanScore':8.1,'rating':3,'posterUrl':'','markedDate':'','tags':'','comment':'旧短评','statusOptions':[{'text':'想看','selected':False},{'text':'在看','selected':False},{'text':'看过','selected':True}],'statusCapabilitiesKnown':True,'statusCapabilitySource':'official-form','statusCapabilityError':'','cast':[],'fullCastAvailable':False,'connectorSource':'fixture'}
++    unknown_detail={**detail,'statusOptions':[{'text':'想看','selected':False},{'text':'看过','selected':True}],'statusCapabilitiesKnown':False,'statusCapabilityError':'官方表单字段未稳定'}
++    page.evaluate('(d)=>{window.__detail=d; state.currentDetail=d; renderDetail(d);}',unknown_detail)
++    do_button=page.locator('#writeStatuses button[data-status="do"]')
++    check(do_button.is_visible() and not do_button.is_disabled(), '能力未知时在看仍显示且可选择')
++    check('保存前' in (do_button.get_attribute('title') or ''), '能力未知时提示保存前再次确认')
++
++    known_without_do={**unknown_detail,'statusCapabilitiesKnown':True,'statusCapabilityError':''}
++    page.evaluate('(d)=>{window.__detail=d; state.currentDetail=d; renderDetail(d);}',known_without_do)
++    check(do_button.is_visible() and do_button.is_disabled(), '官方表单不提供在看时按钮明确禁用')
++    check('不提供' in (do_button.get_attribute('title') or ''), '禁用在看按钮显示具体原因')
++
+     page.evaluate('(d)=>{window.__detail=d; state.currentDetail=d; renderDetail(d);}',detail)
+     page.locator('#writeRating button[data-rating="5"]').click()
+     page.locator('#writeReview').fill('新短评')
+     page.locator('#saveDoubanEntry').click()
+     page.wait_for_function("document.getElementById('writeOutcome').textContent.includes('本地更新：是')")
++    check('提交稳定：是' in page.locator('#writeOutcome').inner_text(), '确认结果展示提交稳定状态')
+     sent=page.evaluate("window.__sentMessages.filter(x=>x.op==='saveDoubanEntry')")
+     check(len(sent)==1, '前端只发送一个 saveDoubanEntry 消息', json.dumps(sent,ensure_ascii=False))
+     save_payload=sent[0]['payload']
+
+--- a/scripts/Validate-Source.py
++++ b/scripts/Validate-Source.py
+@@ -1,4 +1,4 @@
+-#!/usr/bin/env python3
++﻿#!/usr/bin/env python3
+ from __future__ import annotations
+ 
+ from pathlib import Path
+@@ -52,12 +52,17 @@
+ check("旧独立写入执行链已删除", all(x not in connector for x in ("ExecuteWriteAsync", "DoubanStatusWriteScript", "DoubanRatingWriteScript", "DoubanReviewWriteScript")))
+ check("想看+评分在 C# 层拒绝", 'request.Status == "wish" && request.Rating is not null' in connector)
+ check("失败或未确认不写本地", 'if (!result.Success) return WriteEnvelope(record, result, "webview2-write", false);' in form and 'ApplyConfirmedDoubanEntry(record, result, request);' in form)
+-check("结果模型包含结构化阶段与本地更新", all(x in interface for x in ("Phase", "Stage", "RequestedStatus", "RequestedRating", "RequestedComment", "LocalUpdated")))
++check("结果模型包含结构化阶段、本地更新与提交稳定标志", all(x in interface for x in ("Phase", "Stage", "RequestedStatus", "RequestedRating", "RequestedComment", "LocalUpdated", "Settled")))
+ check("等待官方表单和提交完成使用条件轮询", "WaitForOfficialFormAsync" in connector and "WaitForSubmitSettlementAsync" in connector and "for (var attempt" in connector)
++check("官方表单要求连续稳定采样", "stableSamples >= 3" in connector and "OfficialFormSignature" in connector)
++check("提交等待显式区分 settled 与 timeout", 'if (!settle.Settled)' in connector and 'new(probe, false, "timeout"' in connector)
++check("提交未稳定时不会继续官方回读", connector.index('if (!settle.Settled)') < connector.index('stage = "readback"'))
++check("详情状态能力来自官方编辑表单", "ProbeOfficialStatusCapabilitiesAsync" in connector and "StatusCapabilitiesKnown = capabilities.Known" in connector)
++check("前端能力未知时不再永久隐藏在看", 'button.classList.remove("hidden")' in app and 'capabilityBlocked' in app and 'button.dataset.status !== "do"' not in app)
+ 
+ # Embedded JS extraction and policy checks
+ script_names = [
+-    "DoubanWriteSnapshotScript", "DoubanWriteOpenScriptV2", "DoubanWriteFormProbeScript",
++    "DoubanWriteSnapshotScript", "DoubanWriteOpenCapabilityScript", "DoubanWriteOpenScriptV2", "DoubanWriteFormProbeScript",
+     "DoubanWriteSubmitScriptV2", "DoubanWritePostSubmitProbeScript",
+     "DoubanHistoryContainsSubjectScript", "DoubanDeleteControlScript",
+ ]
+
+--- a/观影助手.csproj
++++ b/观影助手.csproj
+@@ -11,7 +11,7 @@
+     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+     <DebugType>none</DebugType>
+     <DebugSymbols>false</DebugSymbols>
+-    <Version>0.9.0-preview.1</Version>
++    <Version>0.9.0-preview.2</Version>
+     <AssemblyName>观影助手</AssemblyName>
+     <RootNamespace>QbPotDoubanAi</RootNamespace>
+   </PropertyGroup>
+
+--- a/VERSION
++++ b/VERSION
+@@ -1 +1 @@
+-0.9.0-preview.1
++﻿0.9.0-preview.2
+
+--- a/README.md
++++ b/README.md
+@@ -4,7 +4,7 @@
+ 
+ ## 当前版本
+ 
+-当前开发预览：`0.9.0-preview.1`；当前正式发布版与长期稳定版仍为 `0.8.9`。本预览只用于统一豆瓣保存流程验证，不覆盖 `v0.8.9`、`stable-v0.8.9` 或任何历史正式发布物。
++当前开发预览：`0.9.0-preview.2`；当前正式发布版与长期稳定版仍为 `0.8.9`。本预览只用于统一豆瓣保存流程验证，不覆盖 `v0.8.9`、`stable-v0.8.9` 或任何历史正式发布物。
+ 
+ ## 功能
+ 
+@@ -30,7 +30,7 @@
+ 4. 正常播放影片；达到默认 92% 进度和 10 分钟实际观看后，会出现评价提醒。
+ 5. 按流程确认身份、评分、回答问题并生成短评，然后复制并打开豆瓣。
+ 
+-双击 `BUILD_PREVIEW.cmd` 可在安装了 .NET 8 SDK 的 Windows 电脑上恢复依赖、编译、发布并运行内置自检。生成目录为 `artifacts\观影助手-v0.9.0-preview.1-win-x64`，其中包含 EXE、SHA-256 构建信息、自检结果和本次实现/验证报告。
++双击 `BUILD_PREVIEW.cmd` 可在安装了 .NET 8 SDK 的 Windows 电脑上恢复依赖、编译、发布并运行内置自检。生成目录为 `artifacts\观影助手-v0.9.0-preview.2-win-x64`，其中包含 EXE、SHA-256 构建信息、自检结果和本次实现/验证报告。
+ 
+ 命令行检查：

@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Douban Plus UI Polish Preview</title>
+  <style>
+    :root {
+      --bg: #0b0e11;
+      --panel: #171b21;
+      --panel-2: #1d232b;
+      --border: rgba(203, 214, 227, .14);
+      --text: #edf1f5;
+      --muted: #aeb8c7;
+      --muted-2: #7f8a9a;
+      --accent: #f3b64e;
+      --accent-soft: rgba(243, 182, 78, .14);
+      --radius: 12px;
+      --control-h: 42px;
+      --ease: 180ms cubic-bezier(.2, .8, .2, 1);
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--text); }
+    body {
+      font-family: "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+      letter-spacing: .01em;
+    }
+    button { font: inherit; color: inherit; }
+    .app { width: min(1440px, calc(100vw - 64px)); margin: 0 auto; padding: 44px 0 70px; }
+
+    .topline { display: flex; align-items: flex-start; justify-content: space-between; gap: 28px; }
+    .kicker { margin: 0 0 12px; color: var(--accent); font-size: 13px; line-height: 1; font-weight: 800; letter-spacing: .14em; }
+    h1 { margin: 0; color: #e5e8ec; font-size: clamp(44px, 4vw, 58px); line-height: 1.08; letter-spacing: -.06em; font-weight: 800; }
+    .header-actions { padding-top: 46px; display: flex; gap: 10px; }
+    .watchlist { min-height: var(--control-h); padding: 0 18px; border: 1px solid rgba(243,182,78,.58); border-radius: var(--radius); background: var(--accent-soft); color: var(--accent); cursor: pointer; transition: transform var(--ease), background var(--ease), border-color var(--ease); }
+    .watchlist:hover { transform: translateY(-1px); background: rgba(243,182,78,.22); border-color: var(--accent); }
+
+    .primary-nav { display: flex; align-items: stretch; gap: 8px; margin-top: 48px; border-bottom: 1px solid var(--border); }
+    .primary-nav button { min-width: 124px; min-height: 70px; padding: 0 22px 3px; border: 0; border-bottom: 3px solid transparent; border-radius: 12px 12px 0 0; background: transparent; color: var(--muted); font-size: 18px; font-weight: 700; cursor: pointer; transition: color var(--ease), background var(--ease), border-color var(--ease); }
+    .primary-nav button:hover { color: var(--text); background: rgba(255,255,255,.04); }
+    .primary-nav button.active { color: var(--text); border-color: var(--accent); background: var(--accent-soft); }
+
+    .content-type { display: flex; gap: 10px; margin: 22px 0 24px; }
+    .control { min-height: var(--control-h); padding: 0 16px; border: 1px solid var(--border); border-radius: var(--radius); background: rgba(255,255,255,.025); color: var(--muted); cursor: pointer; transition: color var(--ease), border-color var(--ease), background var(--ease), transform var(--ease); }
+    .control:hover { color: var(--text); border-color: rgba(243,182,78,.5); transform: translateY(-1px); }
+    .control.active { color: var(--accent); border-color: rgba(243,182,78,.72); background: var(--accent-soft); }
+
+    .filter-shell { padding: 18px 20px 16px; border: 1px solid var(--border); border-radius: 16px; background: linear-gradient(145deg, rgba(31,37,46,.95), rgba(21,25,31,.98)); }
+    .filter-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .filter-row + .filter-row { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border); }
+    .filter-label { min-width: 42px; color: var(--muted); font-size: 14px; }
+    .filter-link { min-height: 38px; padding: 0 14px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--muted); font-size: 16px; cursor: pointer; transition: color var(--ease), border-color var(--ease); }
+    .filter-link:hover { color: var(--text); }
+    .filter-link.active { color: var(--accent); border-color: var(--accent); }
+    .push { margin-left: auto; }
+
+    .grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 16px; margin-top: 28px; }
+    .card { overflow: hidden; aspect-ratio: 2 / 3; border: 1px solid var(--border); border-radius: 16px; background: var(--panel-2); box-shadow: 0 12px 30px rgba(0,0,0,.18); transition: transform var(--ease), border-color var(--ease), box-shadow var(--ease); }
+    .card:hover { transform: translateY(-3px); border-color: rgba(243,182,78,.55); box-shadow: 0 18px 34px rgba(0,0,0,.28); }
+    .poster { display: grid; height: 100%; place-items: end start; padding: 16px; color: rgba(255,255,255,.88); font-size: 23px; font-weight: 800; letter-spacing: -.04em; }
+    .poster small { display: block; margin-top: 5px; color: rgba(255,255,255,.68); font-size: 11px; font-weight: 500; letter-spacing: .05em; }
+    .p1 { background: linear-gradient(145deg, #391b16, #bd7542 42%, #171313 43%, #0b0e11); }
+    .p2 { background: linear-gradient(145deg, #b6c2b6, #567268 52%, #20312f); }
+    .p3 { background: radial-gradient(circle at 70% 35%, #e69e43, #702c19 44%, #190f10); }
+    .p4 { background: linear-gradient(145deg, #202f34, #8e9a8f 45%, #261d26); }
+    .p5 { background: radial-gradient(circle at 35% 20%, #5d9b9d, #12252c 43%, #071013); }
+
+    .screen-note { margin: 0 0 16px; color: var(--muted-2); font-size: 12px; }
+    .screen { display: none; animation: screen-in 180ms ease-out both; }
+    .screen.active { display: block; }
+    @keyframes screen-in { from { opacity: .2; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+    @media (max-width: 980px) {
+      .app { width: min(100% - 32px, 760px); padding-top: 28px; }
+      .topline { display: block; }
+      .header-actions { padding-top: 22px; }
+      .primary-nav button { min-width: 0; flex: 1; padding-inline: 10px; }
+      .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .push { margin-left: 0; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: 1ms !important; transition-duration: 1ms !important; }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <p class="screen-note">UI 统一预览 · 不代表正式页面代码</p>
+    <section class="topline">
+      <div>
+        <p class="kicker" id="kicker">DOUBAN PLUS / EXPLORE</p>
+        <h1 id="title">探索选片</h1>
+      </div>
+      <div class="header-actions"><button class="watchlist">我的待看</button></div>
+    </section>
+
+    <nav class="primary-nav" aria-label="主导航">
+      <button data-page="personal">看过</button>
+      <button data-page="personal">想看</button>
+      <button data-page="personal">在看</button>
+      <button class="active" data-page="explore">探索</button>
+    </nav>
+
+    <section class="screen" id="personal">
+      <div class="content-type"><button class="control active">全部</button><button class="control">电影</button><button class="control">电视剧</button></div>
+      <div class="filter-shell"><div class="filter-row"><span class="filter-label">类型</span><button class="control active">全部</button><button class="control">电影</button><button class="control">电视</button></div></div>
+      <div class="grid"><article class="card"><div class="poster p1">罪证<br><small>THE EVIDENCE</small></div></article><article class="card"><div class="poster p2">THE LAST HOUSE<br><small>A QUIET NIGHT</small></div></article><article class="card"><div class="poster p3">狂野动物城<br><small>WILD CITY</small></div></article><article class="card"><div class="poster p4">长安的荔枝<br><small>THE LITCHI ROAD</small></div></article><article class="card"><div class="poster p5">长夜将尽<br><small>THE LAST NIGHT</small></div></article></div>
+    </section>
+
+    <section class="screen active" id="explore">
+      <div class="content-type"><button class="control active">电影</button><button class="control">电视剧</button></div>
+      <div class="filter-shell">
+        <div class="filter-row"><button class="filter-link">全部</button><button class="filter-link active">热门电影</button><button class="filter-link">最新电影</button><button class="filter-link">豆瓣高分</button><button class="filter-link">冷门佳片</button></div>
+        <div class="filter-row"><span class="filter-label">地区</span><button class="control active">全部</button><button class="control">华语</button><button class="control">欧美</button><button class="control">韩国</button><button class="control">日本</button><span class="push"></span><button class="control">评分区间</button><button class="control">未看过</button><button class="control">可播放</button></div>
+      </div>
+      <div class="grid"><article class="card"><div class="poster p1">痴迷<br><small>OBSESSION</small></div></article><article class="card"><div class="poster p2">THE LAST HOUSE<br><small>HOW LONG CAN YOU SURVIVE?</small></div></article><article class="card"><div class="poster p3">EVERY FAMILY<br><small>HAS A SECRET</small></div></article><article class="card"><div class="poster p4">消失的凶手<br><small>VANISHING POINT</small></div></article><article class="card"><div class="poster p5">破碎的海<br><small>THE BROKEN SEA</small></div></article></div>
+    </section>
+  </main>
+  <script>
+    const title = document.querySelector('#title');
+    const kicker = document.querySelector('#kicker');
+    const personal = document.querySelector('#personal');
+    const explore = document.querySelector('#explore');
+    document.querySelectorAll('[data-page]').forEach((button) => button.addEventListener('click', () => {
+      const isExplore = button.textContent.trim() === '探索';
+      document.querySelectorAll('.primary-nav button').forEach((item) => item.classList.toggle('active', item === button || (isExplore && item.textContent.trim() === '探索')));
+      personal.classList.toggle('active', !isExplore);
+      explore.classList.toggle('active', isExplore);
+      title.textContent = isExplore ? '探索选片' : '我看过的影视';
+      kicker.textContent = isExplore ? 'DOUBAN PLUS / EXPLORE' : 'DOUBAN PLUS / PERSONAL';
+    }));
+  </script>
+</body>
+</html>

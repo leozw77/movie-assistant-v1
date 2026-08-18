@@ -1,0 +1,33 @@
+DoubanReview preview.6 BuildFix5 source validation
+Generated: 2026-08-05
+
+Python review pipeline validation:
+SUMMARY: 45 passed, 0 failed
+
+Node protocol validation:
+PASS: unchanged fields use keep
+PASS: rating clear is explicit
+PASS: rating set carries value
+PASS: comment clear is explicit
+PASS: comment set carries value
+PASS: wish resolves existing rating to clear
+ALL_PROTOCOL_TESTS_OK
+
+Additional integration safety checks:
+12/12 passed
+- BuildFix4 star0 submit and probe support present
+- same complete subject page reuse present
+- official form stability threshold is two complete identical samples
+- adaptive settlement polling present
+- heavy inline read waits for completed navigation
+- authoritative post-submit readback remains present
+- requestSubmit retained
+- no fetch submission introduced
+- no cookie access introduced
+- hidden rating remains read-only
+- delete remains disabled
+- one-click diagnostic collector included
+
+Limit:
+The packaging environment is Linux and does not contain the Windows .NET/WebView2 toolchain.
+Run BUILD_PREVIEW.cmd on Windows to perform the actual .NET 8 build, publish, executable self-tests and WebView2 runtime regression.

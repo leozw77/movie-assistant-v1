@@ -1,0 +1,7 @@
+PASS: unchanged fields use keep
+PASS: rating clear is explicit
+PASS: rating set carries value
+PASS: comment clear is explicit
+PASS: comment set carries value
+PASS: wish resolves existing rating to clear
+ALL_PROTOCOL_TESTS_OK

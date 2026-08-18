@@ -1,0 +1,13 @@
+{
+  "product": "观影助手",
+  "status": "stable",
+  "version": "0.8.9",
+  "stableTag": "stable-v0.8.9",
+  "sourceTag": "v0.8.9",
+  "sourceCommit": "805a4b2a2079121e093f8ea18397bfdee2772147",
+  "releaseRegistrationCommit": "40e17dc540da27a4763bfbfab6c22ed60c305601",
+  "releaseDirectory": "发布版本/观影助手-v0.8.9-HTML影视库与内置豆瓣登录-805a4b2-net8轻量版",
+  "releaseExecutable": "观影助手-v0.8.9-805a4b2.exe",
+  "sha256": "3489f25a6c34a8270e1746e93f01b76198ac5168107b9ef079e787f7b82dffdb",
+  "policy": "immutable-do-not-overwrite"
+}

@@ -1,0 +1,25 @@
+{
+  "package": "DoubanReview_0.9.0-preview.6_Source_Integrated_BuildFix10_R1_2026-08-05",
+  "version": "0.9.0-preview.6",
+  "buildFix": "BuildFix10",
+  "base": "BuildFix9",
+  "detailOrder": [
+    "local-cache",
+    "subject-metadata",
+    "official-review"
+  ],
+  "cacheTtl": {
+    "basicMetadataHours": 24,
+    "homeCastDays": 7,
+    "fullCastDays": 7,
+    "officialReview": "every-open"
+  },
+  "homeCastLimit": 6,
+  "fullCast": "explicit-user-action-only",
+  "deleteEnabled": false,
+  "windowsRuntimeValidated": false,
+  "reason": "Linux build environment has no .NET SDK, WinForms/WebView2 runtime or PowerShell",
+  "revision": "R1-self-test-hotfix",
+  "runtimeLogicChangedByRevision": false,
+  "selfTestFix": "Do not treat personage-default placeholder filtering as person-profile navigation"
+}

@@ -1,0 +1,41 @@
+BuildFix11 R1 changed files
+Base: BuildFix10 R1
+Generated: 2026-08-05
+
+Added (14):
++ BUILDFIX11_INTEGRATION.json
++ BUILD_FIX11_NOTES.txt
++ PersonAvatarCache.cs
++ WorkerJobQueue.cs
++ review/ACCEPTANCE_CHECKLIST_BUILDFIX11.md
++ review/BUILDFIX11_VALIDATION.txt
++ review/DIAGNOSTIC_FINDINGS_BUILDFIX11.txt
++ review/IMPLEMENTATION_REPORT_BUILDFIX11.md
++ review/SOURCE_VALIDATION_BUILDFIX11.txt
++ review/VALIDATION_RESULTS_BUILDFIX11.txt
++ tests/fixtures/full-cast-card-avatar-scope.json
++ tests/fixtures/full-cast-delayed-stability.json
++ tests/fixtures/home-cast-duplicate-role.json
++ tests/validate_buildfix11.py
+
+Modified (18):
+* AI_HANDOFF.md
+* BUILD_STATUS.txt
+* BrowserCdpService.cs
+* CHANGELOG.md
+* DetailCachePolicy.cs
+* DoubanWebView2Connector.ReviewWriteV2.cs
+* DoubanWebView2Connector.cs
+* HtmlMediaLibraryForm.cs
+* Models.cs
+* MovieDetailForm.cs
+* MyWatchHistoryForm.cs
+* PACKAGE_VERSION.txt
+* README.md
+* SelfTest.cs
+* WebAssets/MediaLibrary/app.js
+* review/PACKAGE_MANIFEST.md
+* scripts/Build-Preview.ps1
+* tests/validate_review_pipeline.py
+
+Removed (0):

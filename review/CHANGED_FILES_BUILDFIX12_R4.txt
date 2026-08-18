@@ -1,0 +1,23 @@
+BuildFix12 R4 changed files
+
+- DoubanWebView2Connector.DeleteV2.cs
+  - do -> PersonalDoList routing
+  - do list page locate/prepare/invoke/settlement
+  - hard do-list and detail confirmation
+  - route-aware delete dialog context
+- DoubanWebView2Connector.cs
+  - ScriptDialogOpening uses route-aware target validation
+- DeleteWriteModels.cs
+  - DeleteEntryResult.Route
+- HtmlMediaLibraryForm.cs
+  - DeleteRoute transaction/envelope/logging
+- WebAssets/MediaLibrary/app.js
+  - R4 delete stages and route display
+- SelfTest.cs
+  - do-list delete invariant
+- tests/validate_buildfix12_delete.py
+  - R4 route/safety/readback gates
+- scripts/Build-Preview.ps1
+  - R4 release metadata
+- README.md / AI_HANDOFF.md / BUILD_* / BUILDFIX12_INTEGRATION.json
+- review/BuildFix12 R4 reports

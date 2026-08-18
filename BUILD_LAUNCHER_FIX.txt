@@ -1,0 +1,25 @@
+BUILD_PREVIEW.cmd STATUS
+
+The launcher is intentionally:
+- ASCII only
+- CRLF normalized
+- BOM free
+- using an explicit Windows PowerShell path
+- quoting the PowerShell script path
+- writing details to build-preview.log
+
+Python and Node.js are optional validation tools, not build requirements.
+The PowerShell build script probes py, python, and python3 before use.
+A broken Microsoft Store python alias returning exit code 9009 is ignored.
+
+Usage:
+1. Extract the complete ZIP to a normal Windows folder.
+2. Install the .NET 8 SDK.
+3. Double-click BUILD_PREVIEW.cmd.
+4. The script restores, builds and publishes the application.
+5. The focused preview.6 review-pipeline self-test must pass.
+6. The legacy comprehensive self-test is retained as non-blocking diagnostics.
+5. The output is created under:
+   artifacts\观影助手-v0.9.0-preview.6-win-x64
+
+Do not run the CMD file from inside a ZIP preview.

@@ -1,0 +1,35 @@
+Review protocol validation
+
+PASS: unchanged fields use keep
+PASS: rating clear is explicit
+PASS: rating set carries value
+PASS: comment clear is explicit
+PASS: comment set carries value
+PASS: wish resolves existing rating to clear
+ALL_PROTOCOL_TESTS_OK
+
+Embedded JavaScript validation
+
+PASS: BrowserCdpService.cs:ExtractionScript
+PASS: BrowserCdpService.cs:DoubanProfileProbeScript
+PASS: BrowserCdpService.cs:DoubanExtractionScript
+PASS: BrowserCdpService.cs:DoubanSearchExtractionScript
+PASS: BrowserCdpService.cs:DoubanRenderedSubjectScript
+PASS: BrowserCdpService.cs:DoubanAllCastScript
+PASS: BrowserCdpService.cs:DoubanPersonAvatarScript
+PASS: DoubanWebView2Connector.cs:DoubanWriteSnapshotScript
+PASS: DoubanWebView2Connector.cs:DoubanWriteOpenCapabilityScript
+PASS: DoubanWebView2Connector.cs:DoubanWriteOpenScriptV2
+PASS: DoubanWebView2Connector.cs:DoubanWriteFormProbeScript
+PASS: DoubanWebView2Connector.cs:DoubanWriteSubmitScriptV2
+PASS: DoubanWebView2Connector.cs:DoubanWritePostSubmitProbeScript
+PASS: DoubanWebView2Connector.cs:DoubanHistoryContainsSubjectScript
+PASS: DoubanWebView2Connector.cs:DoubanDeleteControlScript
+PASS: DoubanOfficialFormScripts.cs:BuildSubmitScript
+SUMMARY: all embedded scripts valid; failures=0
+
+Launcher validation
+
+PASS: BUILD_PREVIEW.cmd is ASCII-only, BOM-free, and CRLF-normalized
+PASS: Build-Preview.ps1 is UTF-8 BOM and CRLF-normalized
+PASS: launcher uses an explicit Windows PowerShell path and quoted script path

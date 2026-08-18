@@ -1,0 +1,18 @@
+DoubanReview preview.6 BuildFix5 integration result
+Integrated: 2026-08-05
+
+Source merge checks:
+PASS - BuildFix4 star0 clear support merged
+PASS - same complete subject page can be reused
+PASS - official form requires two identical complete samples
+PASS - settlement uses adaptive 120/225 ms polling
+PASS - heavy inline read waits for completed navigation
+PASS - official post-submit form readback remains mandatory
+PASS - submit still uses form.requestSubmit
+PASS - no fetch-based submission introduced
+PASS - no cookie access introduced
+PASS - hidden rating field remains read-only
+PASS - delete remains disabled
+
+This result is source-level validation in the packaging environment.
+The Windows .NET/WebView2 build and runtime tests must be run with BUILD_PREVIEW.cmd.

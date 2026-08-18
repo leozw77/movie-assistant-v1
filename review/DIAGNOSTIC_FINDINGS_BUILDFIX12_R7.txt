@@ -1,0 +1,13 @@
+﻿BuildFix12 R7 diagnostic finding - 2026-08-09
+
+Observed in user diagnostic package DoubanReview-Diagnostics-20260809-094455.zip:
+- 09:43:45 first /people/196650036/do locate found SubjectId=37202886 with row text containing short comment "99".
+- 09:43:46 first Chromium trusted click was dispatched.
+- 09:43:54 transaction remained unconfirmed because the exact SubjectId was still in the freshly reloaded do list.
+- 09:44:03 retry started; subject detail already read status=none.
+- 09:44:07 the same do-list row was still present, but its row text no longer contained "99".
+- 09:44:07 second trusted click was dispatched.
+- 09:44:19 fresh do-list cross-check no longer contained the SubjectId; detail also remained none; deletion was confirmed.
+
+Conclusion:
+For this Douban state combination, one official /do list delete control can behave as a two-stage operation. R7 keeps one user-visible delete transaction and automatically performs the second trusted click only after a fresh /do reload stably proves the exact SubjectId is still present.
