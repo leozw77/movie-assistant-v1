@@ -1,9 +1,0 @@
-v1.0.1 Douban Plus stable build status
-
-This is the v1.0.1 stable Douban Plus package on top of the formal v0.9.0 BuildFix12 R11 baseline.
-
-Scope: Douban Plus personal pages, search current-page adaptation, real subject details, personal infinite scroll, detail return-position restoration, and local watchlist integration.
-
-Formal v0.9.0 remains unchanged. Use a new non-overwriting delivery directory. The delivery directory must include the EXE, version metadata, release notes, self-test result, and SHA256SUMS.txt.
-
-Windows/.NET 8 build is required before executable delivery. Run BUILD_PREVIEW.cmd on Windows when producing the full package.
