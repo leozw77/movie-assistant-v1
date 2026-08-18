@@ -6,7 +6,7 @@
 
 配套源码绝对路径：`D:\chatgpt\观影助手\开发\v1.0.0-clean-rebaseline-20260818-205734`
 
-Git 基线提交：`0c917f6030fb6cebfb10c6d26c7796248b8992cf`
+Git 基线提交：以正式发布清单中的 `sourceCommit` 为准。
 
 v1.0.0 EXE SHA-256：`C8F29E6165DA39D3B5F19153C5FF10DFDEF14C1FE5DDDDCD21AC66DF25E6B4B4`
 
@@ -29,4 +29,4 @@ v1.0.0 ZIP SHA-256：`C2045D1EAD76B7E1E86D5D505FD89F41326FC64FBD8E39CFCE318D8654
 
 本目录作为新的唯一活动开发副本。旧 Git 历史和旧发布物不作为 v1.0.0 管理基线。
 
-正式发布目录：`D:\chatgpt\观影助手\发布版本\观影助手-v1.0.0-豆瓣原生搜索-0c917f6-net8轻量版`
+正式发布目录、EXE、ZIP 和提交号以正式发布清单为准。
