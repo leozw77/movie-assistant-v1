@@ -1971,6 +1971,38 @@ internal sealed class HtmlMediaLibraryForm : Form
         }
     }
 
+    private static JsonElement OverlayPersonalPublicMetadata(JsonElement items, FrodoPersonalIndexStatus snapshot)
+    {
+        if (items.ValueKind != JsonValueKind.Array || items.GetArrayLength() == 0 || snapshot.Items.Count == 0)
+            return items;
+
+        var metadataBySubject = new Dictionary<string, FrodoPersonalItem>(StringComparer.Ordinal);
+        foreach (var metadata in snapshot.Items)
+        {
+            if (!string.IsNullOrWhiteSpace(metadata.SubjectId))
+                metadataBySubject[metadata.SubjectId] = metadata;
+        }
+
+        var patched = new List<System.Text.Json.Nodes.JsonObject>();
+        foreach (var item in items.EnumerateArray())
+        {
+            var node = System.Text.Json.Nodes.JsonNode.Parse(item.GetRawText()) as System.Text.Json.Nodes.JsonObject
+                ?? new System.Text.Json.Nodes.JsonObject();
+            var subjectId = node["subjectId"]?.GetValue<string>() ?? "";
+            if (subjectId.Length > 0 && metadataBySubject.TryGetValue(subjectId, out var metadata))
+            {
+                // Metadata Overlay may only add public subject properties.
+                // Never patch status, myRating, comment, markedDate, membership or card order here.
+                if (metadata.Score is > 0)
+                    node["score"] = metadata.Score.Value;
+                if (metadata.RatingCount is > 0)
+                    node["voteCount"] = metadata.RatingCount.Value;
+            }
+            patched.Add(node);
+        }
+
+        return JsonSerializer.SerializeToElement(patched);
+    }
     private async Task ForwardDoubanSourceResultToShellAsync(JsonElement root, string operation = "")
     {
         if (root.ValueKind != JsonValueKind.Object)
@@ -1980,6 +2012,43 @@ internal sealed class HtmlMediaLibraryForm : Form
         var items = root.TryGetProperty("items", out var itemsValue) && itemsValue.ValueKind == JsonValueKind.Array
             ? itemsValue.Clone()
             : JsonSerializer.SerializeToElement(Array.Empty<object>());
+
+        var sourceKind = root.TryGetProperty("dom", out var overlayDom) && overlayDom.ValueKind == JsonValueKind.Object
+            ? ReadString(overlayDom, "source")
+            : "";
+        var ordinaryPersonalDom =
+            FrodoPersonalProvider.TryReadScope(sourceUrl, out var overlayProfileId, out var overlayStatus) &&
+            sourceKind is not ("frodo-api" or "frodo-local-index");
+        if (ordinaryPersonalDom)
+        {
+            if (!_frodoPersonalIndex.TryGetStatus(overlayProfileId, overlayStatus, out var overlaySnapshot))
+            {
+                await _frodoPersonalIndex.LoadCacheAsync(overlayProfileId).ConfigureAwait(true);
+                _frodoPersonalIndex.TryGetStatus(overlayProfileId, overlayStatus, out overlaySnapshot);
+            }
+
+            if (overlaySnapshot is not null)
+            {
+                items = OverlayPersonalPublicMetadata(items, overlaySnapshot);
+                PostFrodoPersonalFilterState(
+                    overlayProfileId,
+                    overlayStatus,
+                    overlaySnapshot,
+                    new FrodoPersonalFilterCriteria(),
+                    false,
+                    overlaySnapshot.Items.Count,
+                    overlaySnapshot.Total,
+                    overlaySnapshot.Items.Count,
+                    0,
+                    "");
+                DiagnosticLogger.Write($"Personal DOM metadata overlay applied; ProfileId={overlayProfileId}; Status={overlayStatus}; PageItems={items.GetArrayLength()}; MetadataItems={overlaySnapshot.Items.Count}");
+            }
+            else
+            {
+                _ = EnsureFrodoPersonalIndexAsync(overlayProfileId, overlayStatus, "personal-dom-capabilities");
+                DiagnosticLogger.Write($"Personal DOM metadata overlay pending; ProfileId={overlayProfileId}; Status={overlayStatus}; Reason=IndexMissing");
+            }
+        }
         // Keep poster URLs as read from the real Douban DOM. The unified Shell
         // loads them directly; list forwarding must not download every
         // cumulative poster again on each paging operation.
@@ -2181,40 +2250,28 @@ internal sealed class HtmlMediaLibraryForm : Form
     }
     private async Task HandleDoubanShellApplyPersonalFilterAsync(JsonElement root)
     {
+        DeactivateFrodoPersonal("personal-dom-filter");
         var targetUrl = ReadString(root, "url").Trim();
         var requestId = ReadString(root, "requestId");
         if (!IsAllowedDoubanPersonalUrl(targetUrl) || !IsSameDoubanPersonalScope(_activeDoubanSourceNavigationUrl, targetUrl))
             throw new InvalidDataException("豆瓣个人筛选地址无效，或筛选范围已离开当前状态。");
 
         var generation = Interlocked.Increment(ref _doubanSourceGeneration);
-        var resolvedRequestId = string.IsNullOrWhiteSpace(requestId) ? $"personal-filter-{generation}" : requestId;
-        _frodoPersonalQuery.Reset();
         PostShellMessage(new { type = "doubanShellOperationState", busy = true, operation = "personal-filter" });
-
-        if (FrodoPersonalProvider.TryReadScope(targetUrl, out var profileId, out var status) &&
-            FrodoPersonalProvider.IsDefaultPersonalUrl(targetUrl, profileId, status))
+        if (AreEquivalentDoubanNavigationUrls(_activeDoubanSourceNavigationUrl, targetUrl) && _doubanSourceNavigationCompleted)
         {
-            _activeDoubanPlusNavigationUrl = targetUrl;
-            _activeDoubanSourceNavigationUrl = targetUrl;
-            _activeDoubanPersonalPageUrl = targetUrl;
-            _doubanSourceNavigationCompleted = false;
-            _frodoPersonalActive = true;
-            try
-            {
-                var page = await _frodoPersonalProvider.LoadInitialAsync(profileId, status, targetUrl, resolvedRequestId, generation).ConfigureAwait(true);
-                await ForwardDoubanSourceResultToShellAsync(page, "personal-filter").ConfigureAwait(true);
-                _ = EnsureFrodoPersonalIndexAsync(profileId, status, "personal-filter-default");
-                DiagnosticLogger.Write($"Unified Shell personal filter returned to default; Source=Frodo; ProfileId={profileId}; Status={status}; Url={targetUrl}; Generation={generation}");
-                return;
-            }
-            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidDataException or InvalidOperationException)
-            {
-                DiagnosticLogger.Write($"Unified Shell personal default filter Frodo failed; Url={targetUrl}; Fallback=DOM; Error={ex.Message}");
-            }
+            var page = await ReadDoubanSourcePageAsync(string.IsNullOrWhiteSpace(requestId) ? $"personal-filter-{generation}" : requestId, generation).ConfigureAwait(true);
+            await ForwardDoubanSourceResultToShellAsync(page, "personal-filter-noop").ConfigureAwait(true);
+            DiagnosticLogger.Write($"Unified Shell personal filter no-op; Url={targetUrl}; Generation={generation}");
+            return;
         }
 
-        NavigatePersonalDomFallback(targetUrl, resolvedRequestId, "personal-filter", "non-default-filter-or-frodo-failed");
-        DiagnosticLogger.Write($"Unified Shell personal filter navigation; Source=DOM; Url={targetUrl}; Generation={generation}");
+        _activeDoubanPlusNavigationUrl = targetUrl;
+        _activeDoubanSourceNavigationUrl = targetUrl;
+        _activeDoubanPersonalPageUrl = targetUrl;
+        _doubanSourceNavigationCompleted = false;
+        _doubanSourceView.CoreWebView2!.Navigate(targetUrl);
+        DiagnosticLogger.Write($"Unified Shell personal filter navigation; Url={targetUrl}; Generation={generation}");
     }
 
     private async Task<bool> TryRenderFrodoPersonalStoreAsync(
@@ -2398,11 +2455,14 @@ internal sealed class HtmlMediaLibraryForm : Form
         return result;
     }
 
-    private bool IsCurrentFrodoPersonal(string profileId, string status) =>
-        !_closing && _frodoPersonalActive &&
+    private bool IsCurrentPersonalScope(string profileId, string status) =>
+        !_closing &&
         FrodoPersonalProvider.TryReadScope(_activeDoubanSourceNavigationUrl, out var activeProfileId, out var activeStatus) &&
         activeProfileId.Equals(profileId, StringComparison.Ordinal) &&
         activeStatus.Equals(status, StringComparison.Ordinal);
+
+    private bool IsCurrentFrodoPersonal(string profileId, string status) =>
+        _frodoPersonalActive && IsCurrentPersonalScope(profileId, status);
 
     private async Task EnsureFrodoPersonalIndexAsync(string profileId, string status, string reason)
     {
@@ -2411,7 +2471,7 @@ internal sealed class HtmlMediaLibraryForm : Form
             await _frodoPersonalIndex.LoadCacheAsync(profileId).ConfigureAwait(true);
             if (_frodoPersonalIndex.TryGetStatus(profileId, status, out var cached))
             {
-                if (IsCurrentFrodoPersonal(profileId, status))
+                if (IsCurrentPersonalScope(profileId, status))
                     PostFrodoPersonalFilterState(profileId, status, cached, new FrodoPersonalFilterCriteria(), false, cached.Items.Count, cached.Items.Count, cached.Items.Count, 0, "");
                 return;
             }
@@ -2424,16 +2484,16 @@ internal sealed class HtmlMediaLibraryForm : Form
 
             try
             {
-                if (IsCurrentFrodoPersonal(profileId, status))
+                if (IsCurrentPersonalScope(profileId, status))
                     PostFrodoPersonalFilterState(profileId, status, null, new FrodoPersonalFilterCriteria(), true, 0, 0, 0, 0, "");
 
                 var progress = new Progress<FrodoPersonalIndexProgress>(value =>
                 {
-                    if (!IsCurrentFrodoPersonal(profileId, status)) return;
+                    if (!IsCurrentPersonalScope(profileId, status)) return;
                     PostFrodoPersonalFilterState(profileId, status, null, new FrodoPersonalFilterCriteria(), true, value.Loaded, value.Total, 0, 0, "");
                 });
                 var built = await _frodoPersonalIndex.BootstrapStatusAsync(profileId, status, progress).ConfigureAwait(true);
-                if (IsCurrentFrodoPersonal(profileId, status))
+                if (IsCurrentPersonalScope(profileId, status))
                     PostFrodoPersonalFilterState(profileId, status, built, new FrodoPersonalFilterCriteria(), false, built.Items.Count, built.Items.Count, built.Items.Count, 0, "");
                 DiagnosticLogger.Write($"Frodo personal local filter index ready; ProfileId={profileId}; Status={status}; Items={built.Items.Count}; Reason={reason}");
             }
@@ -2445,7 +2505,7 @@ internal sealed class HtmlMediaLibraryForm : Form
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or IOException or UnauthorizedAccessException or InvalidDataException or InvalidOperationException or JsonException)
         {
             DiagnosticLogger.Write($"Frodo personal local filter index failed; ProfileId={profileId}; Status={status}; Reason={reason}; Error={ex.Message}");
-            if (IsCurrentFrodoPersonal(profileId, status))
+            if (IsCurrentPersonalScope(profileId, status))
                 PostFrodoPersonalFilterState(profileId, status, null, new FrodoPersonalFilterCriteria(), false, 0, 0, 0, 0, ex.Message);
         }
     }

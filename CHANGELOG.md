@@ -815,3 +815,13 @@
 - Normal DOM paging remains the default; Frodo local `20 -> 40 -> 60...` paging is used only while a Frodo query session is active.
 - Review write/delete verification core files are intentionally untouched.
 - Architecture boundary: DOM owns Personal State; Frodo owns derived filtering capability and read-only metadata enrichment.
+
+## 2026-08-19 - Filter-only hotfix v3: restore advanced filters and public score overlay
+
+- Fixed a Phase 1 regression where ordinary DOM personal pages lost the Frodo full-library advanced filter panel.
+- `doubanShellLocalPersonalFilters` is now treated as a capability overlay and remains visible while the actual ordinary list is DOM-backed.
+- Ordinary DOM personal cards now receive a read-only metadata overlay by `SubjectId` from the existing complete Frodo Personal Index.
+- The overlay currently restores public Douban score and rating count only; it is explicitly forbidden from patching membership, status, myRating, comment, markedDate or card order.
+- If the local index is missing, DOM cards still render normally and index preparation runs independently.
+- Restored `HandleDoubanShellApplyPersonalFilterAsync` to the stable DOM implementation; default native personal filters can no longer reactivate Frodo Provider.
+- Frodo local paging remains active only for a real advanced-filter QuerySession.

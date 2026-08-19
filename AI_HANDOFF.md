@@ -243,3 +243,17 @@ Phase 1 已在真实账号 `collect` 列表确认 `Source=Frodo`，总数 1062 �
 - `FrodoPersonalIndexService`、QuerySession、完整 Store、facets、本地筛选分页继续保留。
 - 下一层公共字段采用 Metadata Overlay：`SubjectId -> SubjectMetadataCache -> Frodo metadata source`，只允许补豆瓣评分、评分人数等公共字段，禁止修改 Personal State。
 - Metadata Overlay 必须异步、批量、可失败降级，任何 miss/超时不得阻塞 DOM 普通页。
+
+# 2026-08-19：Filter-Only Hotfix v3
+
+Phase 1 回 DOM 后发现两个回归并已修复：
+
+1. 完整个人库高级筛选 UI 不属于“普通列表数据源”，因此不能跟 `_frodoPersonalActive` 一起关闭。DOM 普通页仍持续接收本地完整索引 capability state，并显示完整筛选入口。
+2. 豆瓣个人网页 DOM 不提供公共豆瓣评分。普通 DOM 卡片通过 `SubjectId` 从现有 Frodo Personal Index 只读补充 `score / ratingCount`。
+
+硬边界：
+
+- DOM：membership / status / myRating / comment / markedDate / order / paging 的普通页权威。
+- Frodo Index：高级筛选数据源 + 只读 Subject Metadata Overlay。
+- Overlay 禁止修改任何 Personal State。
+- 普通豆瓣网页原生筛选始终 DOM；清空高级筛选也回 DOM。

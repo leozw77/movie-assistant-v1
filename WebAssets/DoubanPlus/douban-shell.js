@@ -686,8 +686,11 @@
     host.replaceChildren();
     if (viewKind === "search") return;
     if (viewKind === "personal") {
-      if (value(snapshot?.source) === "frodo-local") {
-        renderPersonalLocalFilters(host, snapshot);
+      const capabilitySnapshot = value(snapshot?.source) === "frodo-local"
+        ? snapshot
+        : personalLocalFilterState;
+      if (capabilitySnapshot) {
+        renderPersonalLocalFilters(host, capabilitySnapshot);
         return;
       }
       const row = document.createElement("div");
@@ -1076,7 +1079,7 @@
       (messageViewKind === "personal" && ["frodo-api", "frodo-local-index"].includes(value(message?.dom?.source)))
     );
     render(message.items, { append: appendPaging });
-    const filtersForRender = messageViewKind === "personal" && value(message?.dom?.source) === "frodo-api" && personalLocalFilterState?.ready
+    const filtersForRender = messageViewKind === "personal" && personalLocalFilterState
       ? personalLocalFilterState
       : message.filters;
     renderFilters(filtersForRender);
