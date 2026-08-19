@@ -277,3 +277,25 @@ Metadata Overlay 不再按当前 collect/wish/do 分区读取评分。
 现在固定为：DOM SubjectId -> 扫描整个 Frodo Personal Cache -> 任一缓存副本有 Score 就覆盖。
 仅允许读取 Score / RatingCount；禁止使用缓存 Personal Status 修改 DOM 状态。
 手动完整重读使用 count=100；普通 UI 分页仍保持 20。
+
+# 2026-08-20：Frodo 全量缓存分页空洞修复
+
+实机缓存证明：
+
+- `collect total=1066`，实际仅 1055 items，却错误标记 `complete=true`。
+- 日志中短页缺口数量合计正好为 11：
+  - start=0: count=50 / raw=46 -> 缺4
+  - start=250: raw=49 -> 缺1
+  - start=400: raw=48 -> 缺2
+  - start=450: raw=48 -> 缺2
+  - start=650: raw=49 -> 缺1
+  - start=700: raw=49 -> 缺1
+- 《嗜血法医 第二季》(2299474) 与《嗜血法医 第八季》(20452294) 整条记录因此没有进入缓存。
+
+修复规则：
+
+1. 仅完整缓存扫描改为 `nextStart = responseStart + RawCount`。
+2. API `count` 只作诊断，不再作为全量缓存游标步长。
+3. 只有 `unique SubjectId count == stable total` 才允许提交快照。
+4. 任何不完整扫描都抛错并保留旧缓存。
+5. 普通 DOM、普通分页、高级筛选和 Metadata Overlay 不修改。

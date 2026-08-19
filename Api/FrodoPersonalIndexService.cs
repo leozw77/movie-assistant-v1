@@ -238,27 +238,77 @@ internal sealed class FrodoPersonalIndexService
             else if (page.Total != stableCloudTotal.Value)
                 throw new InvalidDataException($"Frodo 完整快照扫描期间 total 发生变化；Status={status}; Before={stableCloudTotal.Value}; Now={page.Total}。");
 
+            var beforePageUnique = items.Count;
             foreach (var item in page.Items)
             {
                 if (seen.Add(item.SubjectId)) items.Add(item);
             }
+            var addedUnique = items.Count - beforePageUnique;
 
             total = Math.Max(stableCloudTotal.Value, items.Count);
             progress?.Report(new FrodoPersonalIndexProgress(profileId, status, requestedStart, items.Count, total));
 
-            var cursorAdvance = page.Count > 0 ? page.Count : FullSnapshotPageSize;
+            // IMPORTANT: the Frodo response can advertise count=50 while the
+            // actual interests payload contains only 46/48/49 records.
+            // Advancing by the advertised Count creates permanent holes.
+            // Full-cache construction must advance by the payload actually
+            // received. Visible/provider pagination keeps its old fixed slots.
             var responseStart = Math.Max(page.Start, requestedStart);
+            var cursorAdvance = page.RawCount;
+            if (cursorAdvance <= 0)
+            {
+                if (page.Total <= 0 && items.Count == 0)
+                {
+                    complete = true;
+                    DiagnosticLogger.Write(
+                        $"Frodo personal full snapshot empty complete; Reason={buildReason}; Status={status}; RequestedStart={requestedStart}; Total={page.Total}");
+                    break;
+                }
+
+                throw new InvalidDataException(
+                    $"Frodo 完整快照在到达 total 前返回空页；Status={status}; Start={requestedStart}; Loaded={items.Count}; Total={total}。旧缓存保持不变。");
+            }
+
             nextStart = checked(responseStart + cursorAdvance);
+            var shortPayload = page.Count > 0 && page.RawCount < page.Count;
 
             DiagnosticLogger.Write(
-                $"Frodo personal full snapshot page; Reason={buildReason}; Status={status}; RequestedStart={requestedStart}; ResponseStart={page.Start}; ApiCount={page.Count}; Raw={page.RawCount}; Mapped={page.Items.Count}; Skipped={page.Skipped.Count}; Loaded={items.Count}; Total={total}; CursorAdvance={cursorAdvance}; NextStart={nextStart}");
+                $"Frodo personal full snapshot page; Reason={buildReason}; Status={status}; RequestedStart={requestedStart}; ResponseStart={page.Start}; ApiCount={page.Count}; Raw={page.RawCount}; Mapped={page.Items.Count}; AddedUnique={addedUnique}; Skipped={page.Skipped.Count}; Loaded={items.Count}; Total={total}; CursorAdvance={cursorAdvance}; NextStart={nextStart}; ShortPayload={shortPayload}");
 
-            if (page.Total <= 0 && page.RawCount == 0) { complete = true; break; }
-            if (total > 0 && nextStart >= total) { complete = true; break; }
+            if (shortPayload)
+            {
+                DiagnosticLogger.Write(
+                    $"Frodo personal full snapshot gap recovery; Status={status}; RequestedStart={requestedStart}; ApiCount={page.Count}; Raw={page.RawCount}; RecoveryNextStart={nextStart}");
+            }
+
+            // A snapshot is complete only when the number of UNIQUE mapped
+            // subjects reaches the stable cloud total. Cursor position alone
+            // is never sufficient evidence of completeness.
+            if (total > 0 && items.Count == total)
+            {
+                complete = true;
+                break;
+            }
+
+            if (total > 0 && items.Count > total)
+                throw new InvalidDataException(
+                    $"Frodo 完整快照唯一条目数超过 total；Status={status}; Loaded={items.Count}; Total={total}。拒绝提交。");
+
+            if (nextStart >= total && items.Count < total)
+                throw new InvalidDataException(
+                    $"Frodo 完整快照游标到达末尾但仍缺条目；Status={status}; Loaded={items.Count}; Total={total}; Missing={total - items.Count}。拒绝提交旧缓存保持不变。");
         }
 
         if (!complete)
             throw new InvalidDataException("Frodo 个人库完整快照请求次数超过保护上限。");
+
+        var expectedTotal = stableCloudTotal ?? 0;
+        if (items.Count != expectedTotal)
+            throw new InvalidDataException(
+                $"Frodo 完整快照完整性校验失败；Status={status}; Loaded={items.Count}; Total={expectedTotal}; Missing={Math.Max(0, expectedTotal - items.Count)}。拒绝提交。");
+
+        DiagnosticLogger.Write(
+            $"Frodo personal full snapshot integrity passed; Reason={buildReason}; Status={status}; UniqueItems={items.Count}; Total={expectedTotal}; ExactMatch=True");
 
         // Invariant: an already usable Store is never cleared before a full
         // snapshot is complete. Network scanning happens without the commit gate;

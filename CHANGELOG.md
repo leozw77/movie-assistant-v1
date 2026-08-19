@@ -843,3 +843,12 @@
 - Manual full cache rebuild uses `count=100`; normal visible/provider batching stays at 20.
 - Added `重读个人页缓存…` directly to the tray menu.
 - Added `RatingHits / RatingMisses / Scope=AllCachedStatuses` diagnostics.
+
+## 2026-08-20 - Frodo full-cache pagination gap fix
+
+- Fixed a confirmed full-snapshot hole bug where Frodo could report `count=50` while returning only 46/48/49 actual `interests`.
+- Full-cache cursor now advances by `RawCount` (actual payload length), not advertised API `Count`.
+- This change applies only to complete Personal Index reconstruction; ordinary visible/provider paging is untouched.
+- `complete=true` is now forbidden unless the number of unique cached SubjectIds exactly equals the stable cloud `total`.
+- If the scan reaches the end with missing subjects, the rebuild fails and the previous usable cache remains intact.
+- Added `ShortPayload`, `gap recovery`, and `integrity passed` diagnostics.
