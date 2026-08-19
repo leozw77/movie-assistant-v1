@@ -2147,83 +2147,37 @@ internal sealed class HtmlMediaLibraryForm : Form
 
     private async Task HandleDoubanShellPersonalStatusAsync(JsonElement root)
     {
+        DeactivateFrodoPersonal("personal-status-dom");
         var status = ReadString(root, "status").Trim();
         if (status is not ("collect" or "wish" or "do"))
             throw new InvalidDataException("豆瓣个人影片状态无效。");
 
-        var requestId = ReadString(root, "requestId");
-        var generation = Interlocked.Increment(ref _doubanSourceGeneration);
-        var candidateProfileId = "";
-        if (FrodoPersonalProvider.TryReadScope(_activeDoubanSourceNavigationUrl, out var activeProfileId, out _))
-            candidateProfileId = activeProfileId;
-        if (string.IsNullOrWhiteSpace(candidateProfileId) || !candidateProfileId.All(char.IsDigit))
-            candidateProfileId = _frodoPersonalIndex.CurrentProfileId;
-
-        // Local-first invariant: if a usable Store exists, no WebView/session/network
-        // check is allowed to delay a status switch. Disk cache loading is only needed
-        // when this profile is not already resident in memory.
-        if (!string.IsNullOrWhiteSpace(candidateProfileId) && candidateProfileId.All(char.IsDigit))
-        {
-            if (!_frodoPersonalIndex.CurrentProfileId.Equals(candidateProfileId, StringComparison.Ordinal))
-                await _frodoPersonalIndex.LoadCacheAsync(candidateProfileId).ConfigureAwait(true);
-
-            var localTargetUrl = $"https://movie.douban.com/people/{candidateProfileId}/{status}";
-            _activeDoubanPlusNavigationUrl = localTargetUrl;
-            _activeDoubanSourceNavigationUrl = localTargetUrl;
-            _activeDoubanPersonalPageUrl = localTargetUrl;
-            _doubanSourceNavigationCompleted = false;
-            _frodoPersonalActive = true;
-            _frodoPersonalQuery.Reset();
-            var localRequestId = string.IsNullOrWhiteSpace(requestId) ? $"personal-{status}-{generation}" : requestId;
-            PostShellMessage(new { type = "doubanShellPersonalState", busy = true, personalStatus = status, operation = "personal-status" });
-
-            if (await TryRenderFrodoPersonalStoreAsync(candidateProfileId, status, localRequestId, generation, "personal-status-local").ConfigureAwait(true))
-            {
-                _ = SyncFrodoPersonalStoreInBackgroundAsync(candidateProfileId, status, "personal-status");
-                DiagnosticLogger.Write($"Unified Shell personal status loaded; Source=FrodoLocalStore; ProfileId={candidateProfileId}; Status={status}; Url={localTargetUrl}; Generation={generation}");
-                return;
-            }
-        }
-
-        // A genuinely missing status needs the authenticated profile bootstrap path.
         await WaitForDoubanRecoveryAsync().ConfigureAwait(true);
         var session = await _workerConnector.VerifySessionAsync().ConfigureAwait(true);
-        var profileId = session.ProfileId?.Trim() ?? "";
-        if (!session.IsLoggedIn || !System.Text.RegularExpressions.Regex.IsMatch(profileId, "^\\d+$", System.Text.RegularExpressions.RegexOptions.CultureInvariant))
+        if (!session.IsLoggedIn || !System.Text.RegularExpressions.Regex.IsMatch(session.ProfileId ?? "", "^\\d+$", System.Text.RegularExpressions.RegexOptions.CultureInvariant))
             throw new InvalidOperationException("豆瓣尚未登录，请先点击“豆瓣登录”。");
 
-        var targetUrl = $"https://movie.douban.com/people/{profileId}/{status}";
-        var resolvedRequestId = string.IsNullOrWhiteSpace(requestId) ? $"personal-{status}-{generation}" : requestId;
+        var targetUrl = $"https://movie.douban.com/people/{session.ProfileId}/{status}";
+        var requestId = ReadString(root, "requestId");
         PostShellMessage(new { type = "doubanShellPersonalState", busy = true, personalStatus = status, operation = "personal-status" });
+
+        if (AreEquivalentDoubanNavigationUrls(_activeDoubanSourceNavigationUrl, targetUrl) && _doubanSourceNavigationCompleted)
+        {
+            var generation = Interlocked.Increment(ref _doubanSourceGeneration);
+            var mode = DoubanSourceModeForUrl(targetUrl);
+            var page = await ReadDoubanSourcePageAsync(string.IsNullOrWhiteSpace(requestId) ? $"{mode}-{generation}" : requestId, generation).ConfigureAwait(true);
+            await ForwardDoubanSourceResultToShellAsync(page, "personal-status-noop").ConfigureAwait(true);
+            DiagnosticLogger.Write($"Unified Shell personal status no-op; Status={status}; Url={targetUrl}; Generation={generation}");
+            return;
+        }
+
         _activeDoubanPlusNavigationUrl = targetUrl;
         _activeDoubanSourceNavigationUrl = targetUrl;
         _activeDoubanPersonalPageUrl = targetUrl;
         _doubanSourceNavigationCompleted = false;
-        _frodoPersonalActive = true;
-        _frodoPersonalQuery.Reset();
-
-        await _frodoPersonalIndex.LoadCacheAsync(profileId).ConfigureAwait(true);
-        if (await TryRenderFrodoPersonalStoreAsync(profileId, status, resolvedRequestId, generation, "personal-status-local-cache").ConfigureAwait(true))
-        {
-            _ = SyncFrodoPersonalStoreInBackgroundAsync(profileId, status, "personal-status-cache");
-            DiagnosticLogger.Write($"Unified Shell personal status loaded; Source=FrodoLocalStore; ProfileId={profileId}; Status={status}; Url={targetUrl}; Generation={generation}");
-            return;
-        }
-
-        // First install / genuinely missing status only: show the first Frodo page
-        // immediately, then bootstrap the complete Store in the background.
-        try
-        {
-            var page = await _frodoPersonalProvider.LoadInitialAsync(profileId, status, targetUrl, resolvedRequestId, generation).ConfigureAwait(true);
-            await ForwardDoubanSourceResultToShellAsync(page, "personal-status").ConfigureAwait(true);
-            _ = EnsureFrodoPersonalIndexAsync(profileId, status, "personal-status-bootstrap");
-            DiagnosticLogger.Write($"Unified Shell personal status loaded; Source=FrodoBootstrap; ProfileId={profileId}; Status={status}; Url={targetUrl}; Generation={generation}");
-        }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidDataException or InvalidOperationException)
-        {
-            DiagnosticLogger.Write($"Unified Shell personal Frodo failed; ProfileId={profileId}; Status={status}; Url={targetUrl}; Fallback=DOM; Error={ex.Message}");
-            NavigatePersonalDomFallback(targetUrl, resolvedRequestId, "personal-status-fallback", "frodo-initial-failed");
-        }
+        Interlocked.Increment(ref _doubanSourceNavigationAttempt);
+        _doubanSourceView.CoreWebView2!.Navigate(targetUrl);
+        DiagnosticLogger.Write($"Unified Shell personal status navigation; ProfileId={session.ProfileId}; Status={status}; Url={targetUrl}");
     }
     private async Task HandleDoubanShellApplyPersonalFilterAsync(JsonElement root)
     {
@@ -2562,9 +2516,9 @@ internal sealed class HtmlMediaLibraryForm : Form
     }
     private async Task HandleDoubanShellApplyLocalPersonalFilterAsync(JsonElement root)
     {
-        if (!_frodoPersonalActive ||
-            !FrodoPersonalProvider.TryReadScope(_activeDoubanSourceNavigationUrl, out var profileId, out var status))
-            throw new InvalidOperationException("当前个人页不在 Frodo 默认数据源，无法应用完整库本地筛选。");
+        if (!FrodoPersonalProvider.TryReadScope(_activeDoubanSourceNavigationUrl, out var profileId, out var status))
+            throw new InvalidOperationException("当前个人页不是可识别的豆瓣个人状态页，无法应用完整库筛选。");
+        _frodoPersonalActive = true;
         if (!_frodoPersonalIndex.TryGetStatus(profileId, status, out var snapshot))
         {
             _ = EnsureFrodoPersonalIndexAsync(profileId, status, "filter-request-index-missing");
@@ -2572,6 +2526,28 @@ internal sealed class HtmlMediaLibraryForm : Form
         }
 
         var criteria = ReadFrodoPersonalFilterCriteria(root);
+        var isDefaultCriteria =
+            string.IsNullOrWhiteSpace(criteria.ContentType) &&
+            !criteria.PlayableOnly &&
+            criteria.ScoreMin is null &&
+            criteria.ScoreMax is null &&
+            criteria.MyRating is null &&
+            !criteria.Unrated &&
+            string.IsNullOrWhiteSpace(criteria.Period) &&
+            string.IsNullOrWhiteSpace(criteria.Genre) &&
+            string.IsNullOrWhiteSpace(criteria.Country) &&
+            string.Equals(criteria.Sort, "marked-desc", StringComparison.Ordinal);
+        if (isDefaultCriteria)
+        {
+            var clearGeneration = Interlocked.Increment(ref _doubanSourceGeneration);
+            var clearRequestId = ReadString(root, "requestId");
+            if (string.IsNullOrWhiteSpace(clearRequestId))
+                clearRequestId = $"personal-filter-clear-{clearGeneration}";
+            var clearTargetUrl = $"https://movie.douban.com/people/{profileId}/{status}";
+            NavigatePersonalDomFallback(clearTargetUrl, clearRequestId, "personal-filter-clear", "advanced-filter-cleared");
+            DiagnosticLogger.Write($"Frodo personal filter cleared; ReturnSource=DOM; ProfileId={profileId}; Status={status}; Generation={clearGeneration}");
+            return;
+        }
         var requestId = ReadString(root, "requestId");
         var generation = Interlocked.Increment(ref _doubanSourceGeneration);
         var resolvedRequestId = string.IsNullOrWhiteSpace(requestId) ? $"personal-local-filter-{generation}" : requestId;

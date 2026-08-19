@@ -230,3 +230,16 @@ Phase 1 已在真实账号 `collect` 列表确认 `Source=Frodo`，总数 1062 �
 ## 交接结论
 
 当前 v1.0.0 搜索基线作为正常可用起点结束；下一次工作的入口是 AI 影评问题，不是搜索功能回归。完成 AI 影评前，先补充真实详情页内容读取证据和可回读的写入闭环。
+
+# 2026-08-19：路线 B / Frodo Filter-Only Phase 1
+
+最终权威关系：
+
+- 普通个人页 `collect / wish / do`：豆瓣官方网页 DOM 是 Personal State 唯一权威。
+- Frodo 不再决定普通列表成员、排序、状态、我的评分、短评或标记日期。
+- 只有启用完整个人库高级筛选时才进入 Frodo Filter Mode。
+- 清空全部高级筛选条件后立即退出 Frodo Filter Mode，回到当前 status 的 DOM 页面。
+- `FrodoPersonalProvider` 暂不删除，但退出普通个人页运行链。
+- `FrodoPersonalIndexService`、QuerySession、完整 Store、facets、本地筛选分页继续保留。
+- 下一层公共字段采用 Metadata Overlay：`SubjectId -> SubjectMetadataCache -> Frodo metadata source`，只允许补豆瓣评分、评分人数等公共字段，禁止修改 Personal State。
+- Metadata Overlay 必须异步、批量、可失败降级，任何 miss/超时不得阻塞 DOM 普通页。

@@ -804,3 +804,14 @@
 - 删除搜索页无限滚动实验及其自动分页 fetch、iframe fallback、sentinel 和自动追加逻辑。
 - 选电影页 `/explore` 适配不属于 v1.0.0，留待独立 ExplorePageAdapter 阶段。
 - 新的实时内容 AI UI 不属于 v1.0.0；正式豆瓣评价写入/删除/回读后端保留。
+
+## 2026-08-19 - Frodo filter-only phase 1 (DOM ordinary personal pages)
+
+- Ordinary `collect / wish / do` navigation is restored to the stable DOM / Douban Plus source path at method level.
+- Switching ordinary personal status explicitly deactivates Frodo personal-query mode.
+- Full-library advanced filtering remains backed by `FrodoPersonalIndexService` and `FrodoPersonalQuerySession`.
+- Advanced filtering can be entered from a normal DOM personal page.
+- Clearing all advanced criteria exits Frodo filter mode and returns to the current status DOM page.
+- Normal DOM paging remains the default; Frodo local `20 -> 40 -> 60...` paging is used only while a Frodo query session is active.
+- Review write/delete verification core files are intentionally untouched.
+- Architecture boundary: DOM owns Personal State; Frodo owns derived filtering capability and read-only metadata enrichment.
