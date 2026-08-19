@@ -73,6 +73,21 @@ button { font: inherit; }
 .qb-shell-filter-option.qb-active { color: #fff; border-color: #6b9bd0; background: #2b4057; }
 .qb-shell-filter-button:disabled,
 .qb-shell-filter-option:disabled { cursor: wait; opacity: .55; }
+.qb-shell-filter-select {
+  min-width: 112px;
+  max-width: 180px;
+  border: 1px solid #3a4859;
+  border-radius: 999px;
+  padding: 5px 28px 5px 10px;
+  color: #d9e2ee;
+  background: #202a36;
+  font: inherit;
+  outline: none;
+  cursor: pointer;
+}
+.qb-shell-filter-select:hover:not(:disabled),
+.qb-shell-filter-select:focus { border-color: #6b9bd0; background: #2b4057; }
+.qb-shell-filter-select:disabled { cursor: wait; opacity: .55; }
 .qb-shell-filter-options { display: flex; flex: 1 0 100%; flex-wrap: wrap; gap: 8px; padding: 0; }
 .qb-shell-filter-hint { color: #7e8b9b; font-size: 12px; }
 

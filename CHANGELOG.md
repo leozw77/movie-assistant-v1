@@ -1,3 +1,13 @@
+# Frodo 个人库筛选 Step 2：完整库筛选 UI 接入 - 2026-08-19
+
+- 默认个人页仍先走现有 `FrodoPersonalProvider` 快速显示首屏，不等待完整索引。
+- 后台加载/建立 `FrodoPersonalIndexService` 当前状态完整索引；建立期间 Shell 明确显示进度，不把已加载前 20/60 部误当成完整筛选范围。
+- 索引完成后个人页新增本地筛选控件：影片类型、我的 1-5 星/未评分、年份、地区、题材，以及最近标记/我的评分/豆瓣评分/年份/标题排序。
+- 新增 `FrodoPersonalQuerySession`，完整库筛选结果仍按 20 部分页送给 Shell，继续复用现有 IntersectionObserver 无限滚动，不一次向 WebView 灌入上千条记录。
+- 本地筛选分页使用 `dom.source=frodo-local-index`，只 append 新的 20 部卡片；v13.1 已验证的 `frodo-api` append 行为保持不变。
+- `可播放` / `有视频` 仍保留为“网页条件”，点击后继续走现有 DOM fallback，因为目前没有可靠 Frodo 等价字段。
+- 本轮不修改详情 API、评价写入/删除/官方回读链路，也不改变已实机验证的 Frodo 固定 0/20/40... Provider 游标算法。
+
 # Frodo 个人库筛选 Step 1：日志瘦身 + 全库索引基础 - 2026-08-19
 
 - 诊断日志不再持续写 `Unified Shell data posted` 的完整累计 Payload，改为 RequestId / Generation / Source / Operation / Status / Items / Bytes / Error 摘要。

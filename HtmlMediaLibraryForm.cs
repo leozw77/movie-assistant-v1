@@ -65,6 +65,10 @@ internal sealed class HtmlMediaLibraryForm : Form
     private DoubanConnectorRouter _connector = null!;
     private readonly WorkerJobQueue _workerQueue;
     private readonly FrodoPersonalProvider _frodoPersonalProvider;
+    private readonly FrodoPersonalIndexService _frodoPersonalIndex;
+    private readonly FrodoPersonalQuerySession _frodoPersonalQuery = new();
+    private readonly object _frodoPersonalIndexBuildGate = new();
+    private readonly HashSet<string> _frodoPersonalIndexBuilds = new(StringComparer.Ordinal);
     private bool _frodoPersonalActive;
     private bool _initialized;
     private bool _closing;
@@ -120,7 +124,9 @@ internal sealed class HtmlMediaLibraryForm : Form
         _initialOpenTarget = initialOpenTarget;
         _searchCache = new();
         _environments = new WebView2EnvironmentProvider(_store.DataDirectory);
-        _frodoPersonalProvider = new FrodoPersonalProvider(FrodoOptions.CreateDefault());
+        var frodoOptions = FrodoOptions.CreateDefault();
+        _frodoPersonalProvider = new FrodoPersonalProvider(frodoOptions);
+        _frodoPersonalIndex = new FrodoPersonalIndexService(frodoOptions, _store.DataDirectory);
         CreateDoubanConnectors();
         _workerQueue = new WorkerJobQueue(this);
 
@@ -2158,10 +2164,12 @@ internal sealed class HtmlMediaLibraryForm : Form
         _activeDoubanPersonalPageUrl = targetUrl;
         _doubanSourceNavigationCompleted = false;
         _frodoPersonalActive = true;
+        _frodoPersonalQuery.Reset();
         try
         {
             var page = await _frodoPersonalProvider.LoadInitialAsync(profileId, status, targetUrl, resolvedRequestId, generation).ConfigureAwait(true);
             await ForwardDoubanSourceResultToShellAsync(page, "personal-status").ConfigureAwait(true);
+            _ = EnsureFrodoPersonalIndexAsync(profileId, status, "personal-status");
             DiagnosticLogger.Write($"Unified Shell personal status loaded; Source=Frodo; ProfileId={profileId}; Status={status}; Url={targetUrl}; Generation={generation}");
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidDataException or InvalidOperationException)
@@ -2180,6 +2188,7 @@ internal sealed class HtmlMediaLibraryForm : Form
 
         var generation = Interlocked.Increment(ref _doubanSourceGeneration);
         var resolvedRequestId = string.IsNullOrWhiteSpace(requestId) ? $"personal-filter-{generation}" : requestId;
+        _frodoPersonalQuery.Reset();
         PostShellMessage(new { type = "doubanShellOperationState", busy = true, operation = "personal-filter" });
 
         if (FrodoPersonalProvider.TryReadScope(targetUrl, out var profileId, out var status) &&
@@ -2194,6 +2203,7 @@ internal sealed class HtmlMediaLibraryForm : Form
             {
                 var page = await _frodoPersonalProvider.LoadInitialAsync(profileId, status, targetUrl, resolvedRequestId, generation).ConfigureAwait(true);
                 await ForwardDoubanSourceResultToShellAsync(page, "personal-filter").ConfigureAwait(true);
+                _ = EnsureFrodoPersonalIndexAsync(profileId, status, "personal-filter-default");
                 DiagnosticLogger.Write($"Unified Shell personal filter returned to default; Source=Frodo; ProfileId={profileId}; Status={status}; Url={targetUrl}; Generation={generation}");
                 return;
             }
@@ -2212,6 +2222,7 @@ internal sealed class HtmlMediaLibraryForm : Form
         if (_frodoPersonalActive)
             DiagnosticLogger.Write($"Unified Shell Frodo personal deactivated; Reason={reason}; Url={_activeDoubanSourceNavigationUrl}");
         _frodoPersonalActive = false;
+        _frodoPersonalQuery.Reset();
         _frodoPersonalProvider.Reset();
     }
 
@@ -2232,6 +2243,7 @@ internal sealed class HtmlMediaLibraryForm : Form
     private async Task RefreshFrodoPersonalAsync(string reason)
     {
         if (!_frodoPersonalActive || string.IsNullOrWhiteSpace(_frodoPersonalProvider.CurrentProfileId) || string.IsNullOrWhiteSpace(_frodoPersonalProvider.CurrentStatus)) return;
+        _frodoPersonalQuery.Reset();
         var generation = Interlocked.Increment(ref _doubanSourceGeneration);
         var requestId = $"personal-refresh-{generation}";
         var targetUrl = _frodoPersonalProvider.CurrentUrl;
@@ -2245,6 +2257,7 @@ internal sealed class HtmlMediaLibraryForm : Form
                 requestId,
                 generation).ConfigureAwait(true);
             await ForwardDoubanSourceResultToShellAsync(page, "personal-refresh").ConfigureAwait(true);
+            _ = EnsureFrodoPersonalIndexAsync(_frodoPersonalProvider.CurrentProfileId, _frodoPersonalProvider.CurrentStatus, "personal-refresh");
             DiagnosticLogger.Write($"Unified Shell personal refresh completed; Source=Frodo; Reason={reason}; Url={targetUrl}; Generation={generation}");
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidDataException or InvalidOperationException)
@@ -2296,6 +2309,208 @@ internal sealed class HtmlMediaLibraryForm : Form
         return result;
     }
 
+    private bool IsCurrentFrodoPersonal(string profileId, string status) =>
+        !_closing && _frodoPersonalActive &&
+        _frodoPersonalProvider.CurrentProfileId.Equals(profileId, StringComparison.Ordinal) &&
+        _frodoPersonalProvider.CurrentStatus.Equals(status, StringComparison.Ordinal) &&
+        _frodoPersonalProvider.IsActiveFor(_activeDoubanSourceNavigationUrl);
+
+    private async Task EnsureFrodoPersonalIndexAsync(string profileId, string status, string reason)
+    {
+        try
+        {
+            await _frodoPersonalIndex.LoadCacheAsync(profileId).ConfigureAwait(true);
+            if (_frodoPersonalIndex.TryGetStatus(profileId, status, out var cached))
+            {
+                if (IsCurrentFrodoPersonal(profileId, status))
+                    PostFrodoPersonalFilterState(profileId, status, cached, new FrodoPersonalFilterCriteria(), false, cached.Items.Count, cached.Items.Count, cached.Items.Count, 0, "");
+                return;
+            }
+
+            var key = $"{profileId}:{status}";
+            lock (_frodoPersonalIndexBuildGate)
+            {
+                if (!_frodoPersonalIndexBuilds.Add(key)) return;
+            }
+
+            try
+            {
+                if (IsCurrentFrodoPersonal(profileId, status))
+                    PostFrodoPersonalFilterState(profileId, status, null, new FrodoPersonalFilterCriteria(), true, 0, 0, 0, 0, "");
+
+                var progress = new Progress<FrodoPersonalIndexProgress>(value =>
+                {
+                    if (!IsCurrentFrodoPersonal(profileId, status)) return;
+                    PostFrodoPersonalFilterState(profileId, status, null, new FrodoPersonalFilterCriteria(), true, value.Loaded, value.Total, 0, 0, "");
+                });
+                var built = await _frodoPersonalIndex.BuildStatusAsync(profileId, status, progress).ConfigureAwait(true);
+                if (IsCurrentFrodoPersonal(profileId, status))
+                    PostFrodoPersonalFilterState(profileId, status, built, new FrodoPersonalFilterCriteria(), false, built.Items.Count, built.Items.Count, built.Items.Count, 0, "");
+                DiagnosticLogger.Write($"Frodo personal local filter index ready; ProfileId={profileId}; Status={status}; Items={built.Items.Count}; Reason={reason}");
+            }
+            finally
+            {
+                lock (_frodoPersonalIndexBuildGate) _frodoPersonalIndexBuilds.Remove(key);
+            }
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or IOException or UnauthorizedAccessException or InvalidDataException or InvalidOperationException or JsonException)
+        {
+            DiagnosticLogger.Write($"Frodo personal local filter index failed; ProfileId={profileId}; Status={status}; Reason={reason}; Error={ex.Message}");
+            if (IsCurrentFrodoPersonal(profileId, status))
+                PostFrodoPersonalFilterState(profileId, status, null, new FrodoPersonalFilterCriteria(), false, 0, 0, 0, 0, ex.Message);
+        }
+    }
+
+    private void PostFrodoPersonalFilterState(
+        string profileId,
+        string status,
+        FrodoPersonalIndexStatus? snapshot,
+        FrodoPersonalFilterCriteria criteria,
+        bool building,
+        int loaded,
+        int sourceTotal,
+        int matched,
+        int shown,
+        string error)
+    {
+        PostShellMessage(new
+        {
+            type = "doubanShellLocalPersonalFilters",
+            personalStatus = status,
+            filters = BuildFrodoPersonalFilterState(profileId, status, snapshot, criteria, building, loaded, sourceTotal, matched, shown, error)
+        });
+    }
+
+    private static object BuildFrodoPersonalFilterState(
+        string profileId,
+        string status,
+        FrodoPersonalIndexStatus? snapshot,
+        FrodoPersonalFilterCriteria criteria,
+        bool building,
+        int loaded,
+        int sourceTotal,
+        int matched,
+        int shown,
+        string error)
+    {
+        var baseUrl = $"https://movie.douban.com/people/{profileId}/{status}";
+        return new
+        {
+            source = "frodo-local",
+            ready = snapshot is not null,
+            building,
+            loaded,
+            sourceTotal,
+            total = snapshot?.Items.Count ?? 0,
+            matched,
+            shown,
+            error,
+            criteria = new
+            {
+                contentType = criteria.ContentType,
+                myRating = criteria.MyRating,
+                unrated = criteria.Unrated,
+                year = criteria.Year,
+                genre = criteria.Genre,
+                country = criteria.Country,
+                sort = criteria.Sort
+            },
+            facets = new
+            {
+                years = snapshot?.Years ?? new List<string>(),
+                genres = snapshot?.Genres ?? new List<string>(),
+                countries = snapshot?.Countries ?? new List<string>()
+            },
+            webFilters = new object[]
+            {
+                new { label = "可播放", url = baseUrl + "?filter=schedule&start=0&mode=grid" },
+                new { label = "有视频", url = baseUrl + "?filter=video&start=0&mode=grid" }
+            }
+        };
+    }
+
+    private async Task HandleDoubanShellApplyLocalPersonalFilterAsync(JsonElement root)
+    {
+        if (!_frodoPersonalActive || !_frodoPersonalProvider.IsActiveFor(_activeDoubanSourceNavigationUrl))
+            throw new InvalidOperationException("当前个人页不在 Frodo 默认数据源，无法应用完整库本地筛选。");
+
+        var profileId = _frodoPersonalProvider.CurrentProfileId;
+        var status = _frodoPersonalProvider.CurrentStatus;
+        if (!_frodoPersonalIndex.TryGetStatus(profileId, status, out var snapshot))
+        {
+            _ = EnsureFrodoPersonalIndexAsync(profileId, status, "filter-request-index-missing");
+            throw new InvalidOperationException("完整个人库筛选索引仍在建立，请稍后再试。");
+        }
+
+        var criteria = ReadFrodoPersonalFilterCriteria(root);
+        var requestId = ReadString(root, "requestId");
+        var generation = Interlocked.Increment(ref _doubanSourceGeneration);
+        var resolvedRequestId = string.IsNullOrWhiteSpace(requestId) ? $"personal-local-filter-{generation}" : requestId;
+        PostShellMessage(new { type = "doubanShellOperationState", busy = true, operation = "personal-local-filter" });
+
+        var result = _frodoPersonalIndex.Query(profileId, status, criteria);
+        _frodoPersonalQuery.Start(profileId, status, criteria, result);
+        var firstPage = _frodoPersonalQuery.TakeInitial();
+        var page = BuildFrodoPersonalQueryPayload(resolvedRequestId, generation, firstPage, snapshot);
+        await ForwardDoubanSourceResultToShellAsync(page, "personal-local-filter").ConfigureAwait(true);
+        DiagnosticLogger.Write($"Frodo personal local filter applied; ProfileId={profileId}; Status={status}; Matched={result.Count}; Shown={_frodoPersonalQuery.Shown}; ContentType={criteria.ContentType}; Rating={criteria.MyRating?.ToString() ?? (criteria.Unrated ? "unrated" : "all")}; Year={criteria.Year}; Genre={criteria.Genre}; Country={criteria.Country}; Sort={criteria.Sort}");
+    }
+
+    private static FrodoPersonalFilterCriteria ReadFrodoPersonalFilterCriteria(JsonElement root)
+    {
+        if (!root.TryGetProperty("criteria", out var criteria) || criteria.ValueKind != JsonValueKind.Object)
+            return new FrodoPersonalFilterCriteria();
+
+        var contentType = ReadString(criteria, "contentType").Trim().ToLowerInvariant();
+        if (contentType is not ("" or "movie" or "tv")) throw new InvalidDataException("影片类型筛选无效。");
+        var myRating = ReadNullableInt(criteria, "myRating", 1, 5);
+        var unrated = ReadBool(criteria, "unrated");
+        if (unrated) myRating = null;
+        var year = ReadBoundedString(criteria, "year", 12);
+        var genre = ReadBoundedString(criteria, "genre", 80);
+        var country = ReadBoundedString(criteria, "country", 80);
+        var sort = ReadString(criteria, "sort").Trim();
+        if (string.IsNullOrWhiteSpace(sort)) sort = "marked-desc";
+        if (sort is not ("marked-desc" or "my-rating-desc" or "douban-score-desc" or "year-desc" or "title-asc"))
+            throw new InvalidDataException("个人库排序方式无效。");
+        return new FrodoPersonalFilterCriteria(contentType, myRating, unrated, year, genre, country, sort);
+    }
+
+    private JsonElement BuildFrodoPersonalQueryPayload(
+        string requestId,
+        int generation,
+        IReadOnlyList<FrodoPersonalItem> items,
+        FrodoPersonalIndexStatus snapshot)
+    {
+        var filters = BuildFrodoPersonalFilterState(
+            _frodoPersonalQuery.ProfileId,
+            _frodoPersonalQuery.Status,
+            snapshot,
+            _frodoPersonalQuery.Criteria,
+            false,
+            snapshot.Items.Count,
+            snapshot.Items.Count,
+            _frodoPersonalQuery.Total,
+            _frodoPersonalQuery.Shown,
+            "");
+        return JsonSerializer.SerializeToElement(new
+        {
+            requestId,
+            mode = $"personal-{_frodoPersonalQuery.Status}",
+            generation,
+            url = _activeDoubanSourceNavigationUrl,
+            contentType = "personal",
+            personalStatus = _frodoPersonalQuery.Status,
+            profileId = _frodoPersonalQuery.ProfileId,
+            pageReady = true,
+            items,
+            paging = new { hasMore = _frodoPersonalQuery.HasMore, label = "加载更多" },
+            filters,
+            signature = string.Join("|", items.Select(item => $"{item.SubjectId}:{item.Title}")),
+            dom = new { gridItemCount = 0, paginator = _frodoPersonalQuery.HasMore, ready = true, source = "frodo-local-index", total = _frodoPersonalQuery.Total, nextStart = _frodoPersonalQuery.Shown },
+            error = ""
+        }, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+    }
     private async Task HandleDoubanShellFilterGroupAsync(JsonElement root)
     {
         var title = RequiredString(root, "title", 120);
@@ -2355,6 +2570,17 @@ internal sealed class HtmlMediaLibraryForm : Form
         var requestId = ReadString(root, "requestId");
         var generation = Interlocked.Increment(ref _doubanSourceGeneration);
         PostShellMessage(new { type = "doubanShellOperationState", busy = true, operation = "load-more" });
+
+        if (_frodoPersonalQuery.IsActiveFor(_frodoPersonalProvider.CurrentProfileId, _frodoPersonalProvider.CurrentStatus) &&
+            _frodoPersonalIndex.TryGetStatus(_frodoPersonalQuery.ProfileId, _frodoPersonalQuery.Status, out var localSnapshot))
+        {
+            var localItems = _frodoPersonalQuery.TakeNext();
+            var localPage = BuildFrodoPersonalQueryPayload(requestId, generation, localItems, localSnapshot);
+            await ForwardDoubanSourceResultToShellAsync(localPage, "load-more").ConfigureAwait(true);
+            PostShellMessage(new { type = "doubanShellOperationState", busy = false, operation = "load-more" });
+            DiagnosticLogger.Write($"Unified Shell Source load-more completed; Source=FrodoLocalIndex; RequestId={requestId}; Generation={generation}; Shown={_frodoPersonalQuery.Shown}; Total={_frodoPersonalQuery.Total}");
+            return;
+        }
 
         if (_frodoPersonalActive && _frodoPersonalProvider.IsActiveFor(_activeDoubanSourceNavigationUrl))
         {
@@ -2563,6 +2789,11 @@ internal sealed class HtmlMediaLibraryForm : Form
             {
                 _activeShellViewKind = "search";
                 await HandleDoubanShellSearchPageAsync(root).ConfigureAwait(true);
+                return;
+            }
+            if (messageType == "doubanShellApplyLocalPersonalFilter")
+            {
+                await HandleDoubanShellApplyLocalPersonalFilterAsync(root).ConfigureAwait(true);
                 return;
             }
             if (messageType == "doubanShellApplyPersonalFilter")

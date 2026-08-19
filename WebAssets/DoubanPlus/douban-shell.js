@@ -26,7 +26,17 @@
   let pendingPaging = null;
   let pagingError = false;
   let resetViewportOnNextData = false;
+  let personalLocalFilterState = null;
   const personalStatusMeta = { collect: "看过", wish: "想看", do: "在看" };
+  const defaultPersonalLocalCriteria = () => ({
+    contentType: "",
+    myRating: null,
+    unrated: false,
+    year: "",
+    genre: "",
+    country: "",
+    sort: "marked-desc"
+  });
 
   const isPagingOperation = operation => operation === "load-more" || operation === "load-more-noop";
 
@@ -92,7 +102,9 @@
     shellRoot?.classList.add("qb-personal-view");
     if (shellRoot) shellRoot.dataset.viewKind = viewKind;
     grid()?.classList.remove("qb-watchlist-grid", "qb-watchlist-shell-grid");
-    personalStatus = Object.prototype.hasOwnProperty.call(personalStatusMeta, statusValue) ? statusValue : "collect";
+    const nextPersonalStatus = Object.prototype.hasOwnProperty.call(personalStatusMeta, statusValue) ? statusValue : "collect";
+    if (nextPersonalStatus !== personalStatus) personalLocalFilterState = null;
+    personalStatus = nextPersonalStatus;
     const heading = document.getElementById("qb-douban-shell-heading");
     const description = document.getElementById("qb-douban-shell-description");
     if (heading) heading.textContent = `个人影片 · ${personalStatusLabel()}`;
@@ -319,6 +331,140 @@
     host.append(row);
   };
 
+  const makeFilterSelect = (options, selectedValue, onChange) => {
+    const select = document.createElement("select");
+    select.className = "qb-shell-filter-select";
+    (Array.isArray(options) ? options : []).forEach(option => {
+      const item = document.createElement("option");
+      item.value = value(option?.value);
+      item.textContent = value(option?.label);
+      item.selected = item.value === value(selectedValue);
+      select.append(item);
+    });
+    select.disabled = busy;
+    select.addEventListener("change", () => onChange(select.value));
+    return select;
+  };
+
+  const applyLocalPersonalFilter = patch => {
+    if (busy || !personalLocalFilterState?.ready) return;
+    const current = { ...defaultPersonalLocalCriteria(), ...(personalLocalFilterState.criteria || {}) };
+    const next = { ...current, ...patch };
+    if (patch.unrated === true) next.myRating = null;
+    if (Object.prototype.hasOwnProperty.call(patch, "myRating") && patch.myRating !== null) next.unrated = false;
+    personalLocalFilterState = { ...personalLocalFilterState, criteria: next };
+    beginListSwitch();
+    setBusy(true);
+    setStatus("正在筛选完整个人库…");
+    post("doubanShellApplyLocalPersonalFilter", {
+      requestId: `shell-personal-local-${Date.now()}`,
+      criteria: next
+    });
+  };
+
+  const renderPersonalLocalFilters = (host, snapshot) => {
+    personalLocalFilterState = snapshot && typeof snapshot === "object" ? snapshot : null;
+    const criteria = { ...defaultPersonalLocalCriteria(), ...(personalLocalFilterState?.criteria || {}) };
+    const addButtonRow = (title, options, selected, apply) => {
+      const row = document.createElement("div");
+      row.className = "qb-shell-filter-row qb-shell-personal-filter-row";
+      const label = document.createElement("span");
+      label.className = "qb-shell-filter-label";
+      label.textContent = title;
+      row.append(label);
+      options.forEach(option => {
+        row.append(makeFilterButton(option.label, option.value === selected, () => apply(option.value)));
+      });
+      host.append(row);
+    };
+    const addSelectRow = (title, values, selected, allLabel, key) => {
+      const row = document.createElement("div");
+      row.className = "qb-shell-filter-row qb-shell-personal-filter-row";
+      const label = document.createElement("span");
+      label.className = "qb-shell-filter-label";
+      label.textContent = title;
+      row.append(label);
+      const options = [{ label: allLabel, value: "" }, ...(Array.isArray(values) ? values : []).map(item => ({ label: value(item), value: value(item) }))];
+      row.append(makeFilterSelect(options, selected, selectedValue => applyLocalPersonalFilter({ [key]: selectedValue })));
+      host.append(row);
+    };
+    const addWebFilterRow = () => {
+      const webFilters = Array.isArray(personalLocalFilterState?.webFilters) ? personalLocalFilterState.webFilters : [];
+      if (!webFilters.length) return;
+      const row = document.createElement("div");
+      row.className = "qb-shell-filter-row qb-shell-personal-filter-row";
+      const label = document.createElement("span");
+      label.className = "qb-shell-filter-label";
+      label.textContent = "网页条件";
+      row.append(label);
+      webFilters.forEach(option => {
+        const optionLabel = value(option?.label);
+        const optionUrl = value(option?.url);
+        if (!optionLabel || !/^https:\/\/movie\.douban\.com\/people\/\d+\/(?:collect|wish|do)(?:\?|$)/u.test(optionUrl)) return;
+        row.append(makeFilterButton(optionLabel, false, () => {
+          if (busy) return;
+          beginListSwitch();
+          setBusy(true);
+          setStatus(`正在应用豆瓣网页条件：${optionLabel}`);
+          post("doubanShellApplyPersonalFilter", { requestId: `shell-personal-web-${Date.now()}`, url: optionUrl });
+        }));
+      });
+      host.append(row);
+    };
+
+    if (!personalLocalFilterState?.ready) {
+      const row = document.createElement("div");
+      row.className = "qb-shell-filter-row qb-shell-personal-filter-row";
+      const label = document.createElement("span");
+      label.className = "qb-shell-filter-label";
+      label.textContent = "完整库筛选";
+      const hint = document.createElement("span");
+      hint.className = "qb-shell-filter-hint";
+      if (personalLocalFilterState?.error) hint.textContent = `索引建立失败：${value(personalLocalFilterState.error)}`;
+      else if (personalLocalFilterState?.building && Number(personalLocalFilterState.sourceTotal) > 0)
+        hint.textContent = `正在建立索引，已读取 ${Number(personalLocalFilterState.loaded) || 0} 部，源总量 ${Number(personalLocalFilterState.sourceTotal) || 0}`;
+      else hint.textContent = "正在建立完整个人库索引，完成后即可按星级、年份、地区和类型筛选…";
+      row.append(label, hint);
+      host.append(row);
+      addWebFilterRow();
+      return;
+    }
+
+    addButtonRow("影片类型", [
+      { label: "全部", value: "" },
+      { label: "电影", value: "movie" },
+      { label: "电视", value: "tv" }
+    ], value(criteria.contentType), contentType => applyLocalPersonalFilter({ contentType }));
+
+    const ratingKey = criteria.unrated ? "unrated" : criteria.myRating ? String(criteria.myRating) : "";
+    addButtonRow("我的评分", [
+      { label: "全部", value: "" },
+      { label: "5星", value: "5" },
+      { label: "4星", value: "4" },
+      { label: "3星", value: "3" },
+      { label: "2星", value: "2" },
+      { label: "1星", value: "1" },
+      { label: "未评分", value: "unrated" }
+    ], ratingKey, rating => {
+      if (rating === "unrated") applyLocalPersonalFilter({ myRating: null, unrated: true });
+      else if (!rating) applyLocalPersonalFilter({ myRating: null, unrated: false });
+      else applyLocalPersonalFilter({ myRating: Number(rating), unrated: false });
+    });
+
+    const facets = personalLocalFilterState.facets || {};
+    addSelectRow("年份", facets.years, criteria.year, "全部年份", "year");
+    addSelectRow("地区", facets.countries, criteria.country, "全部地区", "country");
+    addSelectRow("题材", facets.genres, criteria.genre, "全部题材", "genre");
+
+    addButtonRow("排序", [
+      { label: "最近标记", value: "marked-desc" },
+      { label: "我的评分", value: "my-rating-desc" },
+      { label: "豆瓣评分", value: "douban-score-desc" },
+      { label: "年份", value: "year-desc" },
+      { label: "标题", value: "title-asc" }
+    ], value(criteria.sort) || "marked-desc", sort => applyLocalPersonalFilter({ sort }));
+    addWebFilterRow();
+  };
   const renderFilters = snapshot => {
     const host = filtersHost();
     if (!host) return;
@@ -335,7 +481,6 @@
         row.append(makeFilterButton(labelText, statusValue === personalStatus, () => {
           if (busy || statusValue === personalStatus) return;
           beginListSwitch();
-          personalStatus = statusValue;
           updatePersonalUi(statusValue);
           setBusy(true);
           setStatus(`正在读取“${labelText}”影片…`);
@@ -343,6 +488,10 @@
         }));
       });
       host.append(row);
+      if (value(snapshot?.source) === "frodo-local") {
+        renderPersonalLocalFilters(host, snapshot);
+        return;
+      }
       const groups = Array.isArray(snapshot?.groups) ? snapshot.groups : [];
       groups.forEach(group => {
         const title = value(group?.title);
@@ -519,7 +668,7 @@
 
   const setBusy = valueBusy => {
     busy = Boolean(valueBusy);
-    filtersHost()?.querySelectorAll("button").forEach(button => { button.disabled = busy; });
+    filtersHost()?.querySelectorAll("button, select").forEach(control => { control.disabled = busy; });
     pagingHost()?.querySelectorAll("button").forEach(button => { button.disabled = busy; });
   };
 
@@ -600,6 +749,17 @@
       setBusy(message.busy === true);
       return;
     }
+    if (message.type === "doubanShellLocalPersonalFilters") {
+      updatePersonalUi(message.personalStatus);
+      renderFilters(message.filters);
+      const filters = message.filters || {};
+      if (filters.error) setStatus(`完整个人库筛选索引失败：${value(filters.error)}`, true);
+      else if (filters.building && Number(filters.sourceTotal) > 0)
+        setStatus(`正在建立完整个人库筛选索引：已读取 ${Number(filters.loaded) || 0} 部，源总量 ${Number(filters.sourceTotal) || 0}`);
+      else if (filters.building) setStatus("正在建立完整个人库筛选索引…");
+      else if (filters.ready) setStatus(`完整个人库筛选已就绪，共 ${Number(filters.total) || 0} 部`);
+      return;
+    }
     if (message.type === "doubanShellFilterOptions") {
       setBusy(false);
       renderFilters(message.filters);
@@ -660,14 +820,21 @@
     const appendPaging = pagingResponse && (
       messageViewKind === "explore" ||
       messageViewKind === "search" ||
-      (messageViewKind === "personal" && value(message?.dom?.source) === "frodo-api")
+      (messageViewKind === "personal" && ["frodo-api", "frodo-local-index"].includes(value(message?.dom?.source)))
     );
     render(message.items, { append: appendPaging });
-    renderFilters(message.filters);
+    const filtersForRender = messageViewKind === "personal" && value(message?.dom?.source) === "frodo-api" && personalLocalFilterState?.ready
+      ? personalLocalFilterState
+      : message.filters;
+    renderFilters(filtersForRender);
     renderPaging(message.paging, message.searchPageLinks, message.searchPageUrl);
     if (!pagingResponse) settleListSwitch();
     const resultLabel = viewKind === "search" ? "搜索结果" : viewKind === "personal" ? "个人影片" : contentTypeLabel();
-    setStatus(`${pagingResponse ? "已读取" : "已从豆瓣真实页面读取"} ${Array.isArray(message.items) ? message.items.length : 0} 部${resultLabel}`);
+    if (viewKind === "personal" && value(message?.filters?.source) === "frodo-local") {
+      setStatus(`完整库筛选 ${Number(message.filters.matched) || 0} 部，已显示 ${Number(message.filters.shown) || 0} 部`);
+    } else {
+      setStatus(`${pagingResponse ? "已读取" : "已从豆瓣真实页面读取"} ${Array.isArray(message.items) ? message.items.length : 0} 部${resultLabel}`);
+    }
     post("doubanShellDataApplied", {
       requestId: value(message.requestId),
       itemCount: Array.isArray(message.items) ? message.items.length : 0

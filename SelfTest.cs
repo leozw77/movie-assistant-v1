@@ -1,4 +1,4 @@
-﻿using System.Net;
+using System.Net;
 using System.Net.Sockets;
 
 namespace QbPotDoubanAi;
@@ -68,7 +68,7 @@ public static class SelfTest
             var cardScript = DoubanPlusAssetStore.ReadText(Path.Combine(doubanPlusAssets, "douban-card.js"), "统一卡片资源缺失。");
             var shellScript = DoubanPlusAssetStore.ReadText(Path.Combine(doubanPlusAssets, "douban-shell.js"), "统一 Shell 资源缺失。");
             var personalSourceBridge = DoubanPlusAssetStore.ReadText(Path.Combine(doubanPlusAssets, "douban-personal-source-bridge.js"), "个人 Source Bridge 资源缺失。");
-            embeddedReadOk = cardScript.Contains("QbDoubanCard", StringComparison.Ordinal) && shellScript.Contains("qb-douban-shell-root", StringComparison.Ordinal) && personalSourceBridge.Contains("readPersonalFilters", StringComparison.Ordinal) && shellScript.Contains("doubanShellApplyPersonalFilter", StringComparison.Ordinal);
+            embeddedReadOk = cardScript.Contains("QbDoubanCard", StringComparison.Ordinal) && shellScript.Contains("qb-douban-shell-root", StringComparison.Ordinal) && personalSourceBridge.Contains("readPersonalFilters", StringComparison.Ordinal) && shellScript.Contains("doubanShellApplyPersonalFilter", StringComparison.Ordinal) && shellScript.Contains("doubanShellApplyLocalPersonalFilter", StringComparison.Ordinal) && shellScript.Contains("frodo-local-index", StringComparison.Ordinal);
         }
         catch { }
         Check("Douban Plus UI 资源可从单 EXE 读取", embeddedReadOk);

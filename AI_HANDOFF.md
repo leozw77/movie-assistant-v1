@@ -1,3 +1,17 @@
+# 2026-08-19：个人库筛选 Step 2 UI 已接入
+
+开发分支继续为 `chatgpt/frodo-personal-20260819`。Step 1 的完整索引基础已经实机编译并推送；本轮把它接到统一 Shell。
+
+行为：
+
+- 打开看过/想看/在看时，现有 Provider 先给首屏；完整索引异步建立，不阻塞首屏。
+- 索引未完成时只显示“正在建立完整个人库筛选索引”，不会对局部数据给出伪完整筛选结果。
+- 索引就绪后出现：影片类型、我的评分/未评分、年份、地区、题材、排序。
+- 本地筛选使用 `FrodoPersonalQuerySession` 按 20 部分页；Shell 无限滚动继续复用 `doubanShellLoadMore`。
+- `可播放` / `有视频` 继续作为 DOM 网页条件保留。
+- 状态切换会退出当前本地 query session，但已完成的状态索引继续保存在 `frodo-personal-index-v1.json` 中。
+- 评价写入、删除、官方回读文件仍未修改。
+
 # 2026-08-19：个人库筛选 Step 1 后端基础
 
 当前开发分支继续为 `chatgpt/frodo-personal-20260819`。本轮从 v13.1（`983f9e408d43b89bcb169a3cff92a821f5adfedb`）继续：只加入日志瘦身、Frodo response 字段名探针和独立 `FrodoPersonalIndexService`。
