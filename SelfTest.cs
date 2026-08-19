@@ -177,10 +177,12 @@ public static class SelfTest
         Check("Frodo 首屏可按 total 最小增量 UPSERT 完整库", frodoStore.HeadUpsert);
         Check("Frodo 状态迁移在单一 Store 中去除旧状态", frodoStore.StatusMove);
         Check("Frodo 新鲜权威记录不会再被旧本地评分覆盖", frodoStore.AuthoritativePrecedence);
+        Check("Frodo BoundedSync 最多扫描 5 页", FrodoPersonalIndexService.BoundedReconcilePageLimit == 5);
+        Check("Frodo 遇到同 total 陌生条目时保留可用 Store", frodoStore.PreservesUsableSnapshotOnAmbiguity);
         lines.Insert(0, $"内置自检：{passed}/{total} 项通过");
         return string.Join(Environment.NewLine, lines);
     }
-    private static (bool InterestId, bool HeadUpsert, bool StatusMove, bool AuthoritativePrecedence) FrodoPersonalStoreSelfTest()
+    private static (bool InterestId, bool HeadUpsert, bool StatusMove, bool AuthoritativePrecedence, bool PreservesUsableSnapshotOnAmbiguity) FrodoPersonalStoreSelfTest()
     {
         var directory = Path.Combine(Path.GetTempPath(), "movie-assistant-frodo-store-selftest-" + Guid.NewGuid().ToString("N"));
         try
@@ -245,12 +247,27 @@ public static class SelfTest
                 .Single(item => item.SubjectId == "1");
             var authorityOk = applied.InterestId == "9001-authoritative" &&
                               applied.MyRating == 5 && applied.Comment == "authoritative";
-            return (interestIdOk, headUpsertOk, moveOk, authorityOk);
+
+            var ambiguousNew = mapped with
+            {
+                SubjectId = "3",
+                InterestId = "9003",
+                SubjectUrl = "https://movie.douban.com/subject/3/",
+                Title = "Ambiguous"
+            };
+            var ambiguousPage = new FrodoPersonalPage(0, 20, 2, 2, [authoritative, ambiguousNew], []);
+            service.ReconcileRemotePageAsync("196650036", "collect", ambiguousPage).GetAwaiter().GetResult();
+            var preservesUsable = service.TryGetStatus("196650036", "collect", out var afterAmbiguous) &&
+                                  afterAmbiguous.Total == 2 &&
+                                  afterAmbiguous.Items.Any(item => item.SubjectId == "1") &&
+                                  afterAmbiguous.Items.Any(item => item.SubjectId == "2") &&
+                                  afterAmbiguous.Items.All(item => item.SubjectId != "3");
+            return (interestIdOk, headUpsertOk, moveOk, authorityOk, preservesUsable);
         }
         catch (Exception ex)
         {
             DiagnosticLogger.Write($"Frodo personal store self-test failed; Error={ex.Message}");
-            return (false, false, false, false);
+            return (false, false, false, false, false);
         }
         finally
         {

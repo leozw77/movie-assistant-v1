@@ -41,6 +41,8 @@ internal sealed class FrodoPersonalIndexService
 {
     private const int SchemaVersion = 4;
     private const int MaxRequestsPerStatus = 20_000;
+    private const int MaxBoundedReconcilePages = 5;
+    internal static int BoundedReconcilePageLimit => MaxBoundedReconcilePages;
     private static readonly JsonSerializerOptions Json = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -52,6 +54,9 @@ internal sealed class FrodoPersonalIndexService
     private readonly string _cachePath;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly object _stateGate = new();
+    private readonly object _maintenanceGate = new();
+    private readonly HashSet<string> _headSyncRunning = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _deletionReconcileRunning = new(StringComparer.Ordinal);
     private readonly Dictionary<string, FrodoPersonalIndexStatus> _statuses = new(StringComparer.Ordinal);
     private string _profileId = "";
 
@@ -84,9 +89,19 @@ internal sealed class FrodoPersonalIndexService
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            bool HasUsableInMemoryStore()
+            {
+                lock (_stateGate)
+                {
+                    return _profileId.Equals(profileId, StringComparison.Ordinal) &&
+                           _statuses.Values.Any(snapshot => snapshot.Complete);
+                }
+            }
+
             if (!File.Exists(_cachePath))
             {
-                ResetProfile(profileId);
+                if (!HasUsableInMemoryStore()) ResetProfile(profileId);
+                else DiagnosticLogger.Write($"Frodo personal cache missing; ProfileId={profileId}; StorePreserved=True");
                 return;
             }
 
@@ -97,7 +112,8 @@ internal sealed class FrodoPersonalIndexService
             if (cache is null || cache.SchemaVersion != SchemaVersion ||
                 !cache.ProfileId.Equals(profileId, StringComparison.Ordinal))
             {
-                ResetProfile(profileId);
+                if (!HasUsableInMemoryStore()) ResetProfile(profileId);
+                else DiagnosticLogger.Write($"Frodo personal cache rejected; ProfileId={profileId}; StorePreserved=True");
                 return;
             }
 
@@ -120,18 +136,38 @@ internal sealed class FrodoPersonalIndexService
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
         {
-            ResetProfile(profileId);
-            DiagnosticLogger.Write($"Frodo personal index cache load failed; ProfileId={profileId}; Error={ex.Message}");
+            var preserved = false;
+            lock (_stateGate)
+            {
+                preserved = _profileId.Equals(profileId, StringComparison.Ordinal) &&
+                            _statuses.Values.Any(snapshot => snapshot.Complete);
+            }
+            if (!preserved) ResetProfile(profileId);
+            DiagnosticLogger.Write($"Frodo personal index cache load failed; ProfileId={profileId}; StorePreserved={preserved}; Error={ex.Message}");
         }
         finally
         {
             _gate.Release();
         }
     }
-
-    internal async Task<FrodoPersonalIndexStatus> BuildStatusAsync(
+    internal Task<FrodoPersonalIndexStatus> BootstrapStatusAsync(
         string profileId,
         string status,
+        IProgress<FrodoPersonalIndexProgress>? progress = null,
+        CancellationToken cancellationToken = default) =>
+        BuildStatusCoreAsync(profileId, status, "bootstrap", progress, cancellationToken);
+
+    internal Task<FrodoPersonalIndexStatus> ForceFullReconcileAsync(
+        string profileId,
+        string status,
+        IProgress<FrodoPersonalIndexProgress>? progress = null,
+        CancellationToken cancellationToken = default) =>
+        BuildStatusCoreAsync(profileId, status, "force-full", progress, cancellationToken);
+
+    private async Task<FrodoPersonalIndexStatus> BuildStatusCoreAsync(
+        string profileId,
+        string status,
+        string buildReason,
         IProgress<FrodoPersonalIndexProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
@@ -140,52 +176,84 @@ internal sealed class FrodoPersonalIndexService
         if (status is not ("collect" or "wish" or "do"))
             throw new InvalidDataException("Frodo 索引个人状态无效。");
 
+        FrodoPersonalIndexStatus? beforeSnapshot;
+        lock (_stateGate)
+        {
+            if (!_profileId.Equals(profileId, StringComparison.Ordinal))
+            {
+                _profileId = profileId;
+                _statuses.Clear();
+            }
+            _statuses.TryGetValue(status, out beforeSnapshot);
+        }
+        var beforeBuiltAt = beforeSnapshot?.BuiltAtUtc;
+
+        var items = new List<FrodoPersonalItem>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var nextStart = 0;
+        var total = 0;
+        int? stableCloudTotal = null;
+        var requestCount = 0;
+        var complete = false;
+
+        while (requestCount < MaxRequestsPerStatus)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            requestCount++;
+            var requestedStart = nextStart;
+            var raw = await _client.GetInterestsAsync(profileId, status, requestedStart, _options.PageSize, cancellationToken).ConfigureAwait(false);
+            var page = FrodoPersonalMapper.Map(raw, status);
+            if (page.Skipped.Count > 0)
+                throw new InvalidDataException($"Frodo 完整快照存在无法映射记录；Status={status}; Start={requestedStart}; Skipped={page.Skipped.Count}。");
+            if (stableCloudTotal is null) stableCloudTotal = page.Total;
+            else if (page.Total != stableCloudTotal.Value)
+                throw new InvalidDataException($"Frodo 完整快照扫描期间 total 发生变化；Status={status}; Before={stableCloudTotal.Value}; Now={page.Total}。");
+
+            foreach (var item in page.Items)
+            {
+                if (seen.Add(item.SubjectId)) items.Add(item);
+            }
+
+            total = Math.Max(stableCloudTotal.Value, items.Count);
+            progress?.Report(new FrodoPersonalIndexProgress(profileId, status, requestedStart, items.Count, total));
+
+            var cursorAdvance = page.Count > 0 ? page.Count : _options.PageSize;
+            var responseStart = Math.Max(page.Start, requestedStart);
+            nextStart = checked(responseStart + cursorAdvance);
+
+            DiagnosticLogger.Write(
+                $"Frodo personal full snapshot page; Reason={buildReason}; Status={status}; RequestedStart={requestedStart}; ResponseStart={page.Start}; ApiCount={page.Count}; Raw={page.RawCount}; Mapped={page.Items.Count}; Skipped={page.Skipped.Count}; Loaded={items.Count}; Total={total}; CursorAdvance={cursorAdvance}; NextStart={nextStart}");
+
+            if (page.Total <= 0 && page.RawCount == 0) { complete = true; break; }
+            if (total > 0 && nextStart >= total) { complete = true; break; }
+        }
+
+        if (!complete)
+            throw new InvalidDataException("Frodo 个人库完整快照请求次数超过保护上限。");
+
+        // Invariant: an already usable Store is never cleared before a full
+        // snapshot is complete. Network scanning happens without the commit gate;
+        // only the final validated snapshot swap is serialized.
+        var snapshot = BuildSnapshot(status, total, items);
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (!CurrentProfileId.Equals(profileId, StringComparison.Ordinal)) ResetProfile(profileId);
-
-            var items = new List<FrodoPersonalItem>();
-            var seen = new HashSet<string>(StringComparer.Ordinal);
-            var nextStart = 0;
-            var total = 0;
-            var requestCount = 0;
-            var complete = false;
-
-            while (requestCount < MaxRequestsPerStatus)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                requestCount++;
-                var requestedStart = nextStart;
-                var raw = await _client.GetInterestsAsync(profileId, status, requestedStart, _options.PageSize, cancellationToken).ConfigureAwait(false);
-                var page = FrodoPersonalMapper.Map(raw, status);
-
-                foreach (var item in page.Items)
-                {
-                    if (seen.Add(item.SubjectId)) items.Add(item);
-                }
-
-                total = Math.Max(total, page.Total);
-                total = Math.Max(total, items.Count);
-                progress?.Report(new FrodoPersonalIndexProgress(profileId, status, requestedStart, items.Count, total));
-
-                var cursorAdvance = page.Count > 0 ? page.Count : _options.PageSize;
-                var responseStart = Math.Max(page.Start, requestedStart);
-                nextStart = checked(responseStart + cursorAdvance);
-
-                DiagnosticLogger.Write(
-                    $"Frodo personal index page; Status={status}; RequestedStart={requestedStart}; ResponseStart={page.Start}; ApiCount={page.Count}; Raw={page.RawCount}; Mapped={page.Items.Count}; Skipped={page.Skipped.Count}; Loaded={items.Count}; Total={total}; CursorAdvance={cursorAdvance}; NextStart={nextStart}");
-
-                if (page.Total <= 0 && page.RawCount == 0) { complete = true; break; }
-                if (total > 0 && nextStart >= total) { complete = true; break; }
-            }
-
-            if (!complete)
-                throw new InvalidDataException("Frodo 个人库索引请求次数超过保护上限。");
-
-            var snapshot = BuildSnapshot(status, total, items);
             lock (_stateGate)
             {
+                if (!_profileId.Equals(profileId, StringComparison.Ordinal))
+                    throw new InvalidOperationException("Frodo 完整快照构建期间用户范围已切换，拒绝提交旧快照。");
+
+                if (beforeSnapshot is null)
+                {
+                    if (_statuses.ContainsKey(status))
+                        throw new InvalidOperationException("Frodo 完整快照构建期间 Store 已建立，拒绝覆盖更新结果。");
+                }
+                else if (!_statuses.TryGetValue(status, out var latestBeforeCommit) ||
+                         latestBeforeCommit.BuiltAtUtc != beforeBuiltAt)
+                {
+                    throw new InvalidOperationException("Frodo 完整快照构建期间 Store 已变化，拒绝覆盖更新结果。");
+                }
+
                 var targetIds = snapshot.Items.Select(item => item.SubjectId).ToHashSet(StringComparer.Ordinal);
                 foreach (var otherStatus in _statuses.Keys.Where(key => !key.Equals(status, StringComparison.Ordinal)).ToList())
                 {
@@ -198,12 +266,47 @@ internal sealed class FrodoPersonalIndexService
                 _statuses[status] = snapshot;
             }
             await SaveCacheCoreAsync(cancellationToken).ConfigureAwait(false);
-            DiagnosticLogger.Write($"Frodo personal index completed; ProfileId={profileId}; Status={status}; Items={snapshot.Items.Count}; Total={snapshot.Total}; Playable={snapshot.Items.Count(item => item.Playable)}");
-            return snapshot;
         }
         finally
         {
             _gate.Release();
+        }
+
+        DiagnosticLogger.Write($"Frodo personal full snapshot committed; Reason={buildReason}; ProfileId={profileId}; Status={status}; Items={snapshot.Items.Count}; Total={snapshot.Total}; Playable={snapshot.Items.Count(item => item.Playable)}");
+        return snapshot;
+    }
+    internal async Task<FrodoPersonalIndexStatus?> SyncStatusHeadAsync(
+        string profileId,
+        string status,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(profileId) || !profileId.All(char.IsDigit) ||
+            status is not ("collect" or "wish" or "do")) return null;
+
+        var key = $"{profileId}:{status}";
+        lock (_maintenanceGate)
+        {
+            if (!_headSyncRunning.Add(key))
+            {
+                lock (_stateGate)
+                {
+                    return _profileId.Equals(profileId, StringComparison.Ordinal) &&
+                           _statuses.TryGetValue(status, out var existing) && existing.Complete
+                        ? existing
+                        : null;
+                }
+            }
+        }
+
+        try
+        {
+            var raw = await _client.GetInterestsAsync(profileId, status, 0, _options.PageSize, cancellationToken).ConfigureAwait(false);
+            var page = FrodoPersonalMapper.Map(raw, status);
+            return await ReconcileRemotePageAsync(profileId, status, page, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            lock (_maintenanceGate) _headSyncRunning.Remove(key);
         }
     }
 
@@ -224,8 +327,10 @@ internal sealed class FrodoPersonalIndexService
         }
 
         var previousTotal = current.Total;
+        var previousBuiltAt = current.BuiltAtUtc;
         var cloudTotal = Math.Max(observedPage.Total, observedPage.Items.Count);
         var knownTargetIds = current.Items.Select(item => item.SubjectId).ToHashSet(StringComparer.Ordinal);
+        var pages = new List<FrodoPersonalPage> { observedPage };
         var discoveredIds = observedPage.Items
             .Where(item => !knownTargetIds.Contains(item.SubjectId))
             .Select(item => item.SubjectId)
@@ -233,31 +338,53 @@ internal sealed class FrodoPersonalIndexService
         var requiredAdds = Math.Max(0, cloudTotal - previousTotal);
 
         if (cloudTotal < previousTotal)
-            return await InvalidateStatusForRebuildAsync(profileId, status,
-                $"total-decrease:{previousTotal}->{cloudTotal}", cancellationToken).ConfigureAwait(false);
-        if (cloudTotal == previousTotal && discoveredIds.Count > 0)
-            return await InvalidateStatusForRebuildAsync(profileId, status,
-                $"same-total-new-items:{discoveredIds.Count}", cancellationToken).ConfigureAwait(false);
-        if (discoveredIds.Count > requiredAdds)
-            return await InvalidateStatusForRebuildAsync(profileId, status,
-                $"delta-mismatch:required={requiredAdds},head-new={discoveredIds.Count}", cancellationToken).ConfigureAwait(false);
+        {
+            var preserved = await ApplyRemotePagesAsync(
+                profileId, status, previousTotal, previousBuiltAt, previousTotal, pages, allowNewItems: false, cancellationToken).ConfigureAwait(false);
+            ScheduleDeletionReconcile(profileId, status, cloudTotal);
+            DiagnosticLogger.Write(
+                $"Frodo personal bounded sync; ProfileId={profileId}; Status={status}; Health=NeedsDeletionReconcile; LocalTotal={previousTotal}; CloudTotal={cloudTotal}; Pages=1; StorePreserved=True");
+            return preserved;
+        }
 
-        var pages = new List<FrodoPersonalPage> { observedPage };
+        if (requiredAdds == 0 && discoveredIds.Count > 0)
+        {
+            var preserved = await ApplyRemotePagesAsync(
+                profileId, status, previousTotal, previousBuiltAt, previousTotal, pages, allowNewItems: false, cancellationToken).ConfigureAwait(false);
+            DiagnosticLogger.Write(
+                $"Frodo personal bounded sync; ProfileId={profileId}; Status={status}; Health=NeedsDeepReconcile; Reason=same-total-new-items; LocalTotal={previousTotal}; CloudTotal={cloudTotal}; HeadNew={discoveredIds.Count}; StorePreserved=True");
+            return preserved;
+        }
+
+        if (discoveredIds.Count > requiredAdds)
+        {
+            var preserved = await ApplyRemotePagesAsync(
+                profileId, status, previousTotal, previousBuiltAt, previousTotal, pages, allowNewItems: false, cancellationToken).ConfigureAwait(false);
+            DiagnosticLogger.Write(
+                $"Frodo personal bounded sync; ProfileId={profileId}; Status={status}; Health=NeedsDeepReconcile; Reason=head-delta-mismatch; RequiredAdds={requiredAdds}; HeadNew={discoveredIds.Count}; StorePreserved=True");
+            return preserved;
+        }
+
         var responseStart = Math.Max(0, observedPage.Start);
         var cursorAdvance = observedPage.Count > 0 ? observedPage.Count : _options.PageSize;
         var nextStart = checked(responseStart + cursorAdvance);
-        var extraRequests = 0;
 
-        while (discoveredIds.Count < requiredAdds && nextStart < cloudTotal && extraRequests < MaxRequestsPerStatus)
+        while (discoveredIds.Count < requiredAdds &&
+               nextStart < cloudTotal &&
+               pages.Count < MaxBoundedReconcilePages)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            extraRequests++;
             var requestedStart = nextStart;
             var raw = await _client.GetInterestsAsync(profileId, status, requestedStart, _options.PageSize, cancellationToken).ConfigureAwait(false);
             var page = FrodoPersonalMapper.Map(raw, status);
             if (page.Total != observedPage.Total)
-                return await InvalidateStatusForRebuildAsync(profileId, status,
-                    $"cloud-total-changed:{observedPage.Total}->{page.Total}", cancellationToken).ConfigureAwait(false);
+            {
+                var preserved = await ApplyRemotePagesAsync(
+                    profileId, status, previousTotal, previousBuiltAt, previousTotal, pages, allowNewItems: false, cancellationToken).ConfigureAwait(false);
+                DiagnosticLogger.Write(
+                    $"Frodo personal bounded sync; ProfileId={profileId}; Status={status}; Health=NeedsDeepReconcile; Reason=cloud-total-changed; FirstTotal={observedPage.Total}; LaterTotal={page.Total}; Pages={pages.Count}; StorePreserved=True");
+                return preserved;
+            }
 
             pages.Add(page);
             foreach (var item in page.Items)
@@ -265,8 +392,13 @@ internal sealed class FrodoPersonalIndexService
                 if (!knownTargetIds.Contains(item.SubjectId)) discoveredIds.Add(item.SubjectId);
             }
             if (discoveredIds.Count > requiredAdds)
-                return await InvalidateStatusForRebuildAsync(profileId, status,
-                    $"delta-mismatch:required={requiredAdds},found={discoveredIds.Count}", cancellationToken).ConfigureAwait(false);
+            {
+                var preserved = await ApplyRemotePagesAsync(
+                    profileId, status, previousTotal, previousBuiltAt, previousTotal, pages, allowNewItems: false, cancellationToken).ConfigureAwait(false);
+                DiagnosticLogger.Write(
+                    $"Frodo personal bounded sync; ProfileId={profileId}; Status={status}; Health=NeedsDeepReconcile; Reason=delta-mismatch; RequiredAdds={requiredAdds}; Found={discoveredIds.Count}; Pages={pages.Count}; StorePreserved=True");
+                return preserved;
+            }
 
             responseStart = Math.Max(page.Start, requestedStart);
             cursorAdvance = page.Count > 0 ? page.Count : _options.PageSize;
@@ -274,80 +406,26 @@ internal sealed class FrodoPersonalIndexService
             if (page.RawCount == 0) break;
         }
 
-        if (discoveredIds.Count < requiredAdds)
-            return await InvalidateStatusForRebuildAsync(profileId, status,
-                $"delta-not-found:required={requiredAdds},found={discoveredIds.Count}", cancellationToken).ConfigureAwait(false);
+        var deltaComplete = discoveredIds.Count == requiredAdds;
+        // If the bounded budget cannot prove the whole delta, do not partially
+        // advance Store total or add only some new rows. Partial progress would
+        // make the next bounded scan start with a misleading checkpoint and can
+        // permanently hide a still-missing row beyond the page budget.
+        var targetTotal = deltaComplete ? cloudTotal : previousTotal;
+        var result = await ApplyRemotePagesAsync(
+            profileId,
+            status,
+            previousTotal,
+            previousBuiltAt,
+            targetTotal,
+            pages,
+            allowNewItems: deltaComplete && requiredAdds > 0,
+            cancellationToken).ConfigureAwait(false);
 
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            FrodoPersonalIndexStatus? result = null;
-            var changedStatuses = new HashSet<string>(StringComparer.Ordinal);
-            lock (_stateGate)
-            {
-                if (!_profileId.Equals(profileId, StringComparison.Ordinal) ||
-                    !_statuses.TryGetValue(status, out var latest) || !latest.Complete) return null;
-                if (latest.Total != previousTotal)
-                {
-                    DiagnosticLogger.Write(
-                        $"Frodo personal store reconcile skipped; ProfileId={profileId}; Status={status}; Cause=StoreChangedDuringScan; ExpectedTotal={previousTotal}; ActualTotal={latest.Total}");
-                    return latest;
-                }
-
-                var workingItems = _statuses.ToDictionary(
-                    pair => pair.Key,
-                    pair => pair.Value.Items.ToList(),
-                    StringComparer.Ordinal);
-                var workingTotals = _statuses.ToDictionary(
-                    pair => pair.Key,
-                    pair => pair.Value.Total,
-                    StringComparer.Ordinal);
-                var remoteItems = pages.SelectMany(page => page.Items)
-                    .GroupBy(item => item.SubjectId, StringComparer.Ordinal)
-                    .Select(group => group.First())
-                    .ToList();
-
-                foreach (var remoteItem in remoteItems)
-                {
-                    foreach (var otherStatus in workingItems.Keys.Where(key => !key.Equals(status, StringComparison.Ordinal)).ToList())
-                    {
-                        var list = workingItems[otherStatus];
-                        var removed = list.RemoveAll(item => item.SubjectId.Equals(remoteItem.SubjectId, StringComparison.Ordinal));
-                        if (removed <= 0) continue;
-                        workingTotals[otherStatus] = Math.Max(0, workingTotals[otherStatus] - removed);
-                        changedStatuses.Add(otherStatus);
-                    }
-
-                    var targetItems = workingItems[status];
-                    var existingIndex = targetItems.FindIndex(item => item.SubjectId.Equals(remoteItem.SubjectId, StringComparison.Ordinal));
-                    if (existingIndex >= 0) targetItems[existingIndex] = remoteItem;
-                    else targetItems.Add(remoteItem);
-                    changedStatuses.Add(status);
-                }
-
-                workingTotals[status] = cloudTotal;
-                changedStatuses.Add(status);
-                foreach (var changedStatus in changedStatuses)
-                {
-                    _statuses[changedStatus] = BuildSnapshot(
-                        changedStatus,
-                        workingTotals[changedStatus],
-                        workingItems[changedStatus]);
-                }
-                result = _statuses[status];
-            }
-
-            await SaveCacheCoreAsync(cancellationToken).ConfigureAwait(false);
-            DiagnosticLogger.Write(
-                $"Frodo personal store reconciled; ProfileId={profileId}; Status={status}; PreviousTotal={previousTotal}; CloudTotal={cloudTotal}; RequiredAdds={requiredAdds}; Discovered={discoveredIds.Count}; Requests={pages.Count}; StoreItems={result!.Items.Count}; InterestIds={pages.SelectMany(page => page.Items).Count(item => !string.IsNullOrWhiteSpace(item.InterestId))}");
-            return result;
-        }
-        finally
-        {
-            _gate.Release();
-        }
+        DiagnosticLogger.Write(
+            $"Frodo personal bounded sync; ProfileId={profileId}; Status={status}; Health={(deltaComplete ? "Ready" : "NeedsDeepReconcile")}; LocalTotal={previousTotal}; CloudTotal={cloudTotal}; RequiredAdds={requiredAdds}; Discovered={discoveredIds.Count}; Pages={pages.Count}; PageLimit={MaxBoundedReconcilePages}; StoreTotal={result?.Total.ToString() ?? "unchanged"}; StorePreserved=True");
+        return result;
     }
-
     internal async Task<FrodoPersonalItem?> FetchRecentItemAsync(
         string profileId,
         string status,
@@ -562,25 +640,83 @@ internal sealed class FrodoPersonalIndexService
         return new FrodoPersonalIndexStatus(status, true, Math.Max(total, items.Count), DateTimeOffset.UtcNow, items.ToList(), years, genres, countries);
     }
 
-    private async Task<FrodoPersonalIndexStatus?> InvalidateStatusForRebuildAsync(
+    private async Task<FrodoPersonalIndexStatus?> ApplyRemotePagesAsync(
         string profileId,
         string status,
-        string reason,
+        int expectedPreviousTotal,
+        DateTimeOffset expectedPreviousBuiltAt,
+        int targetTotal,
+        IReadOnlyList<FrodoPersonalPage> pages,
+        bool allowNewItems,
         CancellationToken cancellationToken)
     {
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            var removed = false;
+            FrodoPersonalIndexStatus? result;
             lock (_stateGate)
             {
-                if (_profileId.Equals(profileId, StringComparison.Ordinal))
-                    removed = _statuses.Remove(status);
+                if (!_profileId.Equals(profileId, StringComparison.Ordinal) ||
+                    !_statuses.TryGetValue(status, out var latest) || !latest.Complete) return null;
+                if (latest.Total != expectedPreviousTotal || latest.BuiltAtUtc != expectedPreviousBuiltAt)
+                {
+                    DiagnosticLogger.Write(
+                        $"Frodo personal bounded sync commit skipped; ProfileId={profileId}; Status={status}; Cause=StoreChangedDuringScan; ExpectedTotal={expectedPreviousTotal}; ActualTotal={latest.Total}; ExpectedBuiltAt={expectedPreviousBuiltAt:O}; ActualBuiltAt={latest.BuiltAtUtc:O}");
+                    return latest;
+                }
+
+                var workingItems = _statuses.ToDictionary(
+                    pair => pair.Key,
+                    pair => pair.Value.Items.ToList(),
+                    StringComparer.Ordinal);
+                var workingTotals = _statuses.ToDictionary(
+                    pair => pair.Key,
+                    pair => pair.Value.Total,
+                    StringComparer.Ordinal);
+                var changedStatuses = new HashSet<string>(StringComparer.Ordinal);
+                var remoteItems = pages.SelectMany(page => page.Items)
+                    .GroupBy(item => item.SubjectId, StringComparer.Ordinal)
+                    .Select(group => group.First())
+                    .ToList();
+
+                foreach (var remoteItem in remoteItems)
+                {
+                    var targetItems = workingItems[status];
+                    var existingIndex = targetItems.FindIndex(item => item.SubjectId.Equals(remoteItem.SubjectId, StringComparison.Ordinal));
+                    if (existingIndex < 0 && !allowNewItems) continue;
+
+                    var applied = existingIndex >= 0
+                        ? MergeRemoteItem(targetItems[existingIndex], remoteItem)
+                        : remoteItem;
+
+                    foreach (var otherStatus in workingItems.Keys.Where(key => !key.Equals(status, StringComparison.Ordinal)).ToList())
+                    {
+                        var otherItems = workingItems[otherStatus];
+                        var removed = otherItems.RemoveAll(item => item.SubjectId.Equals(remoteItem.SubjectId, StringComparison.Ordinal));
+                        if (removed <= 0) continue;
+                        workingTotals[otherStatus] = Math.Max(0, workingTotals[otherStatus] - removed);
+                        changedStatuses.Add(otherStatus);
+                    }
+
+                    if (existingIndex >= 0) targetItems[existingIndex] = applied;
+                    else targetItems.Add(applied);
+                    changedStatuses.Add(status);
+                }
+
+                workingTotals[status] = Math.Max(targetTotal, workingItems[status].Count);
+                changedStatuses.Add(status);
+                foreach (var changedStatus in changedStatuses)
+                {
+                    _statuses[changedStatus] = BuildSnapshot(
+                        changedStatus,
+                        workingTotals[changedStatus],
+                        workingItems[changedStatus]);
+                }
+                result = _statuses[status];
             }
-            if (removed) await SaveCacheCoreAsync(cancellationToken).ConfigureAwait(false);
-            DiagnosticLogger.Write(
-                $"Frodo personal store marked for full reconcile; ProfileId={profileId}; Status={status}; Reason={reason}; Removed={removed}");
-            return null;
+
+            await SaveCacheCoreAsync(cancellationToken).ConfigureAwait(false);
+            return result;
         }
         finally
         {
@@ -588,6 +724,118 @@ internal sealed class FrodoPersonalIndexService
         }
     }
 
+    private static FrodoPersonalItem MergeRemoteItem(FrodoPersonalItem existing, FrodoPersonalItem remote) =>
+        string.IsNullOrWhiteSpace(remote.InterestId) && !string.IsNullOrWhiteSpace(existing.InterestId)
+            ? remote with { InterestId = existing.InterestId }
+            : remote;
+
+    private void ScheduleDeletionReconcile(string profileId, string status, int expectedCloudTotal)
+    {
+        var key = $"{profileId}:{status}";
+        lock (_maintenanceGate)
+        {
+            if (!_deletionReconcileRunning.Add(key)) return;
+        }
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await ReconcileDeletionCoreAsync(profileId, status, expectedCloudTotal).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or IOException or UnauthorizedAccessException or InvalidDataException or InvalidOperationException or JsonException)
+            {
+                DiagnosticLogger.Write(
+                    $"Frodo personal deletion reconcile deferred; ProfileId={profileId}; Status={status}; ExpectedCloudTotal={expectedCloudTotal}; Error={ex.Message}; StorePreserved=True");
+            }
+            finally
+            {
+                lock (_maintenanceGate) _deletionReconcileRunning.Remove(key);
+            }
+        });
+    }
+
+    private async Task ReconcileDeletionCoreAsync(string profileId, string status, int expectedCloudTotal)
+    {
+        FrodoPersonalIndexStatus before;
+        lock (_stateGate)
+        {
+            if (!_profileId.Equals(profileId, StringComparison.Ordinal) ||
+                !_statuses.TryGetValue(status, out before!) || !before.Complete) return;
+        }
+
+        var cloudIds = new HashSet<string>(StringComparer.Ordinal);
+        var nextStart = 0;
+        var requestCount = 0;
+        var complete = false;
+        while (requestCount < MaxRequestsPerStatus)
+        {
+            requestCount++;
+            var requestedStart = nextStart;
+            var raw = await _client.GetInterestsAsync(profileId, status, requestedStart, _options.PageSize, CancellationToken.None).ConfigureAwait(false);
+            var page = FrodoPersonalMapper.Map(raw, status);
+            if (page.Total != expectedCloudTotal)
+            {
+                DiagnosticLogger.Write(
+                    $"Frodo personal deletion reconcile aborted; ProfileId={profileId}; Status={status}; Reason=CloudTotalChanged; Expected={expectedCloudTotal}; Actual={page.Total}; StorePreserved=True");
+                return;
+            }
+            if (page.Skipped.Count > 0)
+            {
+                DiagnosticLogger.Write(
+                    $"Frodo personal deletion reconcile aborted; ProfileId={profileId}; Status={status}; Reason=MappedSkips; Skipped={page.Skipped.Count}; Start={requestedStart}; StorePreserved=True");
+                return;
+            }
+
+            foreach (var item in page.Items) cloudIds.Add(item.SubjectId);
+            var responseStart = Math.Max(page.Start, requestedStart);
+            var cursorAdvance = page.Count > 0 ? page.Count : _options.PageSize;
+            nextStart = checked(responseStart + cursorAdvance);
+            if (page.Total <= 0 && page.RawCount == 0) { complete = true; break; }
+            if (expectedCloudTotal > 0 && nextStart >= expectedCloudTotal) { complete = true; break; }
+        }
+
+        if (!complete)
+        {
+            DiagnosticLogger.Write(
+                $"Frodo personal deletion reconcile aborted; ProfileId={profileId}; Status={status}; Reason=RequestGuard; Requests={requestCount}; StorePreserved=True");
+            return;
+        }
+
+        await _gate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            List<string> removedIds;
+            lock (_stateGate)
+            {
+                if (!_profileId.Equals(profileId, StringComparison.Ordinal) ||
+                    !_statuses.TryGetValue(status, out var latest) || !latest.Complete ||
+                    latest.Total != before.Total || latest.BuiltAtUtc != before.BuiltAtUtc)
+                {
+                    DiagnosticLogger.Write(
+                        $"Frodo personal deletion reconcile commit skipped; ProfileId={profileId}; Status={status}; Reason=StoreChangedDuringScan; StorePreserved=True");
+                    return;
+                }
+
+                removedIds = latest.Items
+                    .Where(item => !cloudIds.Contains(item.SubjectId))
+                    .Select(item => item.SubjectId)
+                    .ToList();
+                var remaining = latest.Items
+                    .Where(item => cloudIds.Contains(item.SubjectId))
+                    .ToList();
+                _statuses[status] = BuildSnapshot(status, expectedCloudTotal, remaining);
+            }
+
+            await SaveCacheCoreAsync(CancellationToken.None).ConfigureAwait(false);
+            DiagnosticLogger.Write(
+                $"Frodo personal deletion reconcile completed; ProfileId={profileId}; Status={status}; CloudTotal={expectedCloudTotal}; Removed={removedIds.Count}; Requests={requestCount}; StorePreservedUntilCommit=True");
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
     private async Task SaveCacheCoreAsync(CancellationToken cancellationToken)
     {
         var directory = Path.GetDirectoryName(_cachePath)!;

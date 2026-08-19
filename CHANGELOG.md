@@ -1,3 +1,14 @@
+# Frodo Personal Store Refactor v2：状态秒切 + BoundedSync + 永不清空可用 Store - 2026-08-19
+
+- 状态按钮改为本地 Store 优先：已有 `collect / wish / do` 完整快照时直接 Query + 本地分页，切状态不再重新读取整个个人库。
+- 后台同步固定为首屏 + 最多 5 页 BoundedSync；正常 `total +N` 找齐 N 个新 SubjectId 立即停止。
+- 删除 `InvalidateStatusForRebuildAsync` 的“遇到异常先 `_statuses.Remove(status)`”行为；任何网络、解析或语义不确定都保留现有 Store。
+- `total -N` 启动后台 DeletionReconcile：完整收集稳定云端 SubjectId 后只删除差集，失败时 Store 原样保留且 UI 不阻塞。
+- 同 total 陌生条目、delta 不匹配或 5 页内未找齐时标记诊断为 `NeedsDeepReconcile`，普通状态切换和普通刷新均不允许隐式 Full Build。
+- 完整扫描调用语义拆成 `BootstrapStatusAsync` 与 `ForceFullReconcileAsync`；完整 snapshot 先独立构建，并要求扫描期间 cloud total 稳定且无映射 skip，成功后才替换旧 snapshot。
+- 本地筛选、本地无限滚动以及评价后的 UI 刷新都不再依赖 Provider 当前状态，完整 Store 模式与 Provider 分页会话解耦。
+- 自检新增：5 页预算、同 total 陌生条目不破坏可用 Store；原有 InterestId、增量 UPSERT、状态迁移、权威评分优先测试继续保留。
+
 # Frodo Personal Store Refactor v1：单一权威库 + total 最小增量同步 - 2026-08-19
 
 - 将现有 `FrodoPersonalIndexService` 收拢为个人库唯一持久化 Store；`FrodoPersonalProvider` 只保留当前页面的临时分页/显示缓冲，不再作为第二份个人库权威状态。

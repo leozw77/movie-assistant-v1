@@ -1,3 +1,16 @@
+# 2026-08-19：Personal Store Refactor v2（状态秒切 + BoundedSync + Store 不变量）
+
+本轮完成 Personal Store Refactor 的 entry/sync 闭环：
+
+- `看过 / 想看 / 在看` 状态切换优先直接 `Store.Query(status)`，已有完整 Store 时不再经过 Provider 全量建立路径，页面先本地秒开。
+- 状态切换后仅后台请求 Frodo 首屏做 BoundedSync；`CloudTotal +N` 最多向后扫描 5 页，找到 N 个陌生 SubjectId 即停止。
+- `CloudTotal < LocalTotal` 不再 invalidate/remove 完整 Store；旧 Store 继续服务 UI，并在后台运行 DeletionReconcile，完整扫描稳定 cloud ids 后只删除确认不存在的条目。
+- 同 total 出现陌生 SubjectId、delta 不可解释、扫描上限未找齐等情况只记录 `NeedsDeepReconcile`，不清空 Store，也不会从普通状态切换隐式触发全量 Build。
+- 完整扫描入口收敛为 `BootstrapStatusAsync`（真正无缓存时）与 `ForceFullReconcileAsync`（显式恢复入口）；普通刷新只做 BoundedSync。
+- Full snapshot 的不变量：已有可用 Store 在任何同步路径中都不能先清空；新快照完整成功后才一次替换当前 snapshot。
+- Frodo 远端字段整体覆盖本地镜像字段；仅当新响应 `InterestId` 为空时保留已有非空远端 InterestId。`InterestId` 仍来自 Frodo `interest.id`，不是本地生成 ID。
+- 保留固定 source-slot 游标 `start=0,20,40...`，不修改评价写入/删除/官方回读核心。
+
 # 2026-08-19：Personal Store Refactor v1（单一权威库 + total 最小增量）
 
 开发分支仍为 `chatgpt/frodo-personal-20260819`，main 不修改。本轮不再给 Provider/Index 分叉继续加同步补丁，而是把现有 `FrodoPersonalIndexService` 提升为唯一持久化 Personal Store；Provider 只保留 UI 当前页的瞬时分页缓冲。
