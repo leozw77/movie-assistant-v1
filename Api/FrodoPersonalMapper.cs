@@ -119,7 +119,7 @@ internal static class FrodoPersonalMapper
         var contentType = ReadString(subject, "type");
         if (contentType.Length == 0) contentType = ReadString(subject, "subtype");
         contentType = contentType.Equals("tv", StringComparison.OrdinalIgnoreCase) ? "tv" : "movie";
-        var playable = ReadBool(subject, "is_playable");
+        var playable = ReadPlayable(subject);
         var identity = string.Join(" / ", new[]
         {
             year,
@@ -236,6 +236,27 @@ internal static class FrodoPersonalMapper
 
     private static double? ReadDouble(JsonElement owner, string name) =>
         owner.ValueKind == JsonValueKind.Object && owner.TryGetProperty(name, out var value) && value.TryGetDouble(out var number) ? number : null;
+
+    private static bool ReadPlayable(JsonElement subject)
+    {
+        if (ReadBool(subject, "has_linewatch")) return true;
+
+        if (subject.ValueKind == JsonValueKind.Object &&
+            subject.TryGetProperty("actions", out var actions) && actions.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var action in actions.EnumerateArray())
+            {
+                if (action.ValueKind == JsonValueKind.String &&
+                    string.Equals((action.GetString() ?? "").Trim(), "可播放", StringComparison.Ordinal))
+                    return true;
+            }
+        }
+
+        return subject.ValueKind == JsonValueKind.Object &&
+               subject.TryGetProperty("linewatches", out var linewatches) &&
+               linewatches.ValueKind == JsonValueKind.Array &&
+               linewatches.GetArrayLength() > 0;
+    }
 
     private static bool ReadBool(JsonElement owner, string name)
     {

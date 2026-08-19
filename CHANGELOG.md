@@ -1,3 +1,12 @@
+# Frodo 个人库筛选 Step 5：新增影片 UPSERT + 正确可播放 + 评分滑块 - 2026-08-19
+
+- 修复新评价影片只出现在刷新后的 Provider、却没有进入完整筛选索引的问题：官方确认后先 UPDATE，索引不存在该 SubjectId 时从 Frodo 最新个人页短重试回读并 INSERT，形成真正 UPSERT。
+- 新条目 UPSERT 同时修正 Provider 内存和完整 Index；当前处于本地筛选时立即按原条件重新 Query，默认个人页则自动刷新一次首屏，不再出现“刷新能看见，一筛选就消失”。
+- `可播放` 不再读取猜测字段 `is_playable`；个人 interests 的主字段改为 `subject.has_linewatch`，并兼容 `actions` 中的“可播放”和非空 `linewatches`。
+- 完整索引缓存 schema 升到 v3，强制淘汰 v2 中可能全部为 false 的错误 Playable 缓存；索引完成日志增加 Playable 统计，Frodo schema 日志只记录字段存在性，不记录原始响应。
+- 豆瓣评分 Query 不改；仅重做评分区间浮层为自定义双圆点轨道。拖动视觉连续，松开后按 0..10 的整数评分吸附，和豆瓣原生 1 分步进保持一致。
+- 固定 Frodo `start=0,20,40...` 源槽分页、pending buffer、评价官方回读和双评分卡片均保持不变。
+
 # Frodo 个人库筛选 Step 4：统一筛选状态 + 可播放 + 评分区间 - 2026-08-19
 
 - 个人页筛选统一为一套 Frodo 本地 `FrodoPersonalFilterCriteria`；第一层不再显示 `筛选影片 / 正在热映 / 在线观看`，也不再从这些入口切换 DOM 数据源。

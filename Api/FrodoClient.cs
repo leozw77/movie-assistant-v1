@@ -100,8 +100,12 @@ internal sealed class FrodoClient
             if (firstInterest.TryGetProperty("subject", out var subject) && subject.ValueKind == JsonValueKind.Object)
                 subjectKeys = PropertyNames(subject);
             var hasTagLikeFields = interestKeys.Concat(subjectKeys).Any(name => name.Contains("tag", StringComparison.OrdinalIgnoreCase));
+            var hasLinewatch = subjectKeys.Contains("has_linewatch", StringComparer.Ordinal);
+            var hasActions = subjectKeys.Contains("actions", StringComparer.Ordinal);
+            var hasLinewatches = subjectKeys.Contains("linewatches", StringComparer.Ordinal);
+            var hasGuessedIsPlayable = subjectKeys.Contains("is_playable", StringComparer.Ordinal);
             DiagnosticLogger.Write(
-                $"Frodo schema; InterestKeys={string.Join(',', interestKeys)}; SubjectKeys={string.Join(',', subjectKeys)}; HasTagLikeFields={hasTagLikeFields}");
+                $"Frodo schema; InterestKeys={string.Join(',', interestKeys)}; SubjectKeys={string.Join(',', subjectKeys)}; HasTagLikeFields={hasTagLikeFields}; HasLinewatch={hasLinewatch}; HasActions={hasActions}; HasLinewatches={hasLinewatches}; HasIsPlayable={hasGuessedIsPlayable}");
         }
         catch (Exception ex)
         {

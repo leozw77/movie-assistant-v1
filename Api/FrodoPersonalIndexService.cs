@@ -39,7 +39,7 @@ internal sealed record FrodoPersonalIndexCache(
 
 internal sealed class FrodoPersonalIndexService
 {
-    private const int SchemaVersion = 2;
+    private const int SchemaVersion = 3;
     private const int MaxRequestsPerStatus = 20_000;
     private static readonly JsonSerializerOptions Json = new()
     {
@@ -186,13 +186,43 @@ internal sealed class FrodoPersonalIndexService
             var snapshot = BuildSnapshot(status, total, items);
             lock (_stateGate) _statuses[status] = snapshot;
             await SaveCacheCoreAsync(cancellationToken).ConfigureAwait(false);
-            DiagnosticLogger.Write($"Frodo personal index completed; ProfileId={profileId}; Status={status}; Items={snapshot.Items.Count}; Total={snapshot.Total}");
+            DiagnosticLogger.Write($"Frodo personal index completed; ProfileId={profileId}; Status={status}; Items={snapshot.Items.Count}; Total={snapshot.Total}; Playable={snapshot.Items.Count(item => item.Playable)}");
             return snapshot;
         }
         finally
         {
             _gate.Release();
         }
+    }
+
+    internal async Task<FrodoPersonalItem?> FetchRecentItemAsync(
+        string profileId,
+        string status,
+        string subjectId,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(profileId) || !profileId.All(char.IsDigit) ||
+            string.IsNullOrWhiteSpace(subjectId) || !subjectId.All(char.IsDigit) ||
+            status is not ("collect" or "wish" or "do")) return null;
+
+        var delays = new[] { 0, 350, 850 };
+        for (var attempt = 0; attempt < delays.Length; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (delays[attempt] > 0) await Task.Delay(delays[attempt], cancellationToken).ConfigureAwait(false);
+
+            var raw = await _client.GetInterestsAsync(profileId, status, 0, _options.PageSize, cancellationToken).ConfigureAwait(false);
+            var page = FrodoPersonalMapper.Map(raw, status);
+            var item = page.Items.FirstOrDefault(candidate => candidate.SubjectId.Equals(subjectId, StringComparison.Ordinal));
+            if (item is not null)
+            {
+                DiagnosticLogger.Write($"Frodo personal recent readback found; ProfileId={profileId}; Status={status}; SubjectId={subjectId}; Attempt={attempt + 1}; Raw={page.RawCount}; Mapped={page.Items.Count}");
+                return item;
+            }
+        }
+
+        DiagnosticLogger.Write($"Frodo personal recent readback missing; ProfileId={profileId}; Status={status}; SubjectId={subjectId}; Attempts={delays.Length}");
+        return null;
     }
 
     internal async Task<FrodoPersonalItem?> ApplyConfirmedReviewAsync(
@@ -202,6 +232,7 @@ internal sealed class FrodoPersonalIndexService
         int? myRating,
         string comment,
         string markedDate,
+        FrodoPersonalItem? authoritativeItem = null,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(profileId) || !profileId.All(char.IsDigit) ||
@@ -212,13 +243,25 @@ internal sealed class FrodoPersonalIndexService
         try
         {
             FrodoPersonalItem? source = null;
+            var existedBefore = false;
             lock (_stateGate)
             {
                 if (!_profileId.Equals(profileId, StringComparison.Ordinal)) return null;
                 foreach (var snapshot in _statuses.Values)
                 {
                     source = snapshot.Items.FirstOrDefault(item => item.SubjectId.Equals(subjectId, StringComparison.Ordinal));
-                    if (source is not null) break;
+                    if (source is null) continue;
+                    existedBefore = true;
+                    break;
+                }
+
+                if (source is null && authoritativeItem is not null &&
+                    authoritativeItem.SubjectId.Equals(subjectId, StringComparison.Ordinal))
+                {
+                    // Never fabricate a "complete" target snapshot from one row.
+                    // UPSERT is allowed only when that status already has a complete index.
+                    if (!_statuses.ContainsKey(targetStatus)) return null;
+                    source = authoritativeItem;
                 }
                 if (source is null) return null;
 
@@ -244,7 +287,7 @@ internal sealed class FrodoPersonalIndexService
                     var removed = items.Count != snapshot.Items.Count;
                     var addToTarget = key.Equals(targetStatus, StringComparison.Ordinal);
                     if (!removed && !addToTarget) continue;
-                    if (addToTarget) items.Add(updated);
+                    if (addToTarget) items.Insert(0, updated);
                     var delta = (addToTarget ? 1 : 0) - (removed ? 1 : 0);
                     _statuses[key] = BuildSnapshot(key, Math.Max(0, snapshot.Total + delta), items);
                 }
@@ -252,7 +295,7 @@ internal sealed class FrodoPersonalIndexService
             }
 
             await SaveCacheCoreAsync(cancellationToken).ConfigureAwait(false);
-            DiagnosticLogger.Write($"Frodo personal index authoritative review applied; ProfileId={profileId}; SubjectId={subjectId}; TargetStatus={targetStatus}; Rating={myRating?.ToString() ?? "null"}");
+            DiagnosticLogger.Write($"Frodo personal index authoritative review applied; ProfileId={profileId}; SubjectId={subjectId}; TargetStatus={targetStatus}; Rating={myRating?.ToString() ?? "null"}; Mode={(existedBefore ? "update" : "insert")}");
             return source;
         }
         finally
@@ -260,7 +303,6 @@ internal sealed class FrodoPersonalIndexService
             _gate.Release();
         }
     }
-
     internal async Task<bool> ApplyConfirmedDeleteAsync(
         string profileId,
         string subjectId,

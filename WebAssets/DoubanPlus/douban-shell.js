@@ -431,7 +431,7 @@
     const scoreMax = hasScoreMax && Number.isFinite(Number(criteria.scoreMax)) ? Number(criteria.scoreMax) : null;
     const scoreActive = scoreMin !== null || scoreMax !== null;
     const scoreLabel = scoreActive
-      ? `豆瓣评分 ${(scoreMin ?? 0).toFixed(1)}–${(scoreMax ?? 10).toFixed(1)}`
+      ? `豆瓣评分 ${Math.round(scoreMin ?? 0)}–${Math.round(scoreMax ?? 10)}`
       : "豆瓣评分";
     const scoreButton = makeFilterButton(scoreLabel, scoreActive || personalScorePopoverOpen, () => {
       personalScorePopoverOpen = !personalScorePopoverOpen;
@@ -445,49 +445,123 @@
     if (personalScorePopoverOpen && ready) {
       const popover = document.createElement("div");
       popover.className = "qb-shell-score-popover";
-      let draftMin = scoreMin ?? 0;
-      let draftMax = scoreMax ?? 10;
+      let draftMin = Math.max(0, Math.min(10, Math.round(scoreMin ?? 0)));
+      let draftMax = Math.max(draftMin, Math.min(10, Math.round(scoreMax ?? 10)));
+      let visualMin = draftMin;
+      let visualMax = draftMax;
+      let activeHandle = "";
+      let activePointerId = null;
 
-      const valueRow = document.createElement("div");
-      valueRow.className = "qb-shell-score-values";
-      const minText = document.createElement("span");
-      const maxText = document.createElement("span");
-      const updateLabels = () => {
-        minText.textContent = `${draftMin.toFixed(1)}分`;
-        maxText.textContent = `${draftMax.toFixed(1)}分`;
+      const titleRow = document.createElement("div");
+      titleRow.className = "qb-shell-score-title-row";
+      const title = document.createElement("strong");
+      title.textContent = "豆瓣评分区间";
+      const rangeText = document.createElement("span");
+      rangeText.className = "qb-shell-score-range-text";
+      titleRow.append(title, rangeText);
+
+      const slider = document.createElement("div");
+      slider.className = "qb-shell-score-custom-slider";
+      const rail = document.createElement("div");
+      rail.className = "qb-shell-score-rail";
+      const track = document.createElement("div");
+      track.className = "qb-shell-score-track";
+      const fill = document.createElement("div");
+      fill.className = "qb-shell-score-track-fill";
+      const minHandle = document.createElement("button");
+      const maxHandle = document.createElement("button");
+      const minBubble = document.createElement("span");
+      const maxBubble = document.createElement("span");
+      minHandle.type = maxHandle.type = "button";
+      minHandle.className = "qb-shell-score-handle qb-shell-score-handle-min";
+      maxHandle.className = "qb-shell-score-handle qb-shell-score-handle-max";
+      minHandle.setAttribute("aria-label", "豆瓣最低评分");
+      maxHandle.setAttribute("aria-label", "豆瓣最高评分");
+      minBubble.className = "qb-shell-score-bubble qb-shell-score-bubble-min";
+      maxBubble.className = "qb-shell-score-bubble qb-shell-score-bubble-max";
+      const endpoints = document.createElement("div");
+      endpoints.className = "qb-shell-score-endpoints";
+      endpoints.innerHTML = "<span>0</span><span>10</span>";
+      rail.append(track, fill, minBubble, maxBubble, minHandle, maxHandle);
+      slider.append(rail, endpoints);
+
+      const updateSlider = (animate = false) => {
+        slider.classList.toggle("qb-snapping", animate);
+        const minPercent = visualMin * 10;
+        const maxPercent = visualMax * 10;
+        minHandle.style.left = `${minPercent}%`;
+        maxHandle.style.left = `${maxPercent}%`;
+        minBubble.style.left = `${minPercent}%`;
+        maxBubble.style.left = `${maxPercent}%`;
+        fill.style.left = `${minPercent}%`;
+        fill.style.width = `${Math.max(0, maxPercent - minPercent)}%`;
+        minBubble.textContent = `${draftMin}分`;
+        maxBubble.textContent = `${draftMax}分`;
+        rangeText.textContent = draftMin <= 0 && draftMax >= 10 ? "全部" : `${draftMin}–${draftMax}分`;
+        window.clearTimeout(updateSlider.snapTimer);
+        if (animate) updateSlider.snapTimer = window.setTimeout(() => slider.classList.remove("qb-snapping"), 150);
       };
-      updateLabels();
-      valueRow.append(minText, maxText);
 
-      const sliders = document.createElement("div");
-      sliders.className = "qb-shell-score-sliders";
-      const minRange = document.createElement("input");
-      const maxRange = document.createElement("input");
-      for (const input of [minRange, maxRange]) {
-        input.type = "range";
-        input.min = "0";
-        input.max = "10";
-        input.step = "0.5";
-      }
-      minRange.value = String(draftMin);
-      maxRange.value = String(draftMax);
-      minRange.setAttribute("aria-label", "豆瓣最低评分");
-      maxRange.setAttribute("aria-label", "豆瓣最高评分");
-      minRange.addEventListener("input", () => {
-        draftMin = Math.min(Number(minRange.value), draftMax);
-        minRange.value = String(draftMin);
-        updateLabels();
+      const rawFromPointer = event => {
+        const rect = rail.getBoundingClientRect();
+        return Math.max(0, Math.min(10, ((event.clientX - rect.left) / Math.max(1, rect.width)) * 10));
+      };
+
+      const applyPointer = event => {
+        if (!activeHandle) return;
+        const raw = rawFromPointer(event);
+        if (activeHandle === "min") {
+          visualMin = Math.min(raw, visualMax);
+          draftMin = Math.min(Math.round(visualMin), draftMax);
+        } else {
+          visualMax = Math.max(raw, visualMin);
+          draftMax = Math.max(Math.round(visualMax), draftMin);
+        }
+        updateSlider(false);
+      };
+
+      const beginPointer = (handle, event) => {
+        event.preventDefault();
+        activeHandle = handle;
+        activePointerId = event.pointerId;
+        slider.setPointerCapture?.(event.pointerId);
+        applyPointer(event);
+      };
+      minHandle.addEventListener("pointerdown", event => beginPointer("min", event));
+      maxHandle.addEventListener("pointerdown", event => beginPointer("max", event));
+      slider.addEventListener("pointerdown", event => {
+        if (event.target === minHandle || event.target === maxHandle) return;
+        const raw = rawFromPointer(event);
+        beginPointer(Math.abs(raw - visualMin) <= Math.abs(raw - visualMax) ? "min" : "max", event);
       });
-      maxRange.addEventListener("input", () => {
-        draftMax = Math.max(Number(maxRange.value), draftMin);
-        maxRange.value = String(draftMax);
-        updateLabels();
+      slider.addEventListener("pointermove", event => {
+        if (activePointerId !== event.pointerId) return;
+        applyPointer(event);
       });
-      sliders.append(minRange, maxRange);
+      const endPointer = event => {
+        if (activePointerId !== event.pointerId) return;
+        visualMin = draftMin;
+        visualMax = draftMax;
+        activeHandle = "";
+        activePointerId = null;
+        try { slider.releasePointerCapture?.(event.pointerId); } catch { }
+        updateSlider(true);
+      };
+      slider.addEventListener("pointerup", endPointer);
+      slider.addEventListener("pointercancel", endPointer);
+      updateSlider(false);
 
       const actions = document.createElement("div");
       actions.className = "qb-shell-score-actions";
+      const resetButton = makeFilterButton("全部", false, () => {
+        draftMin = 0;
+        draftMax = 10;
+        visualMin = 0;
+        visualMax = 10;
+        updateSlider(true);
+      }, "qb-shell-filter-option qb-shell-score-reset");
       actions.append(
+        resetButton,
         makeFilterButton("取消", false, () => {
           personalScorePopoverOpen = false;
           renderFilters(personalLocalFilterState);
@@ -499,15 +573,14 @@
           applyLocalPersonalFilter({ scoreMin: fullRange ? null : draftMin, scoreMax: fullRange ? null : draftMax });
         }, "qb-shell-filter-option")
       );
-      popover.append(valueRow, sliders, actions);
+      popover.append(titleRow, slider, actions);
       document.body.append(popover);
       const scoreRect = scoreButton.getBoundingClientRect();
-      const popupWidth = popover.offsetWidth || 320;
+      const popupWidth = popover.offsetWidth || 360;
       const popupLeft = Math.min(Math.max(12, scoreRect.left), Math.max(12, window.innerWidth - popupWidth - 12));
       popover.style.left = `${popupLeft}px`;
-      popover.style.top = `${scoreRect.bottom + 8}px`;
+      popover.style.top = `${scoreRect.bottom + 10}px`;
     }
-
     const advancedCount = [
       criteria.unrated || criteria.myRating ? 1 : 0,
       value(criteria.period) ? 1 : 0,

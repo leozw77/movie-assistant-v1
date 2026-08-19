@@ -126,6 +126,7 @@ internal sealed class FrodoPersonalProvider
         int? myRating,
         string comment,
         string markedDate,
+        FrodoPersonalItem? authoritativeItem = null,
         CancellationToken cancellationToken = default)
     {
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -134,8 +135,12 @@ internal sealed class FrodoPersonalProvider
             if (_profileId.Length == 0 || _status.Length == 0 ||
                 (_status != beforeStatus && _status != targetStatus)) return null;
 
+            var hadCurrentItem = _items.Any(item => item.SubjectId.Equals(subjectId, StringComparison.Ordinal)) ||
+                                 _pendingItems.Any(item => item.SubjectId.Equals(subjectId, StringComparison.Ordinal));
             FrodoPersonalItem? source = _items.FirstOrDefault(item => item.SubjectId.Equals(subjectId, StringComparison.Ordinal));
             source ??= _pendingItems.FirstOrDefault(item => item.SubjectId.Equals(subjectId, StringComparison.Ordinal));
+            if (source is null && authoritativeItem is not null && authoritativeItem.SubjectId.Equals(subjectId, StringComparison.Ordinal))
+                source = authoritativeItem;
             if (source is null) return null;
 
             var updated = source with
@@ -172,10 +177,20 @@ internal sealed class FrodoPersonalProvider
                 }
             }
 
-            if (!keepInCurrent) _total = Math.Max(0, _total - 1);
+            if (keepInCurrent && !hadCurrentItem)
+            {
+                _items.Insert(0, updated);
+                _seenSubjectIds.Add(subjectId);
+                _total = Math.Max(_items.Count + _pendingItems.Count, _total + 1);
+            }
+            else if (!keepInCurrent && hadCurrentItem)
+            {
+                _total = Math.Max(0, _total - 1);
+            }
+
             _apiHasMore = _nextStart < _total;
             _hasMore = _pendingItems.Count > 0 || _apiHasMore;
-            DiagnosticLogger.Write($"Frodo personal provider authoritative review applied; SubjectId={subjectId}; BeforeStatus={beforeStatus}; TargetStatus={targetStatus}; CurrentStatus={_status}; Keep={keepInCurrent}; ShellItems={_items.Count}; Pending={_pendingItems.Count}");
+            DiagnosticLogger.Write($"Frodo personal provider authoritative review applied; SubjectId={subjectId}; BeforeStatus={beforeStatus}; TargetStatus={targetStatus}; CurrentStatus={_status}; Keep={keepInCurrent}; Mode={(hadCurrentItem ? "update" : authoritativeItem is null ? "missing" : "insert")}; ShellItems={_items.Count}; Pending={_pendingItems.Count}");
             return updated;
         }
         finally
@@ -183,7 +198,6 @@ internal sealed class FrodoPersonalProvider
             _gate.Release();
         }
     }
-
     internal async Task<bool> ApplyConfirmedDeleteAsync(string subjectId, CancellationToken cancellationToken = default)
     {
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);

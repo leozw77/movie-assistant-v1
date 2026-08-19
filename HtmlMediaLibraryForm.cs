@@ -2558,6 +2558,42 @@ internal sealed class HtmlMediaLibraryForm : Form
                 record.Comment,
                 record.MarkedDate).ConfigureAwait(true);
 
+            var insertedFromRecentReadback = false;
+            if (indexedItem is null)
+            {
+                var recent = await _frodoPersonalIndex.FetchRecentItemAsync(
+                    profileId,
+                    record.Status,
+                    record.SubjectId).ConfigureAwait(true);
+                if (recent is not null)
+                {
+                    providerItem = await _frodoPersonalProvider.ApplyConfirmedReviewAsync(
+                        record.SubjectId,
+                        beforeStatus,
+                        record.Status,
+                        record.Rating,
+                        record.Comment,
+                        record.MarkedDate,
+                        recent).ConfigureAwait(true);
+                    indexedItem = await _frodoPersonalIndex.ApplyConfirmedReviewAsync(
+                        profileId,
+                        record.SubjectId,
+                        record.Status,
+                        record.Rating,
+                        record.Comment,
+                        record.MarkedDate,
+                        recent).ConfigureAwait(true);
+                    insertedFromRecentReadback = indexedItem is not null;
+                }
+            }
+
+            if (indexedItem is null)
+            {
+                DiagnosticLogger.Write($"Frodo personal authoritative write index upsert deferred; SubjectId={record.SubjectId}; BeforeStatus={beforeStatus}; TargetStatus={record.Status}; Reason={reason}; Cause=RecentFrodoItemNotVisible");
+            }
+
+            var currentStatus = _frodoPersonalProvider.CurrentStatus;
+            var filtered = _frodoPersonalQuery.IsActiveFor(profileId, currentStatus);
             await RefreshFrodoPersonalUiAfterMutationAsync(
                 profileId,
                 record.SubjectId,
@@ -2566,14 +2602,19 @@ internal sealed class HtmlMediaLibraryForm : Form
                 deleted: false,
                 myRating: record.Rating,
                 score: indexedItem?.Score ?? providerItem?.Score,
-                reason: reason).ConfigureAwait(true);
+                reason: insertedFromRecentReadback ? reason + "-upsert" : reason).ConfigureAwait(true);
+
+            if (insertedFromRecentReadback && !filtered && _frodoPersonalActive &&
+                currentStatus.Equals(record.Status, StringComparison.Ordinal))
+            {
+                await RefreshFrodoPersonalAsync("authoritative-new-interest-upsert").ConfigureAwait(true);
+            }
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException or InvalidOperationException or JsonException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException or InvalidOperationException or JsonException or HttpRequestException or TaskCanceledException)
         {
             DiagnosticLogger.Write($"Frodo personal authoritative write sync failed; SubjectId={record.SubjectId}; BeforeStatus={beforeStatus}; TargetStatus={record.Status}; Reason={reason}; Error={ex.Message}");
         }
     }
-
     private async Task SyncFrodoPersonalAfterConfirmedDeleteAsync(string subjectId, string beforeStatus, string reason)
     {
         try

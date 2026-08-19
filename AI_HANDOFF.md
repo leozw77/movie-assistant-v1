@@ -1,3 +1,13 @@
+# 2026-08-19：个人库筛选 Step 5 已修复新增 UPSERT / 可播放 / 评分滑块
+
+开发分支继续为 `chatgpt/frodo-personal-20260819`。本轮基于已实机运行的 Step 4，不修改 main。
+
+- 新增评价不能再只修改已有 Index：`ApplyConfirmedReviewAsync` 支持 authoritative item INSERT；写入官方确认后若完整索引找不到 SubjectId，会短重试 Frodo 最新个人页，找到后同时 UPSERT Provider 与完整 Index。
+- 这直接修复“新片刷新后默认页可见，但一应用完整库筛选就消失”的 Provider/Index 分叉。
+- Playable 的真实个人 interests 字段为 `subject.has_linewatch`；不再使用 `is_playable` 猜测。兼容 `actions=可播放` / 非空 `linewatches`，缓存 schema 为 v3。
+- 豆瓣评分本地 Query 已证实正常，本轮只替换前端交互：自定义双滑块、连续拖动、整数 1 分吸附。
+- 不修改 `ReviewWriteCoordinator.cs` / `ReviewWriteVerifier.cs` / `ReviewTargetResolver.cs` / `ReviewWriteModels.cs`；官方回读仍是写入成功唯一确认依据。
+
 # 2026-08-19：个人库筛选 Step 4 已统一
 
 开发分支继续为 `chatgpt/frodo-personal-20260819`。本轮基于 Step 3 实机版本收敛个人页筛选架构：所有常用个人筛选由一个 Frodo 完整索引 criteria 执行，不再把“在线观看”切回 DOM。
