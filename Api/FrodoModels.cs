@@ -28,6 +28,7 @@ internal sealed record FrodoPersonalItem(
     string Director,
     IReadOnlyList<string> Directors,
     string ContentType,
+    bool Playable,
     double? Score,
     int? RatingCount,
     int? MyRating,

@@ -2397,7 +2397,6 @@ internal sealed class HtmlMediaLibraryForm : Form
         int shown,
         string error)
     {
-        var baseUrl = $"https://movie.douban.com/people/{profileId}/{status}";
         return new
         {
             source = "frodo-local",
@@ -2412,10 +2411,12 @@ internal sealed class HtmlMediaLibraryForm : Form
             criteria = new
             {
                 contentType = criteria.ContentType,
+                playableOnly = criteria.PlayableOnly,
+                scoreMin = criteria.ScoreMin,
+                scoreMax = criteria.ScoreMax,
                 myRating = criteria.MyRating,
                 unrated = criteria.Unrated,
-                year = criteria.Year,
-                decade = criteria.Decade,
+                period = criteria.Period,
                 genre = criteria.Genre,
                 country = criteria.Country,
                 sort = criteria.Sort
@@ -2425,15 +2426,9 @@ internal sealed class HtmlMediaLibraryForm : Form
                 years = snapshot?.Years ?? new List<string>(),
                 genres = snapshot?.Genres ?? new List<string>(),
                 countries = snapshot?.Countries ?? new List<string>()
-            },
-            webFilters = new object[]
-            {
-                new { label = "正在热映", url = baseUrl + "?filter=schedule&start=0&mode=grid" },
-                new { label = "在线观看", url = baseUrl + "?filter=video&start=0&mode=grid" }
             }
         };
     }
-
     private async Task HandleDoubanShellApplyLocalPersonalFilterAsync(JsonElement root)
     {
         if (!_frodoPersonalActive || !_frodoPersonalProvider.IsActiveFor(_activeDoubanSourceNavigationUrl))
@@ -2458,7 +2453,7 @@ internal sealed class HtmlMediaLibraryForm : Form
         var firstPage = _frodoPersonalQuery.TakeInitial();
         var page = BuildFrodoPersonalQueryPayload(resolvedRequestId, generation, firstPage, snapshot);
         await ForwardDoubanSourceResultToShellAsync(page, "personal-local-filter").ConfigureAwait(true);
-        DiagnosticLogger.Write($"Frodo personal local filter applied; ProfileId={profileId}; Status={status}; Matched={result.Count}; Shown={_frodoPersonalQuery.Shown}; ContentType={criteria.ContentType}; Rating={criteria.MyRating?.ToString() ?? (criteria.Unrated ? "unrated" : "all")}; Year={criteria.Year}; Genre={criteria.Genre}; Country={criteria.Country}; Sort={criteria.Sort}");
+        DiagnosticLogger.Write($"Frodo personal local filter applied; ProfileId={profileId}; Status={status}; Matched={result.Count}; Shown={_frodoPersonalQuery.Shown}; ContentType={criteria.ContentType}; PlayableOnly={criteria.PlayableOnly}; ScoreMin={criteria.ScoreMin?.ToString("0.0") ?? "all"}; ScoreMax={criteria.ScoreMax?.ToString("0.0") ?? "all"}; Rating={criteria.MyRating?.ToString() ?? (criteria.Unrated ? "unrated" : "all")}; Period={criteria.Period}; Genre={criteria.Genre}; Country={criteria.Country}; Sort={criteria.Sort}");
     }
 
     private static FrodoPersonalFilterCriteria ReadFrodoPersonalFilterCriteria(JsonElement root)
@@ -2468,23 +2463,43 @@ internal sealed class HtmlMediaLibraryForm : Form
 
         var contentType = ReadString(criteria, "contentType").Trim().ToLowerInvariant();
         if (contentType is not ("" or "movie" or "tv")) throw new InvalidDataException("影片类型筛选无效。");
+
+        var playableOnly = ReadBool(criteria, "playableOnly");
+        double? scoreMin = null;
+        double? scoreMax = null;
+        if (criteria.TryGetProperty("scoreMin", out var scoreMinValue) && scoreMinValue.ValueKind == JsonValueKind.Number && scoreMinValue.TryGetDouble(out var parsedMin))
+            scoreMin = parsedMin;
+        if (criteria.TryGetProperty("scoreMax", out var scoreMaxValue) && scoreMaxValue.ValueKind == JsonValueKind.Number && scoreMaxValue.TryGetDouble(out var parsedMax))
+            scoreMax = parsedMax;
+        if ((scoreMin is not null && (scoreMin.Value < 0 || scoreMin.Value > 10)) ||
+            (scoreMax is not null && (scoreMax.Value < 0 || scoreMax.Value > 10)) ||
+            (scoreMin is not null && scoreMax is not null && scoreMin.Value > scoreMax.Value))
+            throw new InvalidDataException("豆瓣评分区间无效。");
+
         var myRating = ReadNullableInt(criteria, "myRating", 1, 5);
         var unrated = ReadBool(criteria, "unrated");
         if (unrated) myRating = null;
-        var year = ReadBoundedString(criteria, "year", 12);
-        var decade = ReadBoundedString(criteria, "decade", 12);
-        if (decade.Length > 0 && (!int.TryParse(decade, out var decadeNumber) || decadeNumber < 1880 || decadeNumber > 2100 || decadeNumber % 10 != 0))
-            throw new InvalidDataException("年代筛选无效。");
-        if (year.Length > 0) decade = "";
+
+        var period = ReadBoundedString(criteria, "period", 24).Trim().ToLowerInvariant();
+        if (period.Length > 0)
+        {
+            var parts = period.Split(':', 2, StringSplitOptions.TrimEntries);
+            var kindValid = parts.Length == 2 && (parts[0] == "year" || parts[0] == "decade");
+            if (!kindValid || !int.TryParse(parts[1], out var periodValue) ||
+                (parts[0] == "year" && (periodValue < 1880 || periodValue > 2100)) ||
+                (parts[0] == "decade" && (periodValue < 1880 || periodValue > 2100 || periodValue % 10 != 0)))
+                throw new InvalidDataException("年代筛选无效。");
+        }
+
         var genre = ReadBoundedString(criteria, "genre", 80);
         var country = ReadBoundedString(criteria, "country", 80);
         var sort = ReadString(criteria, "sort").Trim();
         if (string.IsNullOrWhiteSpace(sort)) sort = "marked-desc";
         if (sort is not ("marked-desc" or "my-rating-desc" or "douban-score-desc" or "year-desc" or "title-asc"))
             throw new InvalidDataException("个人库排序方式无效。");
-        return new FrodoPersonalFilterCriteria(contentType, myRating, unrated, year, decade, genre, country, sort);
-    }
 
+        return new FrodoPersonalFilterCriteria(contentType, playableOnly, scoreMin, scoreMax, myRating, unrated, period, genre, country, sort);
+    }
     private JsonElement BuildFrodoPersonalQueryPayload(
         string requestId,
         int generation,

@@ -4,10 +4,12 @@ namespace QbPotDoubanAi;
 
 internal sealed record FrodoPersonalFilterCriteria(
     string ContentType = "",
+    bool PlayableOnly = false,
+    double? ScoreMin = null,
+    double? ScoreMax = null,
     int? MyRating = null,
     bool Unrated = false,
-    string Year = "",
-    string Decade = "",
+    string Period = "",
     string Genre = "",
     string Country = "",
     string Sort = "marked-desc");
@@ -37,7 +39,7 @@ internal sealed record FrodoPersonalIndexCache(
 
 internal sealed class FrodoPersonalIndexService
 {
-    private const int SchemaVersion = 1;
+    private const int SchemaVersion = 2;
     private const int MaxRequestsPerStatus = 20_000;
     private static readonly JsonSerializerOptions Json = new()
     {
@@ -304,14 +306,29 @@ internal sealed class FrodoPersonalIndexService
         IEnumerable<FrodoPersonalItem> query = snapshot.Items;
         if (!string.IsNullOrWhiteSpace(criteria.ContentType))
             query = query.Where(item => item.ContentType.Equals(criteria.ContentType, StringComparison.OrdinalIgnoreCase));
+        if (criteria.PlayableOnly)
+            query = query.Where(item => item.Playable);
+        if (criteria.ScoreMin is not null)
+            query = query.Where(item => item.Score is not null && item.Score.Value >= criteria.ScoreMin.Value);
+        if (criteria.ScoreMax is not null)
+            query = query.Where(item => item.Score is not null && item.Score.Value <= criteria.ScoreMax.Value);
         if (criteria.Unrated)
             query = query.Where(item => item.MyRating is null);
         else if (criteria.MyRating is not null)
             query = query.Where(item => item.MyRating == criteria.MyRating);
-        if (!string.IsNullOrWhiteSpace(criteria.Year))
-            query = query.Where(item => item.Year.Equals(criteria.Year, StringComparison.OrdinalIgnoreCase));
-        if (!string.IsNullOrWhiteSpace(criteria.Decade) && int.TryParse(criteria.Decade, out var decade))
-            query = query.Where(item => int.TryParse(item.Year, out var year) && year >= decade && year < decade + 10);
+
+        if (!string.IsNullOrWhiteSpace(criteria.Period))
+        {
+            var parts = criteria.Period.Split(':', 2, StringSplitOptions.TrimEntries);
+            if (parts.Length == 2 && int.TryParse(parts[1], out var periodValue))
+            {
+                if (parts[0].Equals("year", StringComparison.OrdinalIgnoreCase))
+                    query = query.Where(item => int.TryParse(item.Year, out var year) && year == periodValue);
+                else if (parts[0].Equals("decade", StringComparison.OrdinalIgnoreCase))
+                    query = query.Where(item => int.TryParse(item.Year, out var year) && year >= periodValue && year < periodValue + 10);
+            }
+        }
+
         if (!string.IsNullOrWhiteSpace(criteria.Genre))
             query = query.Where(item => item.Genres.Contains(criteria.Genre, StringComparer.OrdinalIgnoreCase));
         if (!string.IsNullOrWhiteSpace(criteria.Country))
@@ -328,7 +345,6 @@ internal sealed class FrodoPersonalIndexService
 
         return query.ToList();
     }
-
     private static FrodoPersonalIndexStatus BuildSnapshot(string status, int total, IReadOnlyList<FrodoPersonalItem> items)
     {
         static List<string> DistinctSorted(IEnumerable<string> values) =>

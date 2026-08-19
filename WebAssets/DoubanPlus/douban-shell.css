@@ -159,3 +159,70 @@ button { font: inherit; }
   .qb-shell-nav { order: 3; flex-basis: 100%; overflow-x: auto; }
   .qb-shell-main { padding: 20px; }
 }
+/* Step 4: unified Frodo personal filtering */
+.qb-shell-personal-primary-row {
+  display: flex;
+  flex: 1 0 100%;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 18px;
+  min-width: max-content;
+  padding-bottom: 2px;
+}
+.qb-shell-personal-primary-group {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+.qb-shell-score-control { overflow: visible; }
+.qb-shell-score-popover {
+  position: fixed;
+  z-index: 60;
+  width: 320px;
+  max-width: min(88vw, 320px);
+  padding: 16px;
+  border: 1px solid #3a4657;
+  border-radius: 14px;
+  background: #171f29;
+  box-shadow: 0 18px 42px rgb(0 0 0 / 42%);
+}
+.qb-shell-score-values,
+.qb-shell-score-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.qb-shell-score-values { margin-bottom: 14px; color: #b9c7d8; font-size: 13px; }
+.qb-shell-score-actions { justify-content: flex-end; margin-top: 14px; }
+.qb-shell-score-sliders {
+  position: relative;
+  height: 30px;
+}
+.qb-shell-score-sliders input[type="range"] {
+  position: absolute;
+  inset: 4px 0 auto;
+  width: 100%;
+  margin: 0;
+  background: transparent;
+  pointer-events: none;
+  accent-color: #7bb7ee;
+}
+.qb-shell-score-sliders input[type="range"]::-webkit-slider-thumb { pointer-events: auto; }
+.qb-shell-score-sliders input[type="range"]::-moz-range-thumb { pointer-events: auto; }
+.qb-shell-advanced-filter-compact { gap: 10px; padding-top: 12px; }
+.qb-shell-advanced-category-row,
+.qb-shell-advanced-options-panel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.qb-shell-advanced-options-panel {
+  padding-top: 10px;
+  border-top: 1px solid #2f3a49;
+}
+.qb-shell-personal-index-hint { flex: 1 0 100%; }

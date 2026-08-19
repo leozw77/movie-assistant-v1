@@ -1,3 +1,18 @@
+# 2026-08-19：个人库筛选 Step 4 已统一
+
+开发分支继续为 `chatgpt/frodo-personal-20260819`。本轮基于 Step 3 实机版本收敛个人页筛选架构：所有常用个人筛选由一个 Frodo 完整索引 criteria 执行，不再把“在线观看”切回 DOM。
+
+最终 UI：
+
+- 第一层固定一行：状态 / 影片类型 / 排序 / 可播放 / 豆瓣评分 / 筛选。
+- 豆瓣评分点击后弹 0-10 双滑块；范围直接映射 `subject.rating.value`。
+- 高级筛选第二层只显示：我的评分 / 年代 / 地区 / 题材；点击其中一个后，下方仅展示该分类选项。
+- 年代直接混排近 5 个具体年份 + 更早年代，不再维护独立“年份”入口。
+- `subject.is_playable` 映射入模型，index schema v2 强制旧缓存重建。
+- 写入/删除官方确认后的即时索引同步与双评分卡片继续保留。
+
+边界：`ReviewWriteCoordinator.cs` / `ReviewWriteVerifier.cs` / `ReviewTargetResolver.cs` / `ReviewWriteModels.cs` 仍不修改；Provider 固定 source-slot cursor 逻辑仍不修改。
+
 # 2026-08-19：个人库筛选 Step 3 已接入
 
 开发分支继续为 `chatgpt/frodo-personal-20260819`，基于 Step 2 实机 UI 版本继续。

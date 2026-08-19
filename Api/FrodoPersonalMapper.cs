@@ -119,6 +119,7 @@ internal static class FrodoPersonalMapper
         var contentType = ReadString(subject, "type");
         if (contentType.Length == 0) contentType = ReadString(subject, "subtype");
         contentType = contentType.Equals("tv", StringComparison.OrdinalIgnoreCase) ? "tv" : "movie";
+        var playable = ReadBool(subject, "is_playable");
         var identity = string.Join(" / ", new[]
         {
             year,
@@ -139,6 +140,7 @@ internal static class FrodoPersonalMapper
             directors.FirstOrDefault() ?? "",
             directors,
             contentType,
+            playable,
             score,
             ratingCount,
             ReadMyRating(interest),
@@ -234,6 +236,21 @@ internal static class FrodoPersonalMapper
 
     private static double? ReadDouble(JsonElement owner, string name) =>
         owner.ValueKind == JsonValueKind.Object && owner.TryGetProperty(name, out var value) && value.TryGetDouble(out var number) ? number : null;
+
+    private static bool ReadBool(JsonElement owner, string name)
+    {
+        if (owner.ValueKind != JsonValueKind.Object || !owner.TryGetProperty(name, out var value)) return false;
+        if (value.ValueKind == JsonValueKind.True) return true;
+        if (value.ValueKind == JsonValueKind.False) return false;
+        if (value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var number)) return number != 0;
+        if (value.ValueKind == JsonValueKind.String)
+        {
+            var text = (value.GetString() ?? "").Trim();
+            if (bool.TryParse(text, out var boolean)) return boolean;
+            return text == "1";
+        }
+        return false;
+    }
 
     private static bool IsSubjectUrl(string url, string subjectId) =>
         Uri.TryCreate(url, UriKind.Absolute, out var uri) &&
