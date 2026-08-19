@@ -46,6 +46,29 @@ public sealed class TrayContext : ApplicationContext
         quickTest.CheckedChanged += (_, _) => { _quickCompletionTest = quickTest.Checked; _quickTestSeconds = 0; _quickTestTarget = ""; };
         menu.Items.Add(quickTest);
         menu.Items.Add("Douban Plus…", null, (_, _) => ShowMediaLibrary());
+        var rebuildPersonalCacheMenu = new ToolStripMenuItem("重读个人页缓存…");
+        rebuildPersonalCacheMenu.Click += async (_, _) =>
+        {
+            if (!rebuildPersonalCacheMenu.Enabled) return;
+            rebuildPersonalCacheMenu.Enabled = false;
+            var normalText = rebuildPersonalCacheMenu.Text;
+            rebuildPersonalCacheMenu.Text = "重读个人页缓存（进行中…）";
+            try
+            {
+                var result = await RebuildDoubanPersonalCacheAsync();
+                MessageBox.Show(result, "个人页缓存重读完成", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("重读失败：" + ex.Message, "个人页缓存", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                rebuildPersonalCacheMenu.Text = normalText;
+                rebuildPersonalCacheMenu.Enabled = true;
+            }
+        };
+        menu.Items.Add(rebuildPersonalCacheMenu);
         menu.Items.Add("豆瓣扫码登录…", null, (_, _) => ShowDoubanLogin());
         menu.Items.Add(new ToolStripSeparator()); menu.Items.Add("退出", null, (_, _) => ExitThread());
         _tray = new NotifyIcon { Icon = SystemIcons.Information, Text = "观影助手", Visible = true, ContextMenuStrip = menu };

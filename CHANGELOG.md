@@ -834,3 +834,12 @@
 - If Douban Plus is closed, the background action uses the existing cached ProfileId and rebuilds the cache without changing Personal State.
 - Manual cache rebuild never controls ordinary DOM membership/status/rating/comment/date/order.
 - Public Douban score display now always uses one decimal place, e.g. `9.0` instead of `9`.
+
+## 2026-08-20 - Force cached public rating by SubjectId
+
+- Public score lookup is now independent from Personal State.
+- DOM cards scan all cached `collect / wish / do` snapshots by SubjectId and use any cached `Score / RatingCount` found.
+- No single-movie detail API fallback is used.
+- Manual full cache rebuild uses `count=100`; normal visible/provider batching stays at 20.
+- Added `重读个人页缓存…` directly to the tray menu.
+- Added `RatingHits / RatingMisses / Scope=AllCachedStatuses` diagnostics.

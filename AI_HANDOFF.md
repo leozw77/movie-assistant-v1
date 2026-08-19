@@ -270,3 +270,10 @@ Phase 1 回 DOM 后发现两个回归并已修复：
 - 该按钮只更新高级筛选索引和公共元数据缓存，不改变 DOM 个人状态权威。
 
 评分显示统一一位小数：`9` -> `9.0`。
+
+# 2026-08-20：公共评分强制读取缓存
+
+Metadata Overlay 不再按当前 collect/wish/do 分区读取评分。
+现在固定为：DOM SubjectId -> 扫描整个 Frodo Personal Cache -> 任一缓存副本有 Score 就覆盖。
+仅允许读取 Score / RatingCount；禁止使用缓存 Personal Status 修改 DOM 状态。
+手动完整重读使用 count=100；普通 UI 分页仍保持 20。

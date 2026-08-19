@@ -41,6 +41,7 @@ internal sealed class FrodoPersonalIndexService
 {
     private const int SchemaVersion = 4;
     private const int MaxRequestsPerStatus = 20_000;
+    private const int FullSnapshotPageSize = 100;
     private const int MaxBoundedReconcilePages = 5;
     internal static int BoundedReconcilePageLimit => MaxBoundedReconcilePages;
     private static readonly JsonSerializerOptions Json = new()
@@ -83,6 +84,34 @@ internal sealed class FrodoPersonalIndexService
         }
     }
 
+    internal bool TryGetCachedPublicRating(
+        string profileId,
+        string subjectId,
+        out double? score,
+        out int? ratingCount)
+    {
+        score = null;
+        ratingCount = null;
+        if (string.IsNullOrWhiteSpace(profileId) || string.IsNullOrWhiteSpace(subjectId)) return false;
+
+        lock (_stateGate)
+        {
+            if (!_profileId.Equals(profileId, StringComparison.Ordinal)) return false;
+
+            foreach (var snapshot in _statuses.Values)
+            {
+                foreach (var item in snapshot.Items)
+                {
+                    if (!item.SubjectId.Equals(subjectId, StringComparison.Ordinal)) continue;
+                    if (score is null or <= 0 && item.Score is > 0) score = item.Score;
+                    if (ratingCount is null or <= 0 && item.RatingCount is > 0) ratingCount = item.RatingCount;
+                    if (score is > 0 && ratingCount is > 0) return true;
+                }
+            }
+        }
+
+        return score is > 0 || ratingCount is > 0;
+    }
     internal async Task LoadCacheAsync(string profileId, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(profileId) || !profileId.All(char.IsDigit)) return;
@@ -201,7 +230,7 @@ internal sealed class FrodoPersonalIndexService
             cancellationToken.ThrowIfCancellationRequested();
             requestCount++;
             var requestedStart = nextStart;
-            var raw = await _client.GetInterestsAsync(profileId, status, requestedStart, _options.PageSize, cancellationToken).ConfigureAwait(false);
+            var raw = await _client.GetInterestsAsync(profileId, status, requestedStart, FullSnapshotPageSize, cancellationToken).ConfigureAwait(false);
             var page = FrodoPersonalMapper.Map(raw, status);
             if (page.Skipped.Count > 0)
                 throw new InvalidDataException($"Frodo 完整快照存在无法映射记录；Status={status}; Start={requestedStart}; Skipped={page.Skipped.Count}。");
@@ -217,7 +246,7 @@ internal sealed class FrodoPersonalIndexService
             total = Math.Max(stableCloudTotal.Value, items.Count);
             progress?.Report(new FrodoPersonalIndexProgress(profileId, status, requestedStart, items.Count, total));
 
-            var cursorAdvance = page.Count > 0 ? page.Count : _options.PageSize;
+            var cursorAdvance = page.Count > 0 ? page.Count : FullSnapshotPageSize;
             var responseStart = Math.Max(page.Start, requestedStart);
             nextStart = checked(responseStart + cursorAdvance);
 

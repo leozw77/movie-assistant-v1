@@ -2026,36 +2026,34 @@ internal sealed class HtmlMediaLibraryForm : Form
         }
     }
 
-    private static JsonElement OverlayPersonalPublicMetadata(JsonElement items, FrodoPersonalIndexStatus snapshot)
+    private JsonElement OverlayPersonalPublicMetadata(JsonElement items, string profileId)
     {
-        if (items.ValueKind != JsonValueKind.Array || items.GetArrayLength() == 0 || snapshot.Items.Count == 0)
-            return items;
-
-        var metadataBySubject = new Dictionary<string, FrodoPersonalItem>(StringComparer.Ordinal);
-        foreach (var metadata in snapshot.Items)
-        {
-            if (!string.IsNullOrWhiteSpace(metadata.SubjectId))
-                metadataBySubject[metadata.SubjectId] = metadata;
-        }
+        if (items.ValueKind != JsonValueKind.Array || items.GetArrayLength() == 0) return items;
 
         var patched = new List<System.Text.Json.Nodes.JsonObject>();
+        var hits = 0;
+        var misses = 0;
         foreach (var item in items.EnumerateArray())
         {
             var node = System.Text.Json.Nodes.JsonNode.Parse(item.GetRawText()) as System.Text.Json.Nodes.JsonObject
                 ?? new System.Text.Json.Nodes.JsonObject();
             var subjectId = node["subjectId"]?.GetValue<string>() ?? "";
-            if (subjectId.Length > 0 && metadataBySubject.TryGetValue(subjectId, out var metadata))
+
+            if (subjectId.Length > 0 &&
+                _frodoPersonalIndex.TryGetCachedPublicRating(profileId, subjectId, out var score, out var ratingCount))
             {
-                // Metadata Overlay may only add public subject properties.
-                // Never patch status, myRating, comment, markedDate, membership or card order here.
-                if (metadata.Score is > 0)
-                    node["score"] = metadata.Score.Value;
-                if (metadata.RatingCount is > 0)
-                    node["voteCount"] = metadata.RatingCount.Value;
+                if (score is > 0) { node["score"] = score.Value; hits++; }
+                else misses++;
+                if (ratingCount is > 0) node["voteCount"] = ratingCount.Value;
+            }
+            else if (subjectId.Length > 0)
+            {
+                misses++;
             }
             patched.Add(node);
         }
 
+        DiagnosticLogger.Write($"Personal cached rating overlay; ProfileId={profileId}; Cards={patched.Count}; RatingHits={hits}; RatingMisses={misses}; Scope=AllCachedStatuses");
         return JsonSerializer.SerializeToElement(patched);
     }
     private async Task ForwardDoubanSourceResultToShellAsync(JsonElement root, string operation = "")
@@ -2084,7 +2082,7 @@ internal sealed class HtmlMediaLibraryForm : Form
 
             if (overlaySnapshot is not null)
             {
-                items = OverlayPersonalPublicMetadata(items, overlaySnapshot);
+                items = OverlayPersonalPublicMetadata(items, overlayProfileId);
                 PostFrodoPersonalFilterState(
                     overlayProfileId,
                     overlayStatus,
