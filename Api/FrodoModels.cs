@@ -16,6 +16,7 @@ internal sealed record FrodoPersonalPage(
 
 internal sealed record FrodoPersonalItem(
     string SubjectId,
+    string InterestId,
     string SubjectUrl,
     string PosterUrl,
     string Title,

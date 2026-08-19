@@ -8,6 +8,7 @@ internal sealed class FrodoPersonalProvider
     private static readonly JsonSerializerOptions ShellJson = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
     private readonly FrodoClient _client;
     private readonly FrodoOptions _options;
+    private readonly FrodoPersonalIndexService _store;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly List<FrodoPersonalItem> _items = [];
     private readonly Queue<FrodoPersonalItem> _pendingItems = new();
@@ -20,9 +21,10 @@ internal sealed class FrodoPersonalProvider
     private bool _apiHasMore;
     private bool _hasMore;
 
-    internal FrodoPersonalProvider(FrodoOptions options)
+    internal FrodoPersonalProvider(FrodoOptions options, FrodoPersonalIndexService store)
     {
         _options = options;
+        _store = store;
         _client = new FrodoClient(options);
     }
 
@@ -77,6 +79,7 @@ internal sealed class FrodoPersonalProvider
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            await _store.LoadCacheAsync(profileId, cancellationToken).ConfigureAwait(false);
             ResetCore();
             _profileId = profileId;
             _status = shellStatus;
@@ -137,26 +140,32 @@ internal sealed class FrodoPersonalProvider
 
             var hadCurrentItem = _items.Any(item => item.SubjectId.Equals(subjectId, StringComparison.Ordinal)) ||
                                  _pendingItems.Any(item => item.SubjectId.Equals(subjectId, StringComparison.Ordinal));
-            FrodoPersonalItem? source = _items.FirstOrDefault(item => item.SubjectId.Equals(subjectId, StringComparison.Ordinal));
+            var hasAuthoritative = authoritativeItem is not null &&
+                                   authoritativeItem.SubjectId.Equals(subjectId, StringComparison.Ordinal) &&
+                                   authoritativeItem.Status.Equals(targetStatus, StringComparison.Ordinal);
+            FrodoPersonalItem? source = hasAuthoritative
+                ? authoritativeItem
+                : _items.FirstOrDefault(item => item.SubjectId.Equals(subjectId, StringComparison.Ordinal));
             source ??= _pendingItems.FirstOrDefault(item => item.SubjectId.Equals(subjectId, StringComparison.Ordinal));
-            if (source is null && authoritativeItem is not null && authoritativeItem.SubjectId.Equals(subjectId, StringComparison.Ordinal))
-                source = authoritativeItem;
             if (source is null) return null;
 
-            var updated = source with
+            var statusLabel = targetStatus switch
             {
-                Status = targetStatus,
-                StatusLabel = targetStatus switch
-                {
-                    "collect" => "看过",
-                    "wish" => "想看",
-                    "do" => "在看",
-                    _ => source.StatusLabel
-                },
-                MyRating = targetStatus == "wish" ? null : myRating,
-                Comment = comment ?? "",
-                MarkedDate = markedDate ?? ""
+                "collect" => "看过",
+                "wish" => "想看",
+                "do" => "在看",
+                _ => source.StatusLabel
             };
+            var updated = hasAuthoritative
+                ? source with { Status = targetStatus, StatusLabel = statusLabel }
+                : source with
+                {
+                    Status = targetStatus,
+                    StatusLabel = statusLabel,
+                    MyRating = targetStatus == "wish" ? null : myRating,
+                    Comment = comment ?? "",
+                    MarkedDate = markedDate ?? ""
+                };
 
             var keepInCurrent = _status.Equals(targetStatus, StringComparison.Ordinal);
             for (var index = _items.Count - 1; index >= 0; index--)
@@ -190,7 +199,7 @@ internal sealed class FrodoPersonalProvider
 
             _apiHasMore = _nextStart < _total;
             _hasMore = _pendingItems.Count > 0 || _apiHasMore;
-            DiagnosticLogger.Write($"Frodo personal provider authoritative review applied; SubjectId={subjectId}; BeforeStatus={beforeStatus}; TargetStatus={targetStatus}; CurrentStatus={_status}; Keep={keepInCurrent}; Mode={(hadCurrentItem ? "update" : authoritativeItem is null ? "missing" : "insert")}; ShellItems={_items.Count}; Pending={_pendingItems.Count}");
+            DiagnosticLogger.Write($"Frodo personal provider authoritative review applied; SubjectId={subjectId}; BeforeStatus={beforeStatus}; TargetStatus={targetStatus}; CurrentStatus={_status}; Keep={keepInCurrent}; Authority={(hasAuthoritative ? "Frodo" : "Local")}; InterestId={updated.InterestId}; LocalRating={myRating?.ToString() ?? "null"}; AppliedRating={updated.MyRating?.ToString() ?? "null"}; Mode={(hadCurrentItem ? "update" : hasAuthoritative ? "insert" : "missing")}; ShellItems={_items.Count}; Pending={_pendingItems.Count}");
             return updated;
         }
         finally
@@ -254,6 +263,18 @@ internal sealed class FrodoPersonalProvider
                 _options.PageSize,
                 cancellationToken).ConfigureAwait(false);
             var page = FrodoPersonalMapper.Map(raw, _status);
+            try
+            {
+                await _store.ReconcileRemotePageAsync(_profileId, _status, page, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidDataException or IOException or UnauthorizedAccessException or JsonException)
+            {
+                DiagnosticLogger.Write($"Frodo personal store reconcile deferred; ProfileId={_profileId}; Status={_status}; Start={page.Start}; Total={page.Total}; Error={ex.Message}");
+            }
 
             var duplicateIds = new List<string>();
             var buffered = 0;

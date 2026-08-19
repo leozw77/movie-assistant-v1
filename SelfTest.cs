@@ -172,8 +172,90 @@ public static class SelfTest
         var legacyRecord = System.Text.Json.JsonSerializer.Deserialize<DoubanHistoryRecord>("{\"SubjectId\":\"36173819\",\"Title\":\"来福大酒店\",\"Status\":\"collect\"}");
         Check("旧版豆瓣历史缺少状态选项时仍可读取", legacyRecord?.SubjectId == "36173819" && legacyRecord.Title == "来福大酒店" && legacyRecord.DoubanStatusOptions.Count == 0);
         Check("Worker 优先级保留删除/保存、官方读取和搜索", WorkerJobQueue.PriorityFor(WorkerJobType.ReviewDelete) == 0 && WorkerJobQueue.PriorityFor(WorkerJobType.ReviewSave) == 0 && WorkerJobQueue.PriorityFor(WorkerJobType.OfficialReviewRead) == 1 && WorkerJobQueue.PriorityFor(WorkerJobType.Search) == 4);
+        var frodoStore = FrodoPersonalStoreSelfTest();
+        Check("Frodo 个人记录保留 InterestId", frodoStore.InterestId);
+        Check("Frodo 首屏可按 total 最小增量 UPSERT 完整库", frodoStore.HeadUpsert);
+        Check("Frodo 状态迁移在单一 Store 中去除旧状态", frodoStore.StatusMove);
+        Check("Frodo 新鲜权威记录不会再被旧本地评分覆盖", frodoStore.AuthoritativePrecedence);
         lines.Insert(0, $"内置自检：{passed}/{total} 项通过");
         return string.Join(Environment.NewLine, lines);
+    }
+    private static (bool InterestId, bool HeadUpsert, bool StatusMove, bool AuthoritativePrecedence) FrodoPersonalStoreSelfTest()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "movie-assistant-frodo-store-selftest-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Directory.CreateDirectory(directory);
+            using var document = System.Text.Json.JsonDocument.Parse("""
+                {"start":0,"count":20,"total":1,"interests":[{"id":9001,"status":"done","rating":{"value":5},"comment":"cloud","create_time":"2026-08-19 12:00:00","subject":{"id":"1","title":"Fresh","year":"2026","type":"movie","url":"https://movie.douban.com/subject/1/","genres":["剧情"],"countries":["中国大陆"],"rating":{"value":8.0,"count":100}}}]}
+                """);
+            var mapped = FrodoPersonalMapper.Map(document.RootElement, "collect").Items.Single();
+            var interestIdOk = mapped.InterestId == "9001" && mapped.MyRating == 5;
+            var stale = mapped with { InterestId = "8001", MyRating = 3, Comment = "stale" };
+            var wishItem = mapped with
+            {
+                SubjectId = "2",
+                InterestId = "9002",
+                SubjectUrl = "https://movie.douban.com/subject/2/",
+                Title = "Moved",
+                MyRating = null,
+                Status = "wish",
+                StatusLabel = "想看",
+                Comment = ""
+            };
+            var movedToCollect = wishItem with
+            {
+                MyRating = 4,
+                Status = "collect",
+                StatusLabel = "看过",
+                Comment = "moved"
+            };
+            var now = DateTimeOffset.UtcNow;
+            var cache = new FrodoPersonalIndexCache(
+                4,
+                "196650036",
+                now,
+                new Dictionary<string, FrodoPersonalIndexStatus>(StringComparer.Ordinal)
+                {
+                    ["collect"] = new FrodoPersonalIndexStatus("collect", true, 1, now, [stale], [], [], []),
+                    ["wish"] = new FrodoPersonalIndexStatus("wish", true, 1, now, [wishItem], [], [], [])
+                });
+            var jsonOptions = new System.Text.Json.JsonSerializerOptions { PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase };
+            File.WriteAllText(
+                Path.Combine(directory, "frodo-personal-index-v1.json"),
+                System.Text.Json.JsonSerializer.Serialize(cache, jsonOptions));
+
+            var service = new FrodoPersonalIndexService(FrodoOptions.CreateDefault(), directory);
+            service.LoadCacheAsync("196650036").GetAwaiter().GetResult();
+            var remotePage = new FrodoPersonalPage(0, 20, 2, 2, [mapped, movedToCollect], []);
+            service.ReconcileRemotePageAsync("196650036", "collect", remotePage).GetAwaiter().GetResult();
+
+            var headUpsertOk = service.TryGetStatus("196650036", "collect", out var collect) &&
+                               collect.Total == 2 && collect.Items.Count == 2 &&
+                               collect.Items.Single(item => item.SubjectId == "1").MyRating == 5 &&
+                               collect.Items.Single(item => item.SubjectId == "1").InterestId == "9001";
+            var moveOk = service.TryGetStatus("196650036", "wish", out var wish) &&
+                         wish.Total == 0 && wish.Items.Count == 0 &&
+                         collect.Items.Any(item => item.SubjectId == "2" && item.Status == "collect");
+
+            var authoritative = mapped with { InterestId = "9001-authoritative", MyRating = 5, Comment = "authoritative" };
+            service.ApplyConfirmedReviewAsync(
+                "196650036", "1", "collect", 1, "local-stale", "1999-01-01", authoritative).GetAwaiter().GetResult();
+            var applied = service.Query("196650036", "collect", new FrodoPersonalFilterCriteria(MyRating: 5))
+                .Single(item => item.SubjectId == "1");
+            var authorityOk = applied.InterestId == "9001-authoritative" &&
+                              applied.MyRating == 5 && applied.Comment == "authoritative";
+            return (interestIdOk, headUpsertOk, moveOk, authorityOk);
+        }
+        catch (Exception ex)
+        {
+            DiagnosticLogger.Write($"Frodo personal store self-test failed; Error={ex.Message}");
+            return (false, false, false, false);
+        }
+        finally
+        {
+            try { if (Directory.Exists(directory)) Directory.Delete(directory, true); } catch { }
+        }
     }
     private static BrowserMediaSnapshot Snap(double time, bool paused, string target = "page-1") => new(target, "https://www.iqiyi.com/v_test.html", "测试影片", 2026, "剧情", 600, time, paused);
 }

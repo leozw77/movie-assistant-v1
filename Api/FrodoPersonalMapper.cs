@@ -89,6 +89,7 @@ internal static class FrodoPersonalMapper
         string subjectId,
         string status)
     {
+        var interestId = ReadStringLike(interest, "id");
         var title = ReadString(subject, "title");
         if (title.Length == 0) title = $"豆瓣条目 {subjectId}";
         var year = ReadStringLike(subject, "year");
@@ -128,6 +129,7 @@ internal static class FrodoPersonalMapper
 
         return new FrodoPersonalItem(
             subjectId,
+            interestId,
             subjectUrl,
             posterUrl,
             title,

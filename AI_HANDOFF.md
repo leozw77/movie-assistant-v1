@@ -1,3 +1,18 @@
+# 2026-08-19：Personal Store Refactor v1（单一权威库 + total 最小增量）
+
+开发分支仍为 `chatgpt/frodo-personal-20260819`，main 不修改。本轮不再给 Provider/Index 分叉继续加同步补丁，而是把现有 `FrodoPersonalIndexService` 提升为唯一持久化 Personal Store；Provider 只保留 UI 当前页的瞬时分页缓冲。
+
+- Provider 初次加载会先恢复 Store cache；每个 Frodo interests 页面映射后立即交给 `ReconcileRemotePageAsync` UPSERT 云端整条记录。
+- `CloudTotal == LocalTotal`：只更新当前已观察到的同 SubjectId 云端字段，不扫描全库。
+- `CloudTotal > LocalTotal`：`RequiredAdds = CloudTotal - PreviousTotal`，从当前 source-slot 开始继续读取，找到 RequiredAdds 个本地目标状态不存在的 SubjectId 就停止；仍严格使用 `page.Count`/PageSize 固定 source-slot 游标。
+- 状态迁移：目标状态出现的新 SubjectId 会同时从其它已完成状态 Store 快照移除；完整状态重建也做同样去重，避免同一 Subject 同时存在 wish/collect/do。
+- `CloudTotal < LocalTotal` 或 total 无法解释观察到的结构变化时，不猜测删除项，而是移除该状态 complete 标记，让已有 `EnsureFrodoPersonalIndexAsync` 后台只重建该状态。
+- `interest.id` 进入模型为 `InterestId`，cache schema v4，因此从 Step 5 升级后首次会重建旧 v3 cache。
+- fresh Frodo whole-row 优先：传入 authoritative item 时不再用旧本地 `Rating/Comment/MarkedDate` 覆盖，日志记录 Authority / InterestId / LocalRating / AppliedRating。
+- 自检新增：InterestId、total+1 增量、wish->collect 状态迁移、authoritative precedence。
+- RSS 已经实测无法发现“很老影片只改评分”，本轮不接 RSS。手机静默修改老评分且 total 不变仍是独立边界，必要时走完整 reconcile。
+- `ReviewWriteCoordinator.cs` / `ReviewWriteVerifier.cs` / `ReviewTargetResolver.cs` / `ReviewWriteModels.cs` 不修改；详情、Explore、搜索、Douban Plus、官方写入/删除/回读不迁移。
+
 # 2026-08-19：个人库筛选 Step 5 已修复新增 UPSERT / 可播放 / 评分滑块
 
 开发分支继续为 `chatgpt/frodo-personal-20260819`。本轮基于已实机运行的 Step 4，不修改 main。

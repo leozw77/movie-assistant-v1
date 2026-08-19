@@ -1,3 +1,15 @@
+# Frodo Personal Store Refactor v1：单一权威库 + total 最小增量同步 - 2026-08-19
+
+- 将现有 `FrodoPersonalIndexService` 收拢为个人库唯一持久化 Store；`FrodoPersonalProvider` 只保留当前页面的临时分页/显示缓冲，不再作为第二份个人库权威状态。
+- Provider 每次拿到 Frodo interests 页面后，先把云端整条记录 UPSERT 到 Store。`CloudTotal == LocalTotal` 时只覆盖已观察记录的评分/短评等字段；`CloudTotal > LocalTotal` 时按差额从当前 source-slot 继续找新 SubjectId，找到所需数量立即停止。
+- 状态迁移（如 `wish -> collect`）由增加侧的新 SubjectId 定位；同一 SubjectId 写入目标状态时会从其它已完成状态快照移除，避免 Provider/Index 两边或状态之间出现重复事实。
+- `CloudTotal < LocalTotal`、同 total 却出现未知 SubjectId、或差额无法按最小扫描解释时，不猜删除对象：仅将该状态标记为需要完整 reconcile，页面先正常显示，现有后台索引流程随后只重建这一状态。
+- 新增 `InterestId` 映射自 Frodo `interest.id`；缓存 schema 升至 v4，旧 v3 缓存仅在升级后的首次使用重建一次。
+- 修复 authoritative precedence：已经拿到的新鲜 Frodo 记录，其 `MyRating / Comment / MarkedDate / InterestId` 不再被旧 `record.Rating` 等本地字段覆盖，解决“普通页五星、五星筛选仍是旧值”的根因。
+- 新增无网络自检，覆盖 InterestId、`total +1` 首屏增量 UPSERT、`wish -> collect` 单 Store 状态迁移、Frodo 权威记录优先级。
+- 不接入 RSS；不修改 `ReviewWriteCoordinator.cs` / `ReviewWriteVerifier.cs` / `ReviewTargetResolver.cs` / `ReviewWriteModels.cs`；已验证的 Frodo `start=0,20,40...` source-slot 分页算法保持原样。
+- 已知边界保持独立：手机只修改很老的历史评分/短评、且 total 不变又不出现在已读取 Frodo 页面时，仍需手动/低频完整 reconcile；本轮不为该边缘场景增加后台轮询。
+
 # Frodo 个人库筛选 Step 5：新增影片 UPSERT + 正确可播放 + 评分滑块 - 2026-08-19
 
 - 修复新评价影片只出现在刷新后的 Provider、却没有进入完整筛选索引的问题：官方确认后先 UPDATE，索引不存在该 SubjectId 时从 Frodo 最新个人页短重试回读并 INSERT，形成真正 UPSERT。

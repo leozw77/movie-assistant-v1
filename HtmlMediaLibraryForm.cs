@@ -125,8 +125,8 @@ internal sealed class HtmlMediaLibraryForm : Form
         _searchCache = new();
         _environments = new WebView2EnvironmentProvider(_store.DataDirectory);
         var frodoOptions = FrodoOptions.CreateDefault();
-        _frodoPersonalProvider = new FrodoPersonalProvider(frodoOptions);
         _frodoPersonalIndex = new FrodoPersonalIndexService(frodoOptions, _store.DataDirectory);
+        _frodoPersonalProvider = new FrodoPersonalProvider(frodoOptions, _frodoPersonalIndex);
         CreateDoubanConnectors();
         _workerQueue = new WorkerJobQueue(this);
 
