@@ -66,6 +66,9 @@ internal sealed class HtmlMediaLibraryForm : Form
     private readonly WorkerJobQueue _workerQueue;
     private readonly FrodoPersonalProvider _frodoPersonalProvider;
     private readonly FrodoPersonalIndexService _frodoPersonalIndex;
+    private readonly DoubanPublicScoreCache _doubanPublicScoreCache;
+    private readonly object _doubanPublicScoreFetchGate = new();
+    private readonly HashSet<string> _doubanPublicScoreFetchRunning = new(StringComparer.Ordinal);
     private readonly FrodoPersonalQuerySession _frodoPersonalQuery = new();
     private readonly object _frodoPersonalIndexBuildGate = new();
     private readonly HashSet<string> _frodoPersonalIndexBuilds = new(StringComparer.Ordinal);
@@ -127,6 +130,7 @@ internal sealed class HtmlMediaLibraryForm : Form
         var frodoOptions = FrodoOptions.CreateDefault();
         _frodoPersonalIndex = new FrodoPersonalIndexService(frodoOptions, _store.DataDirectory);
         _frodoPersonalProvider = new FrodoPersonalProvider(frodoOptions, _frodoPersonalIndex);
+        _doubanPublicScoreCache = new DoubanPublicScoreCache(_store.DataDirectory);
         CreateDoubanConnectors();
         _workerQueue = new WorkerJobQueue(this);
 
@@ -2026,34 +2030,146 @@ internal sealed class HtmlMediaLibraryForm : Form
         }
     }
 
-    private JsonElement OverlayPersonalPublicMetadata(JsonElement items, string profileId)
+    private async Task PrefetchMissingPublicScoresFromDetailDomAsync(
+        IEnumerable<(string SubjectId, string SubjectUrl)> items)
     {
-        if (items.ValueKind != JsonValueKind.Array || items.GetArrayLength() == 0) return items;
+        foreach (var item in items
+                     .Where(item =>
+                         !string.IsNullOrWhiteSpace(item.SubjectId) &&
+                         item.SubjectId.All(char.IsDigit) &&
+                         item.SubjectUrl.StartsWith(
+                             "https://movie.douban.com/subject/",
+                             StringComparison.OrdinalIgnoreCase))
+                     .DistinctBy(item => item.SubjectId))
+        {
+            if (_closing) return;
+
+            if (_doubanPublicScoreCache.TryGet(item.SubjectId, out var alreadyCached))
+            {
+                PostShellMessage(new
+                {
+                    type = "doubanShellPersonalItemMutation",
+                    subjectId = item.SubjectId,
+                    score = alreadyCached
+                });
+                continue;
+            }
+
+            lock (_doubanPublicScoreFetchGate)
+            {
+                if (!_doubanPublicScoreFetchRunning.Add(item.SubjectId))
+                    continue;
+            }
+
+            try
+            {
+                DiagnosticLogger.Write(
+                    $"Douban public score DOM fallback start; SubjectId={item.SubjectId}; Url={item.SubjectUrl}");
+
+                // Reuse the proven detail metadata path. DoubanWebView2Connector
+                // serializes navigation with its own navigation gate, so this
+                // cannot race another metadata read on the same Detail WebView.
+                var metadata = await _detailConnector
+                    .ReadMetadataAsync(item.SubjectUrl, probeStatusCapabilities: false)
+                    .ConfigureAwait(true);
+
+                if (!metadata.LoggedIn)
+                {
+                    DiagnosticLogger.Write(
+                        $"Douban public score DOM fallback skipped; SubjectId={item.SubjectId}; Reason=NotLoggedIn");
+                    continue;
+                }
+
+                if (metadata.Score is not > 0 or > 10)
+                {
+                    DiagnosticLogger.Write(
+                        $"Douban public score DOM fallback empty; SubjectId={item.SubjectId}; Error={metadata.Error}");
+                    continue;
+                }
+
+                await _doubanPublicScoreCache
+                    .StoreAsync(item.SubjectId, metadata.Score.Value)
+                    .ConfigureAwait(true);
+
+                DiagnosticLogger.Write(
+                    $"Douban public score DOM fallback stored; SubjectId={item.SubjectId}; Score={metadata.Score.Value:0.0}");
+
+                if (!_closing)
+                {
+                    PostShellMessage(new
+                    {
+                        type = "doubanShellPersonalItemMutation",
+                        subjectId = item.SubjectId,
+                        score = metadata.Score.Value
+                    });
+                }
+            }
+            catch (Exception ex) when (
+                ex is InvalidDataException or InvalidOperationException or
+                      HttpRequestException or TaskCanceledException)
+            {
+                DiagnosticLogger.Write(
+                    $"Douban public score DOM fallback failed; SubjectId={item.SubjectId}; Error={ex.Message}");
+            }
+            finally
+            {
+                lock (_doubanPublicScoreFetchGate)
+                    _doubanPublicScoreFetchRunning.Remove(item.SubjectId);
+            }
+        }
+    }
+    private JsonElement OverlayPersonalPublicMetadata(
+        JsonElement items,
+        string profileId,
+        out List<(string SubjectId, string SubjectUrl)> missing)
+    {
+        missing = [];
+        if (items.ValueKind != JsonValueKind.Array || items.GetArrayLength() == 0)
+            return items;
 
         var patched = new List<System.Text.Json.Nodes.JsonObject>();
-        var hits = 0;
-        var misses = 0;
+        var publicCacheHits = 0;
+        var frodoHits = 0;
+
         foreach (var item in items.EnumerateArray())
         {
             var node = System.Text.Json.Nodes.JsonNode.Parse(item.GetRawText()) as System.Text.Json.Nodes.JsonObject
                 ?? new System.Text.Json.Nodes.JsonObject();
             var subjectId = node["subjectId"]?.GetValue<string>() ?? "";
+            var subjectUrl = node["subjectUrl"]?.GetValue<string>() ?? "";
 
             if (subjectId.Length > 0 &&
-                _frodoPersonalIndex.TryGetCachedPublicRating(profileId, subjectId, out var score, out var ratingCount))
+                _doubanPublicScoreCache.TryGet(subjectId, out var cachedScore))
             {
-                if (score is > 0) { node["score"] = score.Value; hits++; }
-                else misses++;
-                if (ratingCount is > 0) node["voteCount"] = ratingCount.Value;
+                node["score"] = cachedScore;
+                publicCacheHits++;
             }
-            else if (subjectId.Length > 0)
+            else if (subjectId.Length > 0 &&
+                     _frodoPersonalIndex.TryGetCachedPublicRating(
+                         profileId,
+                         subjectId,
+                         out var score,
+                         out var ratingCount))
             {
-                misses++;
+                if (score is > 0)
+                {
+                    node["score"] = score.Value;
+                    frodoHits++;
+                }
+                if (ratingCount is > 0)
+                    node["voteCount"] = ratingCount.Value;
             }
+            else if (subjectId.Length > 0 &&
+                     subjectUrl.StartsWith("https://movie.douban.com/subject/", StringComparison.OrdinalIgnoreCase))
+            {
+                missing.Add((subjectId, subjectUrl));
+            }
+
             patched.Add(node);
         }
 
-        DiagnosticLogger.Write($"Personal cached rating overlay; ProfileId={profileId}; Cards={patched.Count}; RatingHits={hits}; RatingMisses={misses}; Scope=AllCachedStatuses");
+        DiagnosticLogger.Write(
+            $"Personal public score overlay; ProfileId={profileId}; Cards={patched.Count}; PublicCacheHits={publicCacheHits}; FrodoHits={frodoHits}; DomFallbackMisses={missing.Count}");
         return JsonSerializer.SerializeToElement(patched);
     }
     private async Task ForwardDoubanSourceResultToShellAsync(JsonElement root, string operation = "")
@@ -2072,6 +2188,7 @@ internal sealed class HtmlMediaLibraryForm : Form
         var ordinaryPersonalDom =
             FrodoPersonalProvider.TryReadScope(sourceUrl, out var overlayProfileId, out var overlayStatus) &&
             sourceKind is not ("frodo-api" or "frodo-local-index");
+        var missingPublicScores = new List<(string SubjectId, string SubjectUrl)>();
         if (ordinaryPersonalDom)
         {
             if (!_frodoPersonalIndex.TryGetStatus(overlayProfileId, overlayStatus, out var overlaySnapshot))
@@ -2082,7 +2199,7 @@ internal sealed class HtmlMediaLibraryForm : Form
 
             if (overlaySnapshot is not null)
             {
-                items = OverlayPersonalPublicMetadata(items, overlayProfileId);
+                items = OverlayPersonalPublicMetadata(items, overlayProfileId, out missingPublicScores);
                 PostFrodoPersonalFilterState(
                     overlayProfileId,
                     overlayStatus,
@@ -2126,6 +2243,10 @@ internal sealed class HtmlMediaLibraryForm : Form
         });
         _pendingShellDataJson = shellMessage;
         PostPendingShellDataIfReady();
+
+        if (ordinaryPersonalDom && missingPublicScores.Count > 0)
+            _ = PrefetchMissingPublicScoresFromDetailDomAsync(missingPublicScores);
+
         var dom = root.TryGetProperty("dom", out var domValue) ? domValue.ToString() : "{}";
         DiagnosticLogger.Write($"Unified Shell Source DOM JSON forwarded; Url={sourceUrl}; Items={items.GetArrayLength()}; Error={error}; Dom={dom}; Generation={_doubanSourceGeneration}");
         await Task.CompletedTask.ConfigureAwait(true);

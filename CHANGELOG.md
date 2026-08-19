@@ -852,3 +852,16 @@
 - `complete=true` is now forbidden unless the number of unique cached SubjectIds exactly equals the stable cloud `total`.
 - If the scan reaches the end with missing subjects, the rebuild fails and the previous usable cache remains intact.
 - Added `ShortPayload`, `gap recovery`, and `integrity passed` diagnostics.
+
+## 2026-08-20 - DOM fallback for public Douban scores
+
+- Frodo `/api/v2/movie/{id}` was empirically rejected with HTTP 403 `need_permission`; that route is not used.
+- Public score fallback now reuses the existing, proven `DoubanWebView2Connector.ReadMetadataAsync()` detail-DOM path.
+- Ordinary personal cards resolve score in this order:
+  1. `douban-public-score-v1.json`
+  2. Frodo Personal Index
+  3. hidden Detail WebView DOM metadata read for misses only
+- DOM fallback writes only public score, persists it in an account-independent cache, and immediately patches the current card.
+- The Detail connector's existing navigation gate serializes fallback reads with normal detail metadata reads.
+- v6's incorrect exact `AddressableItems == ReportedTotal` requirement was removed. Sparse Frodo enumeration is accepted and logged.
+- Personal State remains DOM-only.

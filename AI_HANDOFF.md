@@ -299,3 +299,29 @@ Metadata Overlay 不再按当前 collect/wish/do 分区读取评分。
 3. 只有 `unique SubjectId count == stable total` 才允许提交快照。
 4. 任何不完整扫描都抛错并保留旧缓存。
 5. 普通 DOM、普通分页、高级筛选和 Metadata Overlay 不修改。
+
+# 2026-08-20：公共评分最终兜底改为现有豆瓣详情 DOM
+
+实测：
+`GET /api/v2/movie/2299474` 返回 HTTP 403:
+`{"msg":"need_permission","code":1000}`
+
+因此禁止继续依赖该 Frodo 单条接口。
+
+项目现有正式详情读取已经有：
+`_detailConnector.ReadMetadataAsync(subjectUrl, probeStatusCapabilities:false)`
+并由 `DoubanRenderedSubjectScript` 返回 `score`。
+
+最终链路：
+
+DOM Personal Card SubjectId
+→ douban-public-score-v1.json
+→ Frodo Personal Index
+→ miss 才走现有 Detail WebView DOM metadata
+→ 只缓存/覆盖公共 Score
+→ doubanShellPersonalItemMutation 增量显示
+
+同时：
+- Frodo `ReportedTotal` 不再等同于可枚举 Subject 数。
+- 1055/1066 允许成功提交 Personal Index，并记录 Sparse。
+- 未被 interests 枚举的 11 个条目不再阻断一键重读缓存。
