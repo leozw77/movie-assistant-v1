@@ -7,6 +7,7 @@ internal sealed record FrodoPersonalFilterCriteria(
     int? MyRating = null,
     bool Unrated = false,
     string Year = "",
+    string Decade = "",
     string Genre = "",
     string Country = "",
     string Sort = "marked-desc");
@@ -192,6 +193,106 @@ internal sealed class FrodoPersonalIndexService
         }
     }
 
+    internal async Task<FrodoPersonalItem?> ApplyConfirmedReviewAsync(
+        string profileId,
+        string subjectId,
+        string targetStatus,
+        int? myRating,
+        string comment,
+        string markedDate,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(profileId) || !profileId.All(char.IsDigit) ||
+            string.IsNullOrWhiteSpace(subjectId) || !subjectId.All(char.IsDigit) ||
+            targetStatus is not ("collect" or "wish" or "do")) return null;
+
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            FrodoPersonalItem? source = null;
+            lock (_stateGate)
+            {
+                if (!_profileId.Equals(profileId, StringComparison.Ordinal)) return null;
+                foreach (var snapshot in _statuses.Values)
+                {
+                    source = snapshot.Items.FirstOrDefault(item => item.SubjectId.Equals(subjectId, StringComparison.Ordinal));
+                    if (source is not null) break;
+                }
+                if (source is null) return null;
+
+                var updated = source with
+                {
+                    Status = targetStatus,
+                    StatusLabel = targetStatus switch
+                    {
+                        "collect" => "看过",
+                        "wish" => "想看",
+                        "do" => "在看",
+                        _ => source.StatusLabel
+                    },
+                    MyRating = targetStatus == "wish" ? null : myRating,
+                    Comment = comment ?? "",
+                    MarkedDate = markedDate ?? ""
+                };
+
+                foreach (var key in _statuses.Keys.ToList())
+                {
+                    var snapshot = _statuses[key];
+                    var items = snapshot.Items.Where(item => !item.SubjectId.Equals(subjectId, StringComparison.Ordinal)).ToList();
+                    var removed = items.Count != snapshot.Items.Count;
+                    var addToTarget = key.Equals(targetStatus, StringComparison.Ordinal);
+                    if (!removed && !addToTarget) continue;
+                    if (addToTarget) items.Add(updated);
+                    var delta = (addToTarget ? 1 : 0) - (removed ? 1 : 0);
+                    _statuses[key] = BuildSnapshot(key, Math.Max(0, snapshot.Total + delta), items);
+                }
+                source = updated;
+            }
+
+            await SaveCacheCoreAsync(cancellationToken).ConfigureAwait(false);
+            DiagnosticLogger.Write($"Frodo personal index authoritative review applied; ProfileId={profileId}; SubjectId={subjectId}; TargetStatus={targetStatus}; Rating={myRating?.ToString() ?? "null"}");
+            return source;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    internal async Task<bool> ApplyConfirmedDeleteAsync(
+        string profileId,
+        string subjectId,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(profileId) || !profileId.All(char.IsDigit) ||
+            string.IsNullOrWhiteSpace(subjectId) || !subjectId.All(char.IsDigit)) return false;
+
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var changed = false;
+            lock (_stateGate)
+            {
+                if (!_profileId.Equals(profileId, StringComparison.Ordinal)) return false;
+                foreach (var key in _statuses.Keys.ToList())
+                {
+                    var snapshot = _statuses[key];
+                    var items = snapshot.Items.Where(item => !item.SubjectId.Equals(subjectId, StringComparison.Ordinal)).ToList();
+                    if (items.Count == snapshot.Items.Count) continue;
+                    changed = true;
+                    _statuses[key] = BuildSnapshot(key, Math.Max(0, snapshot.Total - 1), items);
+                }
+            }
+            if (!changed) return false;
+            await SaveCacheCoreAsync(cancellationToken).ConfigureAwait(false);
+            DiagnosticLogger.Write($"Frodo personal index authoritative delete applied; ProfileId={profileId}; SubjectId={subjectId}");
+            return true;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
     internal IReadOnlyList<FrodoPersonalItem> Query(
         string profileId,
         string status,
@@ -209,6 +310,8 @@ internal sealed class FrodoPersonalIndexService
             query = query.Where(item => item.MyRating == criteria.MyRating);
         if (!string.IsNullOrWhiteSpace(criteria.Year))
             query = query.Where(item => item.Year.Equals(criteria.Year, StringComparison.OrdinalIgnoreCase));
+        if (!string.IsNullOrWhiteSpace(criteria.Decade) && int.TryParse(criteria.Decade, out var decade))
+            query = query.Where(item => int.TryParse(item.Year, out var year) && year >= decade && year < decade + 10);
         if (!string.IsNullOrWhiteSpace(criteria.Genre))
             query = query.Where(item => item.Genres.Contains(criteria.Genre, StringComparer.OrdinalIgnoreCase));
         if (!string.IsNullOrWhiteSpace(criteria.Country))

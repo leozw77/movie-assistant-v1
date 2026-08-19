@@ -753,6 +753,8 @@ internal sealed class HtmlMediaLibraryForm : Form
                 var authoritative = SelectAuthoritativeSnapshot(connectorResult);
                 var localUpdated = authoritative is not null && ApplyAuthoritativeReview(record, authoritative);
                 var result = connectorResult with { LocalUpdated = connectorResult.LocalUpdated || localUpdated };
+                if (result.OfficialConfirmed && authoritative is not null)
+                    await SyncFrodoPersonalAfterConfirmedWriteAsync(record, beforeStatus, "save").ConfigureAwait(true);
                 saveTimer.Stop();
                 var subjectUrlSubjectId = DoubanSubjectIdentity.ExtractSubjectId(record.SubjectUrl);
                 ReviewTransactionLogger.Write(new
@@ -813,6 +815,8 @@ internal sealed class HtmlMediaLibraryForm : Form
                         connectorResult.NoChange ? "豆瓣官方已无评价，删除状态同步" : "豆瓣官方删除确认");
                 }
                 var result = connectorResult with { LocalUpdated = connectorResult.LocalUpdated || localUpdated };
+                if (result.OfficialConfirmed && result.Official is { ExistsKnown: true, Exists: false })
+                    await SyncFrodoPersonalAfterConfirmedDeleteAsync(subjectId, beforeStatus, "delete").ConfigureAwait(true);
                 timer.Stop();
 
                 ReviewTransactionLogger.Write(new
@@ -2411,6 +2415,7 @@ internal sealed class HtmlMediaLibraryForm : Form
                 myRating = criteria.MyRating,
                 unrated = criteria.Unrated,
                 year = criteria.Year,
+                decade = criteria.Decade,
                 genre = criteria.Genre,
                 country = criteria.Country,
                 sort = criteria.Sort
@@ -2423,8 +2428,8 @@ internal sealed class HtmlMediaLibraryForm : Form
             },
             webFilters = new object[]
             {
-                new { label = "可播放", url = baseUrl + "?filter=schedule&start=0&mode=grid" },
-                new { label = "有视频", url = baseUrl + "?filter=video&start=0&mode=grid" }
+                new { label = "正在热映", url = baseUrl + "?filter=schedule&start=0&mode=grid" },
+                new { label = "在线观看", url = baseUrl + "?filter=video&start=0&mode=grid" }
             }
         };
     }
@@ -2467,13 +2472,17 @@ internal sealed class HtmlMediaLibraryForm : Form
         var unrated = ReadBool(criteria, "unrated");
         if (unrated) myRating = null;
         var year = ReadBoundedString(criteria, "year", 12);
+        var decade = ReadBoundedString(criteria, "decade", 12);
+        if (decade.Length > 0 && (!int.TryParse(decade, out var decadeNumber) || decadeNumber < 1880 || decadeNumber > 2100 || decadeNumber % 10 != 0))
+            throw new InvalidDataException("年代筛选无效。");
+        if (year.Length > 0) decade = "";
         var genre = ReadBoundedString(criteria, "genre", 80);
         var country = ReadBoundedString(criteria, "country", 80);
         var sort = ReadString(criteria, "sort").Trim();
         if (string.IsNullOrWhiteSpace(sort)) sort = "marked-desc";
         if (sort is not ("marked-desc" or "my-rating-desc" or "douban-score-desc" or "year-desc" or "title-asc"))
             throw new InvalidDataException("个人库排序方式无效。");
-        return new FrodoPersonalFilterCriteria(contentType, myRating, unrated, year, genre, country, sort);
+        return new FrodoPersonalFilterCriteria(contentType, myRating, unrated, year, decade, genre, country, sort);
     }
 
     private JsonElement BuildFrodoPersonalQueryPayload(
@@ -2510,6 +2519,128 @@ internal sealed class HtmlMediaLibraryForm : Form
             dom = new { gridItemCount = 0, paginator = _frodoPersonalQuery.HasMore, ready = true, source = "frodo-local-index", total = _frodoPersonalQuery.Total, nextStart = _frodoPersonalQuery.Shown },
             error = ""
         }, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+    }
+    private async Task SyncFrodoPersonalAfterConfirmedWriteAsync(DoubanHistoryRecord record, string beforeStatus, string reason)
+    {
+        try
+        {
+            var profileId = _frodoPersonalIndex.CurrentProfileId;
+            if (string.IsNullOrWhiteSpace(profileId) || !profileId.All(char.IsDigit) ||
+                record.Status is not ("collect" or "wish" or "do")) return;
+
+            var providerItem = await _frodoPersonalProvider.ApplyConfirmedReviewAsync(
+                record.SubjectId,
+                beforeStatus,
+                record.Status,
+                record.Rating,
+                record.Comment,
+                record.MarkedDate).ConfigureAwait(true);
+            var indexedItem = await _frodoPersonalIndex.ApplyConfirmedReviewAsync(
+                profileId,
+                record.SubjectId,
+                record.Status,
+                record.Rating,
+                record.Comment,
+                record.MarkedDate).ConfigureAwait(true);
+
+            await RefreshFrodoPersonalUiAfterMutationAsync(
+                profileId,
+                record.SubjectId,
+                beforeStatus,
+                record.Status,
+                deleted: false,
+                myRating: record.Rating,
+                score: indexedItem?.Score ?? providerItem?.Score,
+                reason: reason).ConfigureAwait(true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException or InvalidOperationException or JsonException)
+        {
+            DiagnosticLogger.Write($"Frodo personal authoritative write sync failed; SubjectId={record.SubjectId}; BeforeStatus={beforeStatus}; TargetStatus={record.Status}; Reason={reason}; Error={ex.Message}");
+        }
+    }
+
+    private async Task SyncFrodoPersonalAfterConfirmedDeleteAsync(string subjectId, string beforeStatus, string reason)
+    {
+        try
+        {
+            var profileId = _frodoPersonalIndex.CurrentProfileId;
+            if (string.IsNullOrWhiteSpace(profileId) || !profileId.All(char.IsDigit)) return;
+            await _frodoPersonalProvider.ApplyConfirmedDeleteAsync(subjectId).ConfigureAwait(true);
+            await _frodoPersonalIndex.ApplyConfirmedDeleteAsync(profileId, subjectId).ConfigureAwait(true);
+            await RefreshFrodoPersonalUiAfterMutationAsync(
+                profileId,
+                subjectId,
+                beforeStatus,
+                "deleted",
+                deleted: true,
+                myRating: null,
+                score: null,
+                reason: reason).ConfigureAwait(true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException or InvalidOperationException or JsonException)
+        {
+            DiagnosticLogger.Write($"Frodo personal authoritative delete sync failed; SubjectId={subjectId}; BeforeStatus={beforeStatus}; Reason={reason}; Error={ex.Message}");
+        }
+    }
+
+    private async Task RefreshFrodoPersonalUiAfterMutationAsync(
+        string profileId,
+        string subjectId,
+        string beforeStatus,
+        string targetStatus,
+        bool deleted,
+        int? myRating,
+        double? score,
+        string reason)
+    {
+        if (!_frodoPersonalActive ||
+            !_frodoPersonalProvider.CurrentProfileId.Equals(profileId, StringComparison.Ordinal)) return;
+
+        var currentStatus = _frodoPersonalProvider.CurrentStatus;
+        if (!currentStatus.Equals(beforeStatus, StringComparison.Ordinal) &&
+            !currentStatus.Equals(targetStatus, StringComparison.Ordinal)) return;
+
+        if (_frodoPersonalQuery.IsActiveFor(profileId, currentStatus) &&
+            _frodoPersonalIndex.TryGetStatus(profileId, currentStatus, out var filteredSnapshot))
+        {
+            var criteria = _frodoPersonalQuery.Criteria;
+            var result = _frodoPersonalIndex.Query(profileId, currentStatus, criteria);
+            _frodoPersonalQuery.Start(profileId, currentStatus, criteria, result);
+            var firstPage = _frodoPersonalQuery.TakeInitial();
+            var generation = Interlocked.Increment(ref _doubanSourceGeneration);
+            var requestId = $"personal-authoritative-sync-{generation}";
+            var page = BuildFrodoPersonalQueryPayload(requestId, generation, firstPage, filteredSnapshot);
+            await ForwardDoubanSourceResultToShellAsync(page, "personal-authoritative-sync").ConfigureAwait(true);
+            DiagnosticLogger.Write($"Frodo personal filtered view recomputed after authoritative mutation; SubjectId={subjectId}; Status={currentStatus}; Matched={result.Count}; Reason={reason}");
+            return;
+        }
+
+        if (_frodoPersonalIndex.TryGetStatus(profileId, currentStatus, out var snapshot))
+        {
+            PostFrodoPersonalFilterState(
+                profileId,
+                currentStatus,
+                snapshot,
+                new FrodoPersonalFilterCriteria(),
+                false,
+                snapshot.Items.Count,
+                snapshot.Items.Count,
+                snapshot.Items.Count,
+                0,
+                "");
+        }
+
+        PostShellMessage(new
+        {
+            type = "doubanShellPersonalItemMutation",
+            subjectId,
+            fromStatus = beforeStatus,
+            toStatus = targetStatus,
+            deleted,
+            myRating,
+            score
+        });
+        DiagnosticLogger.Write($"Frodo personal card mutation posted; SubjectId={subjectId}; BeforeStatus={beforeStatus}; TargetStatus={targetStatus}; Deleted={deleted}; Rating={myRating?.ToString() ?? "null"}; Reason={reason}");
     }
     private async Task HandleDoubanShellFilterGroupAsync(JsonElement root)
     {

@@ -27,12 +27,14 @@
   let pagingError = false;
   let resetViewportOnNextData = false;
   let personalLocalFilterState = null;
+  let personalAdvancedFiltersOpen = false;
   const personalStatusMeta = { collect: "看过", wish: "想看", do: "在看" };
   const defaultPersonalLocalCriteria = () => ({
     contentType: "",
     myRating: null,
     unrated: false,
     year: "",
+    decade: "",
     genre: "",
     country: "",
     sort: "marked-desc"
@@ -103,7 +105,10 @@
     if (shellRoot) shellRoot.dataset.viewKind = viewKind;
     grid()?.classList.remove("qb-watchlist-grid", "qb-watchlist-shell-grid");
     const nextPersonalStatus = Object.prototype.hasOwnProperty.call(personalStatusMeta, statusValue) ? statusValue : "collect";
-    if (nextPersonalStatus !== personalStatus) personalLocalFilterState = null;
+    if (nextPersonalStatus !== personalStatus) {
+      personalLocalFilterState = null;
+      personalAdvancedFiltersOpen = false;
+    }
     personalStatus = nextPersonalStatus;
     const heading = document.getElementById("qb-douban-shell-heading");
     const description = document.getElementById("qb-douban-shell-description");
@@ -259,7 +264,7 @@
     normalizedItems.forEach(item => {
       if (existingIds.has(item.subjectId)) return;
       const mediaTypeLabel = item.contentType === "tv" ? "电视剧" : viewKind === "personal" ? "电影" : contentTypeLabel();
-      const publicScore = (viewKind === "explore" || viewKind === "search") && item.score
+      const publicScore = item.score && Number(item.score) > 0
         ? value(item.score).replace(/^豆瓣\s*/u, "")
         : "";
       const personalScore = viewKind === "personal" && item.myRating
@@ -278,7 +283,8 @@
         ].filter(Boolean),
         context: item.subtitle,
         comment: item.comment,
-        score: publicScore || personalScore,
+        score: publicScore,
+        myRating: personalScore,
       };
       const card = window.QbDoubanCard?.render({
         model: cardModel,
@@ -365,7 +371,10 @@
   const renderPersonalLocalFilters = (host, snapshot) => {
     personalLocalFilterState = snapshot && typeof snapshot === "object" ? snapshot : null;
     const criteria = { ...defaultPersonalLocalCriteria(), ...(personalLocalFilterState?.criteria || {}) };
-    const addButtonRow = (title, options, selected, apply) => {
+    const ready = personalLocalFilterState?.ready === true;
+    const facets = personalLocalFilterState?.facets || {};
+
+    const addButtonRow = (title, options, selected, apply, requiresIndex = true) => {
       const row = document.createElement("div");
       row.className = "qb-shell-filter-row qb-shell-personal-filter-row";
       const label = document.createElement("span");
@@ -373,62 +382,35 @@
       label.textContent = title;
       row.append(label);
       options.forEach(option => {
-        row.append(makeFilterButton(option.label, option.value === selected, () => apply(option.value)));
+        const button = makeFilterButton(option.label, option.value === selected, () => apply(option.value));
+        if (requiresIndex && !ready) button.disabled = true;
+        row.append(button);
       });
       host.append(row);
-    };
-    const addSelectRow = (title, values, selected, allLabel, key) => {
-      const row = document.createElement("div");
-      row.className = "qb-shell-filter-row qb-shell-personal-filter-row";
-      const label = document.createElement("span");
-      label.className = "qb-shell-filter-label";
-      label.textContent = title;
-      row.append(label);
-      const options = [{ label: allLabel, value: "" }, ...(Array.isArray(values) ? values : []).map(item => ({ label: value(item), value: value(item) }))];
-      row.append(makeFilterSelect(options, selected, selectedValue => applyLocalPersonalFilter({ [key]: selectedValue })));
-      host.append(row);
-    };
-    const addWebFilterRow = () => {
-      const webFilters = Array.isArray(personalLocalFilterState?.webFilters) ? personalLocalFilterState.webFilters : [];
-      if (!webFilters.length) return;
-      const row = document.createElement("div");
-      row.className = "qb-shell-filter-row qb-shell-personal-filter-row";
-      const label = document.createElement("span");
-      label.className = "qb-shell-filter-label";
-      label.textContent = "网页条件";
-      row.append(label);
-      webFilters.forEach(option => {
-        const optionLabel = value(option?.label);
-        const optionUrl = value(option?.url);
-        if (!optionLabel || !/^https:\/\/movie\.douban\.com\/people\/\d+\/(?:collect|wish|do)(?:\?|$)/u.test(optionUrl)) return;
-        row.append(makeFilterButton(optionLabel, false, () => {
-          if (busy) return;
-          beginListSwitch();
-          setBusy(true);
-          setStatus(`正在应用豆瓣网页条件：${optionLabel}`);
-          post("doubanShellApplyPersonalFilter", { requestId: `shell-personal-web-${Date.now()}`, url: optionUrl });
-        }));
-      });
-      host.append(row);
+      return row;
     };
 
-    if (!personalLocalFilterState?.ready) {
-      const row = document.createElement("div");
-      row.className = "qb-shell-filter-row qb-shell-personal-filter-row";
-      const label = document.createElement("span");
-      label.className = "qb-shell-filter-label";
-      label.textContent = "完整库筛选";
-      const hint = document.createElement("span");
-      hint.className = "qb-shell-filter-hint";
-      if (personalLocalFilterState?.error) hint.textContent = `索引建立失败：${value(personalLocalFilterState.error)}`;
-      else if (personalLocalFilterState?.building && Number(personalLocalFilterState.sourceTotal) > 0)
-        hint.textContent = `正在建立索引，已读取 ${Number(personalLocalFilterState.loaded) || 0} 部，源总量 ${Number(personalLocalFilterState.sourceTotal) || 0}`;
-      else hint.textContent = "正在建立完整个人库索引，完成后即可按星级、年份、地区和类型筛选…";
-      row.append(label, hint);
-      host.append(row);
-      addWebFilterRow();
-      return;
-    }
+    const webFilters = Array.isArray(personalLocalFilterState?.webFilters) ? personalLocalFilterState.webFilters : [];
+    const webRow = document.createElement("div");
+    webRow.className = "qb-shell-filter-row qb-shell-personal-filter-row";
+    const webLabel = document.createElement("span");
+    webLabel.className = "qb-shell-filter-label";
+    webLabel.textContent = "筛选影片";
+    webRow.append(webLabel);
+    webRow.append(makeFilterButton("全部", true, () => {}));
+    webFilters.forEach(option => {
+      const optionLabel = value(option?.label);
+      const optionUrl = value(option?.url);
+      if (!optionLabel || !/^https:\/\/movie\.douban\.com\/people\/\d+\/(?:collect|wish|do)(?:\?|$)/u.test(optionUrl)) return;
+      webRow.append(makeFilterButton(optionLabel, false, () => {
+        if (busy) return;
+        beginListSwitch();
+        setBusy(true);
+        setStatus(`正在应用豆瓣网页条件：${optionLabel}`);
+        post("doubanShellApplyPersonalFilter", { requestId: `shell-personal-web-${Date.now()}`, url: optionUrl });
+      }));
+    });
+    host.append(webRow);
 
     addButtonRow("影片类型", [
       { label: "全部", value: "" },
@@ -436,8 +418,75 @@
       { label: "电视", value: "tv" }
     ], value(criteria.contentType), contentType => applyLocalPersonalFilter({ contentType }));
 
+    addButtonRow("排序", [
+      { label: "按时间排序", value: "marked-desc" },
+      { label: "按评价排序", value: "my-rating-desc" },
+      { label: "按标题排序", value: "title-asc" }
+    ], value(criteria.sort) || "marked-desc", sort => applyLocalPersonalFilter({ sort }));
+
+    const activeAdvancedCount = [
+      criteria.unrated || criteria.myRating ? 1 : 0,
+      criteria.decade ? 1 : 0,
+      criteria.year ? 1 : 0,
+      criteria.country ? 1 : 0,
+      criteria.genre ? 1 : 0
+    ].reduce((sum, item) => sum + item, 0);
+    const toggleRow = document.createElement("div");
+    toggleRow.className = "qb-shell-filter-row qb-shell-personal-filter-row";
+    const toggleButton = makeFilterButton(activeAdvancedCount ? `筛选 · ${activeAdvancedCount}` : "筛选", activeAdvancedCount > 0 || personalAdvancedFiltersOpen, () => {
+      personalAdvancedFiltersOpen = !personalAdvancedFiltersOpen;
+      renderFilters(personalLocalFilterState);
+    });
+    toggleRow.append(toggleButton);
+    host.append(toggleRow);
+
+    if (!personalAdvancedFiltersOpen) return;
+
+    const panel = document.createElement("div");
+    panel.className = "qb-shell-advanced-filter-panel";
+    const panelTop = document.createElement("div");
+    panelTop.className = "qb-shell-advanced-filter-top";
+    const panelTitle = document.createElement("strong");
+    panelTitle.textContent = "高级筛选";
+    const clear = makeFilterButton("清除筛选", false, () => applyLocalPersonalFilter({
+      myRating: null,
+      unrated: false,
+      year: "",
+      decade: "",
+      country: "",
+      genre: ""
+    }), "qb-shell-filter-option");
+    if (!ready || activeAdvancedCount === 0) clear.disabled = true;
+    panelTop.append(panelTitle, clear);
+    panel.append(panelTop);
+
+    if (!ready) {
+      const hint = document.createElement("div");
+      hint.className = "qb-shell-filter-hint";
+      if (personalLocalFilterState?.error) hint.textContent = `索引建立失败：${value(personalLocalFilterState.error)}`;
+      else if (personalLocalFilterState?.building && Number(personalLocalFilterState.sourceTotal) > 0)
+        hint.textContent = `正在建立完整个人库索引：已读取 ${Number(personalLocalFilterState.loaded) || 0} 部，源总量 ${Number(personalLocalFilterState.sourceTotal) || 0}`;
+      else hint.textContent = "正在建立完整个人库索引，完成后即可使用高级筛选。";
+      panel.append(hint);
+      host.append(panel);
+      return;
+    }
+
+    const addAdvancedRow = (title, options, selected, apply) => {
+      const row = document.createElement("div");
+      row.className = "qb-shell-advanced-filter-row";
+      const label = document.createElement("span");
+      label.className = "qb-shell-advanced-filter-label";
+      label.textContent = title;
+      const optionsHost = document.createElement("div");
+      optionsHost.className = "qb-shell-advanced-filter-options";
+      options.forEach(option => optionsHost.append(makeFilterButton(option.label, option.value === selected, () => apply(option.value), "qb-shell-filter-option")));
+      row.append(label, optionsHost);
+      panel.append(row);
+    };
+
     const ratingKey = criteria.unrated ? "unrated" : criteria.myRating ? String(criteria.myRating) : "";
-    addButtonRow("我的评分", [
+    addAdvancedRow("我的评分", [
       { label: "全部", value: "" },
       { label: "5星", value: "5" },
       { label: "4星", value: "4" },
@@ -451,19 +500,25 @@
       else applyLocalPersonalFilter({ myRating: Number(rating), unrated: false });
     });
 
-    const facets = personalLocalFilterState.facets || {};
-    addSelectRow("年份", facets.years, criteria.year, "全部年份", "year");
-    addSelectRow("地区", facets.countries, criteria.country, "全部地区", "country");
-    addSelectRow("题材", facets.genres, criteria.genre, "全部题材", "genre");
+    const years = Array.isArray(facets.years) ? facets.years.map(item => value(item)).filter(item => /^\d{4}$/u.test(item)) : [];
+    const decades = [...new Set(years.map(item => String(Math.floor(Number(item) / 10) * 10)))].sort((a, b) => Number(b) - Number(a));
+    addAdvancedRow("年代", [{ label: "全部", value: "" }, ...decades.map(item => ({ label: `${item}年代`, value: item }))], value(criteria.decade), decade => applyLocalPersonalFilter({ decade, year: "" }));
 
-    addButtonRow("排序", [
-      { label: "最近标记", value: "marked-desc" },
-      { label: "我的评分", value: "my-rating-desc" },
-      { label: "豆瓣评分", value: "douban-score-desc" },
-      { label: "年份", value: "year-desc" },
-      { label: "标题", value: "title-asc" }
-    ], value(criteria.sort) || "marked-desc", sort => applyLocalPersonalFilter({ sort }));
-    addWebFilterRow();
+    const yearRow = document.createElement("div");
+    yearRow.className = "qb-shell-advanced-filter-row";
+    const yearLabel = document.createElement("span");
+    yearLabel.className = "qb-shell-advanced-filter-label";
+    yearLabel.textContent = "年份";
+    const yearHost = document.createElement("div");
+    yearHost.className = "qb-shell-advanced-filter-options";
+    yearHost.append(makeFilterSelect([{ label: "全部年份", value: "" }, ...years.map(item => ({ label: item, value: item }))], criteria.year, year => applyLocalPersonalFilter({ year, decade: "" })));
+    yearRow.append(yearLabel, yearHost);
+    panel.append(yearRow);
+
+    addAdvancedRow("地区", [{ label: "全部", value: "" }, ...(Array.isArray(facets.countries) ? facets.countries : []).map(item => ({ label: value(item), value: value(item) }))], value(criteria.country), country => applyLocalPersonalFilter({ country }));
+    addAdvancedRow("题材", [{ label: "全部", value: "" }, ...(Array.isArray(facets.genres) ? facets.genres : []).map(item => ({ label: value(item), value: value(item) }))], value(criteria.genre), genre => applyLocalPersonalFilter({ genre }));
+
+    host.append(panel);
   };
   const renderFilters = snapshot => {
     const host = filtersHost();
@@ -690,7 +745,7 @@
       if (poster.getAttribute("data-subject-id") !== subjectId) continue;
       const card = poster.closest(".qb-media-card");
       const title = value(card?.querySelector(".qb-media-card-title")?.textContent) || "影片";
-      const overlays = [...poster.querySelectorAll(".qb-media-card-score, .qb-media-card-comment")];
+      const overlays = [...poster.querySelectorAll(".qb-media-card-score, .qb-media-card-my-rating, .qb-media-card-comment")];
       const image = document.createElement("img");
       image.src = dataUri;
       image.alt = `${title}海报`;
@@ -747,6 +802,44 @@
     if (message.type === "doubanShellPersonalState") {
       updatePersonalUi(message.personalStatus);
       setBusy(message.busy === true);
+      return;
+    }
+    if (message.type === "doubanShellPersonalItemMutation") {
+      if (viewKind !== "personal") return;
+      const subjectId = value(message.subjectId);
+      if (!/^\d+$/u.test(subjectId)) return;
+      const card = grid()?.querySelector(`[data-subject-id="${subjectId}"]`);
+      if (!card) return;
+      const fromStatus = value(message.fromStatus);
+      const toStatus = value(message.toStatus);
+      if (message.deleted === true || (fromStatus === personalStatus && toStatus !== personalStatus)) {
+        card.remove();
+        return;
+      }
+      if (toStatus !== personalStatus) return;
+      const poster = card.querySelector(".qb-media-card-poster");
+      if (!poster) return;
+      const rating = Number(message.myRating) || 0;
+      let ratingNode = poster.querySelector(".qb-media-card-my-rating");
+      if (rating > 0) {
+        if (!ratingNode) {
+          ratingNode = document.createElement("strong");
+          ratingNode.className = "qb-media-card-my-rating";
+          poster.append(ratingNode);
+        }
+        ratingNode.textContent = "★".repeat(Math.max(0, Math.min(5, rating)));
+      } else {
+        ratingNode?.remove();
+      }
+      if (message.score !== null && message.score !== undefined && Number(message.score) > 0) {
+        let scoreNode = poster.querySelector(".qb-media-card-score");
+        if (!scoreNode) {
+          scoreNode = document.createElement("strong");
+          scoreNode.className = "qb-media-card-score";
+          poster.append(scoreNode);
+        }
+        scoreNode.textContent = value(message.score);
+      }
       return;
     }
     if (message.type === "doubanShellLocalPersonalFilters") {

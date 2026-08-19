@@ -44,6 +44,7 @@
         : [],
       chips: Array.isArray(model.chips) ? model.chips.filter(chip => value(chip?.text)) : [],
       score: normalizeScore(model.score),
+      myRating: value(model.myRating),
       comment: value(model.comment),
       subjectId: value(model.subjectId),
       subjectUrl: value(model.subjectUrl)
@@ -105,6 +106,7 @@
       });
       poster.append(comment);
     }
+    if (model.myRating) poster.append(makeNode("strong", "qb-media-card-my-rating", model.myRating));
     if (model.score) poster.append(makeNode("strong", "qb-media-card-score", model.score));
 
     const body = makeNode("div", appendClass(settings.bodyClass, "qb-media-card-body"));

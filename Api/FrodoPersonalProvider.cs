@@ -119,6 +119,100 @@ internal sealed class FrodoPersonalProvider
         }
     }
 
+    internal async Task<FrodoPersonalItem?> ApplyConfirmedReviewAsync(
+        string subjectId,
+        string beforeStatus,
+        string targetStatus,
+        int? myRating,
+        string comment,
+        string markedDate,
+        CancellationToken cancellationToken = default)
+    {
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (_profileId.Length == 0 || _status.Length == 0 ||
+                (_status != beforeStatus && _status != targetStatus)) return null;
+
+            FrodoPersonalItem? source = _items.FirstOrDefault(item => item.SubjectId.Equals(subjectId, StringComparison.Ordinal));
+            source ??= _pendingItems.FirstOrDefault(item => item.SubjectId.Equals(subjectId, StringComparison.Ordinal));
+            if (source is null) return null;
+
+            var updated = source with
+            {
+                Status = targetStatus,
+                StatusLabel = targetStatus switch
+                {
+                    "collect" => "看过",
+                    "wish" => "想看",
+                    "do" => "在看",
+                    _ => source.StatusLabel
+                },
+                MyRating = targetStatus == "wish" ? null : myRating,
+                Comment = comment ?? "",
+                MarkedDate = markedDate ?? ""
+            };
+
+            var keepInCurrent = _status.Equals(targetStatus, StringComparison.Ordinal);
+            for (var index = _items.Count - 1; index >= 0; index--)
+            {
+                if (!_items[index].SubjectId.Equals(subjectId, StringComparison.Ordinal)) continue;
+                if (keepInCurrent) _items[index] = updated;
+                else _items.RemoveAt(index);
+            }
+
+            if (_pendingItems.Count > 0)
+            {
+                var pending = _pendingItems.ToArray();
+                _pendingItems.Clear();
+                foreach (var item in pending)
+                {
+                    if (!item.SubjectId.Equals(subjectId, StringComparison.Ordinal)) _pendingItems.Enqueue(item);
+                    else if (keepInCurrent) _pendingItems.Enqueue(updated);
+                }
+            }
+
+            if (!keepInCurrent) _total = Math.Max(0, _total - 1);
+            _apiHasMore = _nextStart < _total;
+            _hasMore = _pendingItems.Count > 0 || _apiHasMore;
+            DiagnosticLogger.Write($"Frodo personal provider authoritative review applied; SubjectId={subjectId}; BeforeStatus={beforeStatus}; TargetStatus={targetStatus}; CurrentStatus={_status}; Keep={keepInCurrent}; ShellItems={_items.Count}; Pending={_pendingItems.Count}");
+            return updated;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    internal async Task<bool> ApplyConfirmedDeleteAsync(string subjectId, CancellationToken cancellationToken = default)
+    {
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (_profileId.Length == 0 || _status.Length == 0) return false;
+            var removed = _items.RemoveAll(item => item.SubjectId.Equals(subjectId, StringComparison.Ordinal)) > 0;
+            if (_pendingItems.Count > 0)
+            {
+                var pending = _pendingItems.ToArray();
+                _pendingItems.Clear();
+                foreach (var item in pending)
+                {
+                    if (!item.SubjectId.Equals(subjectId, StringComparison.Ordinal)) _pendingItems.Enqueue(item);
+                    else removed = true;
+                }
+            }
+            if (removed) _total = Math.Max(0, _total - 1);
+            _apiHasMore = _nextStart < _total;
+            _hasMore = _pendingItems.Count > 0 || _apiHasMore;
+            if (removed)
+                DiagnosticLogger.Write($"Frodo personal provider authoritative delete applied; SubjectId={subjectId}; CurrentStatus={_status}; ShellItems={_items.Count}; Pending={_pendingItems.Count}");
+            return removed;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
     internal void Reset() => ResetCore();
 
     private async Task FillVisibleBatchAsync(string operation, CancellationToken cancellationToken)

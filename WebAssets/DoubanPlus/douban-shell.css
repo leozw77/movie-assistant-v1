@@ -88,6 +88,19 @@ button { font: inherit; }
 .qb-shell-filter-select:hover:not(:disabled),
 .qb-shell-filter-select:focus { border-color: #6b9bd0; background: #2b4057; }
 .qb-shell-filter-select:disabled { cursor: wait; opacity: .55; }
+.qb-shell-advanced-filter-panel {
+  display: flex;
+  flex: 1 0 100%;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px 0 2px;
+  border-top: 1px solid #2f3a49;
+}
+.qb-shell-advanced-filter-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: #d9e2ee; }
+.qb-shell-advanced-filter-row { display: flex; align-items: flex-start; gap: 12px; min-width: 0; }
+.qb-shell-advanced-filter-label { flex: 0 0 64px; padding-top: 6px; color: #8f9baa; font-size: 12px; }
+.qb-shell-advanced-filter-options { display: flex; flex: 1; flex-wrap: wrap; gap: 8px; min-width: 0; }
 .qb-shell-filter-options { display: flex; flex: 1 0 100%; flex-wrap: wrap; gap: 8px; padding: 0; }
 .qb-shell-filter-hint { color: #7e8b9b; font-size: 12px; }
 
