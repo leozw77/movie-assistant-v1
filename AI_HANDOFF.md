@@ -257,3 +257,16 @@ Phase 1 回 DOM 后发现两个回归并已修复：
 - Frodo Index：高级筛选数据源 + 只读 Subject Metadata Overlay。
 - Overlay 禁止修改任何 Personal State。
 - 普通豆瓣网页原生筛选始终 DOM；清空高级筛选也回 DOM。
+
+# 2026-08-19：手动重读个人页缓存
+
+后台“观影浏览器连接状态”窗口新增 `重读个人页缓存`：
+
+- 顺序完整重读 `collect / wish / do` Frodo Index。
+- 使用现有 `ForceFullReconcileAsync`，不另建 Personal State 同步路线。
+- 显示当前状态与 `Loaded / Total` 进度。
+- Douban Plus 正在运行时重建同一内存 Index，并立即让当前 DOM 页重新应用公共评分 Metadata Overlay。
+- Douban Plus 未运行时，从 `frodo-personal-index-v1.json` 读取现有 ProfileId 后后台重建。
+- 该按钮只更新高级筛选索引和公共元数据缓存，不改变 DOM 个人状态权威。
+
+评分显示统一一位小数：`9` -> `9.0`。

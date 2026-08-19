@@ -591,6 +591,61 @@ internal sealed class HtmlMediaLibraryForm : Form
         }
     }
 
+    internal async Task<string> RebuildFrodoPersonalCacheAsync(IProgress<FrodoPersonalIndexProgress>? progress = null)
+    {
+        if (_closing || IsDisposed)
+            throw new InvalidOperationException("Douban Plus 已关闭。");
+
+        var waitStarted = System.Diagnostics.Stopwatch.GetTimestamp();
+        while (!_initialized && !_closing && System.Diagnostics.Stopwatch.GetElapsedTime(waitStarted) < TimeSpan.FromSeconds(20))
+            await Task.Delay(100).ConfigureAwait(true);
+        if (!_initialized)
+            throw new InvalidOperationException("Douban Plus 尚未初始化完成，请稍后重试。");
+
+        await WaitForDoubanRecoveryAsync().ConfigureAwait(true);
+        var session = await _workerConnector.VerifySessionAsync().ConfigureAwait(true);
+        if (!session.IsLoggedIn ||
+            string.IsNullOrWhiteSpace(session.ProfileId) ||
+            !session.ProfileId.All(char.IsDigit))
+            throw new InvalidOperationException("豆瓣尚未登录，请先完成扫码登录。");
+
+        var profileId = session.ProfileId;
+        await _frodoPersonalIndex.LoadCacheAsync(profileId).ConfigureAwait(true);
+        var totals = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var status in new[] { "collect", "wish", "do" })
+        {
+            var snapshot = await _frodoPersonalIndex.ForceFullReconcileAsync(profileId, status, progress).ConfigureAwait(true);
+            totals[status] = snapshot.Items.Count;
+        }
+
+        if (FrodoPersonalProvider.TryReadScope(_activeDoubanSourceNavigationUrl, out var activeProfileId, out var activeStatus) &&
+            activeProfileId.Equals(profileId, StringComparison.Ordinal) &&
+            _frodoPersonalIndex.TryGetStatus(profileId, activeStatus, out var activeSnapshot))
+        {
+            PostFrodoPersonalFilterState(
+                profileId,
+                activeStatus,
+                activeSnapshot,
+                _frodoPersonalQuery.IsActiveFor(profileId, activeStatus)
+                    ? _frodoPersonalQuery.Criteria
+                    : new FrodoPersonalFilterCriteria(),
+                false,
+                activeSnapshot.Items.Count,
+                activeSnapshot.Total,
+                activeSnapshot.Items.Count,
+                0,
+                "");
+
+            if (!_frodoPersonalActive && _doubanSourceNavigationCompleted)
+            {
+                _doubanSourceReadScheduledVersion = -1;
+                await RequestDoubanSourceReadAsync("manual-personal-cache-rebuild").ConfigureAwait(true);
+            }
+        }
+
+        DiagnosticLogger.Write($"Manual personal cache rebuild completed; Source=OpenDoubanPlus; ProfileId={profileId}; Collect={totals["collect"]}; Wish={totals["wish"]}; Do={totals["do"]}");
+        return $"完成：看过 {totals["collect"]} / 想看 {totals["wish"]} / 在看 {totals["do"]}";
+    }
     private async Task InitializeAsync()
     {
         if (_initialized) return;

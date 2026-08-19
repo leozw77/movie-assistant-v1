@@ -308,6 +308,46 @@ public sealed class TrayContext : ApplicationContext
         }
         catch (Exception ex) { MessageBox.Show("读取失败：" + ex.Message, "爱奇艺测试失败", MessageBoxButtons.OK, MessageBoxIcon.Error); }
     }
+    internal async Task<string> RebuildDoubanPersonalCacheAsync(IProgress<FrodoPersonalIndexProgress>? progress = null)
+    {
+        var openLibrary = Application.OpenForms.OfType<HtmlMediaLibraryForm>().FirstOrDefault();
+        if (openLibrary is not null)
+            return await openLibrary.RebuildFrodoPersonalCacheAsync(progress);
+
+        var cachePath = Path.Combine(_store.DataDirectory, "frodo-personal-index-v1.json");
+        if (!File.Exists(cachePath))
+            throw new InvalidOperationException("尚未找到个人页缓存，请先在 Douban Plus 打开一次个人页面并建立完整筛选索引。");
+
+        string profileId;
+        try
+        {
+            using var stream = File.OpenRead(cachePath);
+            using var document = await JsonDocument.ParseAsync(stream);
+            profileId = document.RootElement.TryGetProperty("profileId", out var profileValue) &&
+                        profileValue.ValueKind == JsonValueKind.String
+                ? (profileValue.GetString() ?? "").Trim()
+                : "";
+        }
+        catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
+        {
+            throw new InvalidOperationException("读取现有个人页缓存失败：" + ex.Message, ex);
+        }
+
+        if (string.IsNullOrWhiteSpace(profileId) || !profileId.All(char.IsDigit))
+            throw new InvalidOperationException("现有个人页缓存缺少有效豆瓣用户 ID，请先打开一次个人页面重新建立索引。");
+
+        var service = new FrodoPersonalIndexService(FrodoOptions.CreateDefault(), _store.DataDirectory);
+        await service.LoadCacheAsync(profileId);
+        var totals = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var status in new[] { "collect", "wish", "do" })
+        {
+            var snapshot = await service.ForceFullReconcileAsync(profileId, status, progress);
+            totals[status] = snapshot.Items.Count;
+        }
+
+        DiagnosticLogger.Write($"Manual personal cache rebuild completed; Source=BackgroundWindow; ProfileId={profileId}; Collect={totals["collect"]}; Wish={totals["wish"]}; Do={totals["do"]}");
+        return $"完成：看过 {totals["collect"]} / 想看 {totals["wish"]} / 在看 {totals["do"]}";
+    }
     private void ShowStatus() { if (_statusForm is null || _statusForm.IsDisposed) _statusForm = new BrowserStatusForm(this); _statusForm.Show(); _statusForm.Activate(); RefreshStatusForm(); }
     internal void ShowMediaLibrary(bool reload = false, DoubanPlusOpenTarget? target = null)
     {

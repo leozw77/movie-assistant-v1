@@ -5,16 +5,49 @@ public sealed class BrowserStatusForm : Form
     private readonly TrayContext _owner;
     private readonly Label _connection = new() { AutoSize = true, Font = new Font(SystemFonts.DefaultFont.FontFamily, 11, FontStyle.Bold), MaximumSize = new Size(620, 0) };
     private readonly Label _media = new() { AutoSize = true, MaximumSize = new Size(620, 0) };
+    private readonly Label _personalCache = new() { AutoSize = true, MaximumSize = new Size(620, 0), ForeColor = Color.DimGray, Text = "个人页缓存：可手动重读看过 / 想看 / 在看完整索引。" };
     private readonly Label _privacy = new() { AutoSize = true, ForeColor = Color.DimGray, MaximumSize = new Size(620, 0), Text = "独立配置目录；CDP 仅连接 127.0.0.1 动态端口。程序只读取当前爱奇艺页面的公开片名和 HTML5 video 播放状态，不读取 Cookie、密码或浏览历史。" };
     public BrowserStatusForm(TrayContext owner)
     {
         _owner = owner; Text = "观影浏览器连接状态"; ClientSize = new Size(680, 340); StartPosition = FormStartPosition.CenterScreen;
         var launch = new Button { Text = "启动观影浏览器", AutoSize = true }; launch.Click += async (_, _) => await _owner.LaunchBrowserAsync();
         var test = new Button { Text = "测试当前爱奇艺电影", AutoSize = true }; test.Click += async (_, _) => await _owner.TestCurrentIqiyiAsync();
+        var rebuildPersonalCache = new Button { Text = "重读个人页缓存", AutoSize = true };
+        rebuildPersonalCache.Click += async (_, _) =>
+        {
+            if (!rebuildPersonalCache.Enabled) return;
+            rebuildPersonalCache.Enabled = false;
+            var normalText = rebuildPersonalCache.Text;
+            rebuildPersonalCache.Text = "正在重读…";
+            try
+            {
+                _personalCache.ForeColor = Color.DimGray;
+                _personalCache.Text = "个人页缓存：正在准备完整重读…";
+                var progress = new Progress<FrodoPersonalIndexProgress>(value =>
+                {
+                    if (IsDisposed) return;
+                    var label = value.Status switch { "collect" => "看过", "wish" => "想看", "do" => "在看", _ => value.Status };
+                    _personalCache.Text = $"个人页缓存：正在重读 {label}，{value.Loaded} / {Math.Max(value.Total, value.Loaded)}";
+                });
+                var result = await _owner.RebuildDoubanPersonalCacheAsync(progress);
+                _personalCache.ForeColor = Color.DarkGreen;
+                _personalCache.Text = "个人页缓存：" + result;
+            }
+            catch (Exception ex)
+            {
+                _personalCache.ForeColor = Color.Firebrick;
+                _personalCache.Text = "个人页缓存：重读失败 - " + ex.Message;
+            }
+            finally
+            {
+                rebuildPersonalCache.Text = normalText;
+                rebuildPersonalCache.Enabled = true;
+            }
+        };
         var close = new Button { Text = "关闭窗口", AutoSize = true }; close.Click += (_, _) => Hide();
-        var buttons = new FlowLayoutPanel { AutoSize = true }; buttons.Controls.Add(launch); buttons.Controls.Add(test); buttons.Controls.Add(close);
+        var buttons = new FlowLayoutPanel { AutoSize = true }; buttons.Controls.Add(launch); buttons.Controls.Add(test); buttons.Controls.Add(rebuildPersonalCache); buttons.Controls.Add(close);
         var panel = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, Padding = new Padding(22), AutoScroll = true };
-        panel.Controls.Add(_connection); panel.Controls.Add(_media); panel.Controls.Add(_privacy); panel.Controls.Add(buttons); Controls.Add(panel);
+        panel.Controls.Add(_connection); panel.Controls.Add(_media); panel.Controls.Add(_personalCache); panel.Controls.Add(_privacy); panel.Controls.Add(buttons); Controls.Add(panel);
         FormClosing += (_, e) => { if (e.CloseReason == CloseReason.UserClosing) { e.Cancel = true; Hide(); } };
         RefreshFromOwner();
     }

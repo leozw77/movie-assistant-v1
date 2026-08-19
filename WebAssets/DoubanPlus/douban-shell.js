@@ -240,6 +240,11 @@
     };
   };
 
+  const formatPublicScore = raw => {
+    const text = value(raw).replace(/^豆瓣\s*/u, "").trim();
+    const numeric = Number(text);
+    return Number.isFinite(numeric) && numeric > 0 ? numeric.toFixed(1) : text;
+  };
   const openDetail = item => {
     const normalized = normalize(item);
     if (!/^\d+$/u.test(normalized.subjectId) || !/^https:\/\/movie\.douban\.com\/subject\/\d+\/?$/u.test(normalized.subjectUrl)) {
@@ -271,7 +276,7 @@
       if (existingIds.has(item.subjectId)) return;
       const mediaTypeLabel = item.contentType === "tv" ? "电视剧" : viewKind === "personal" ? "电影" : contentTypeLabel();
       const publicScore = item.score && Number(item.score) > 0
-        ? value(item.score).replace(/^豆瓣\s*/u, "")
+        ? formatPublicScore(item.score)
         : "";
       const personalScore = viewKind === "personal" && item.myRating
         ? "★".repeat(Math.max(0, Math.min(5, Number(item.myRating))))
@@ -1001,7 +1006,7 @@
           scoreNode.className = "qb-media-card-score";
           poster.append(scoreNode);
         }
-        scoreNode.textContent = value(message.score);
+        scoreNode.textContent = formatPublicScore(message.score);
       }
       return;
     }

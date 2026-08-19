@@ -825,3 +825,12 @@
 - If the local index is missing, DOM cards still render normally and index preparation runs independently.
 - Restored `HandleDoubanShellApplyPersonalFilterAsync` to the stable DOM implementation; default native personal filters can no longer reactivate Frodo Provider.
 - Frodo local paging remains active only for a real advanced-filter QuerySession.
+
+## 2026-08-19 - Manual personal cache rebuild + score format
+
+- Added a `重读个人页缓存` button to the background/browser-status window.
+- One click force-rebuilds complete Frodo indexes for `collect / wish / do` and shows live progress.
+- If Douban Plus is open, the existing in-memory index is rebuilt and the current DOM personal page immediately re-applies the read-only public metadata overlay.
+- If Douban Plus is closed, the background action uses the existing cached ProfileId and rebuilds the cache without changing Personal State.
+- Manual cache rebuild never controls ordinary DOM membership/status/rating/comment/date/order.
+- Public Douban score display now always uses one decimal place, e.g. `9.0` instead of `9`.
