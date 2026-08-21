@@ -189,10 +189,10 @@
   overflow: visible;
 }
 
-.qb-media-card .qb-media-card-poster .qb-media-card-score {
+.qb-media-card .qb-media-card-poster .qb-media-card-score,
+.qb-media-card .qb-media-card-poster .qb-media-card-my-rating {
   position: absolute;
   z-index: 2;
-  right: 10px;
   bottom: 10px;
   margin: 0;
   padding: 0;
@@ -206,11 +206,14 @@
   text-shadow: 0 1px 2px rgb(0 0 0 / 80%);
 }
 
+.qb-media-card .qb-media-card-poster .qb-media-card-score { right: 10px; }
+.qb-media-card .qb-media-card-poster .qb-media-card-my-rating { left: 10px; }
+
 .qb-media-card .qb-media-card-poster > .qb-media-card-comment {
   position: absolute;
   z-index: 2;
   left: 10px;
-  bottom: 10px;
+  bottom: 36px;
   border: 0;
   border-radius: 0;
   padding: 0;

@@ -1,3 +1,125 @@
+# Frodo Personal Store Refactor v2：状态秒切 + BoundedSync + 永不清空可用 Store - 2026-08-19
+
+- 状态按钮改为本地 Store 优先：已有 `collect / wish / do` 完整快照时直接 Query + 本地分页，切状态不再重新读取整个个人库。
+- 后台同步固定为首屏 + 最多 5 页 BoundedSync；正常 `total +N` 找齐 N 个新 SubjectId 立即停止。
+- 删除 `InvalidateStatusForRebuildAsync` 的“遇到异常先 `_statuses.Remove(status)`”行为；任何网络、解析或语义不确定都保留现有 Store。
+- `total -N` 启动后台 DeletionReconcile：完整收集稳定云端 SubjectId 后只删除差集，失败时 Store 原样保留且 UI 不阻塞。
+- 同 total 陌生条目、delta 不匹配或 5 页内未找齐时标记诊断为 `NeedsDeepReconcile`，普通状态切换和普通刷新均不允许隐式 Full Build。
+- 完整扫描调用语义拆成 `BootstrapStatusAsync` 与 `ForceFullReconcileAsync`；完整 snapshot 先独立构建，并要求扫描期间 cloud total 稳定且无映射 skip，成功后才替换旧 snapshot。
+- 本地筛选、本地无限滚动以及评价后的 UI 刷新都不再依赖 Provider 当前状态，完整 Store 模式与 Provider 分页会话解耦。
+- 自检新增：5 页预算、同 total 陌生条目不破坏可用 Store；原有 InterestId、增量 UPSERT、状态迁移、权威评分优先测试继续保留。
+
+# Frodo Personal Store Refactor v1：单一权威库 + total 最小增量同步 - 2026-08-19
+
+- 将现有 `FrodoPersonalIndexService` 收拢为个人库唯一持久化 Store；`FrodoPersonalProvider` 只保留当前页面的临时分页/显示缓冲，不再作为第二份个人库权威状态。
+- Provider 每次拿到 Frodo interests 页面后，先把云端整条记录 UPSERT 到 Store。`CloudTotal == LocalTotal` 时只覆盖已观察记录的评分/短评等字段；`CloudTotal > LocalTotal` 时按差额从当前 source-slot 继续找新 SubjectId，找到所需数量立即停止。
+- 状态迁移（如 `wish -> collect`）由增加侧的新 SubjectId 定位；同一 SubjectId 写入目标状态时会从其它已完成状态快照移除，避免 Provider/Index 两边或状态之间出现重复事实。
+- `CloudTotal < LocalTotal`、同 total 却出现未知 SubjectId、或差额无法按最小扫描解释时，不猜删除对象：仅将该状态标记为需要完整 reconcile，页面先正常显示，现有后台索引流程随后只重建这一状态。
+- 新增 `InterestId` 映射自 Frodo `interest.id`；缓存 schema 升至 v4，旧 v3 缓存仅在升级后的首次使用重建一次。
+- 修复 authoritative precedence：已经拿到的新鲜 Frodo 记录，其 `MyRating / Comment / MarkedDate / InterestId` 不再被旧 `record.Rating` 等本地字段覆盖，解决“普通页五星、五星筛选仍是旧值”的根因。
+- 新增无网络自检，覆盖 InterestId、`total +1` 首屏增量 UPSERT、`wish -> collect` 单 Store 状态迁移、Frodo 权威记录优先级。
+- 不接入 RSS；不修改 `ReviewWriteCoordinator.cs` / `ReviewWriteVerifier.cs` / `ReviewTargetResolver.cs` / `ReviewWriteModels.cs`；已验证的 Frodo `start=0,20,40...` source-slot 分页算法保持原样。
+- 已知边界保持独立：手机只修改很老的历史评分/短评、且 total 不变又不出现在已读取 Frodo 页面时，仍需手动/低频完整 reconcile；本轮不为该边缘场景增加后台轮询。
+
+# Frodo 个人库筛选 Step 5：新增影片 UPSERT + 正确可播放 + 评分滑块 - 2026-08-19
+
+- 修复新评价影片只出现在刷新后的 Provider、却没有进入完整筛选索引的问题：官方确认后先 UPDATE，索引不存在该 SubjectId 时从 Frodo 最新个人页短重试回读并 INSERT，形成真正 UPSERT。
+- 新条目 UPSERT 同时修正 Provider 内存和完整 Index；当前处于本地筛选时立即按原条件重新 Query，默认个人页则自动刷新一次首屏，不再出现“刷新能看见，一筛选就消失”。
+- `可播放` 不再读取猜测字段 `is_playable`；个人 interests 的主字段改为 `subject.has_linewatch`，并兼容 `actions` 中的“可播放”和非空 `linewatches`。
+- 完整索引缓存 schema 升到 v3，强制淘汰 v2 中可能全部为 false 的错误 Playable 缓存；索引完成日志增加 Playable 统计，Frodo schema 日志只记录字段存在性，不记录原始响应。
+- 豆瓣评分 Query 不改；仅重做评分区间浮层为自定义双圆点轨道。拖动视觉连续，松开后按 0..10 的整数评分吸附，和豆瓣原生 1 分步进保持一致。
+- 固定 Frodo `start=0,20,40...` 源槽分页、pending buffer、评价官方回读和双评分卡片均保持不变。
+
+# Frodo 个人库筛选 Step 4：统一筛选状态 + 可播放 + 评分区间 - 2026-08-19
+
+- 个人页筛选统一为一套 Frodo 本地 `FrodoPersonalFilterCriteria`；第一层不再显示 `筛选影片 / 正在热映 / 在线观看`，也不再从这些入口切换 DOM 数据源。
+- Frodo `subject.is_playable` 映射为 `FrodoPersonalItem.Playable`；完整索引 schema 升为 v2，旧缓存自动失效重建，避免旧条目被错误视为不可播放。
+- 第一层固定一整排：`状态 / 影片类型 / 排序 / 可播放 / 豆瓣评分 / 筛选`；宽度不足时整排横向滚动，不再把 `筛选` 单独换行。
+- `可播放` 是第一层即时本地筛选条件，可与电影/电视、星级、年代、地区、题材、豆瓣评分区间任意组合。
+- `豆瓣评分` 点击后弹出 0-10 分双滑块浮层；确定后以 `ScoreMin/ScoreMax` 查询完整索引，设置评分区间时无豆瓣评分条目自动排除。
+- 点击 `筛选` 后只出现 `我的评分 / 年代 / 地区 / 题材` 四个分类；一次只展开当前点击分类的选项，不再一次铺满所有国家/题材。
+- `年代` 单一维度直接显示近 5 个年份和更早年代：如 `2026/2025/2024/2023/2022/2020年代/2010年代/.../60年代`；删除独立年份下拉入口。
+- 评价官方确认后的索引/Provider 即时同步、个人卡片左下我的星级和右下豆瓣评分继续保留。
+- 不修改评价提交/官方回读核心文件，Frodo Provider 已验证的固定 `0/20/40...` 源游标算法保持不变。
+
+# Frodo 个人库筛选 Step 3：即时同步 + 简洁筛选 + 双评分 - 2026-08-19
+
+- 修复官方评价保存/删除确认后完整个人库索引不立即更新的问题：确认后同时更新 `FrodoPersonalIndexService` 本地完整快照和当前 `FrodoPersonalProvider` 已加载卡片，避免继续滚动时旧累计页把已移走条目重新追加。
+- 当前使用星级/年份/地区/题材筛选时，评价确认后立即用原 criteria 重新查询并刷新筛选结果；普通个人列表则只原地更新/移除对应卡片，不重绘整页海报。
+- 个人页恢复简洁第一层：状态、筛选影片、影片类型、排序，最后只增加一个 `筛选` 按钮；高级条件仅在点击后于下方展开。
+- 高级筛选按语义分区：我的评分、年代、具体年份、地区、题材。`筛选影片`、电影/电视、排序不再在高级区重复。
+- `可播放/有视频` 不再作为高级筛选重复项；第一层沿用 `正在热映/在线观看` 入口，底层仍复用既有 DOM 网页条件。
+- 新增年代条件，与具体年份互斥；地区和题材保持独立，不再混成豆瓣 App 那种“大标签池”。
+- 个人卡片海报左下显示“我的星级”，右下固定显示 Frodo `subject.rating.value` 映射的豆瓣评分；探索/搜索页右下豆瓣评分行为保持不变。短评标识上移，避免与左下星级冲突。
+- 未开放“演员”高级筛选：当前 Frodo mapper 的演职员字段并不能证明是完整演员表，避免把不完整人物数据包装成全库筛选。
+- 不修改 `ReviewWriteCoordinator.cs` / `ReviewWriteVerifier.cs` / `ReviewTargetResolver.cs` / `ReviewWriteModels.cs`，官方回读仍是写入成功唯一确认依据。
+
+# Frodo 个人库筛选 Step 2：完整库筛选 UI 接入 - 2026-08-19
+
+- 默认个人页仍先走现有 `FrodoPersonalProvider` 快速显示首屏，不等待完整索引。
+- 后台加载/建立 `FrodoPersonalIndexService` 当前状态完整索引；建立期间 Shell 明确显示进度，不把已加载前 20/60 部误当成完整筛选范围。
+- 索引完成后个人页新增本地筛选控件：影片类型、我的 1-5 星/未评分、年份、地区、题材，以及最近标记/我的评分/豆瓣评分/年份/标题排序。
+- 新增 `FrodoPersonalQuerySession`，完整库筛选结果仍按 20 部分页送给 Shell，继续复用现有 IntersectionObserver 无限滚动，不一次向 WebView 灌入上千条记录。
+- 本地筛选分页使用 `dom.source=frodo-local-index`，只 append 新的 20 部卡片；v13.1 已验证的 `frodo-api` append 行为保持不变。
+- `可播放` / `有视频` 仍保留为“网页条件”，点击后继续走现有 DOM fallback，因为目前没有可靠 Frodo 等价字段。
+- 本轮不修改详情 API、评价写入/删除/官方回读链路，也不改变已实机验证的 Frodo 固定 0/20/40... Provider 游标算法。
+
+# Frodo 个人库筛选 Step 1：日志瘦身 + 全库索引基础 - 2026-08-19
+
+- 诊断日志不再持续写 `Unified Shell data posted` 的完整累计 Payload，改为 RequestId / Generation / Source / Operation / Status / Items / Bytes / Error 摘要。
+- DOM Source read 的完整 `ReadResult` 不再写入日志，只保留字节数；成功的 poster fallback 高频日志静默，真实失败继续记录。
+- FrodoClient 首次拿到非空 interests 时只记录字段名 schema，不记录字段值，用于确认真实 response 是否存在 tag/tags 类字段。
+- 新增 `FrodoPersonalIndexService`：与现有可见分页 Provider 解耦，按固定 API 槽位 `0/20/40...` 完整扫描个人状态库，SubjectId 去重，成功后原子写 `frodo-personal-index-v1.json`。
+- 索引层已实现电影/剧集、我的评分/未评分、年份、Genre、国家地区筛选，以及最近标记/我的评分/豆瓣评分/年份/标题排序。
+- 本 Step 只落后端索引基础，尚未把本地筛选控件接到 Shell；现有 Frodo 首屏、pending、无限滚动、DOM fallback、详情和评价写入链路不改。
+
+# Phase 1 v13.1：修复 Frodo append 来源标记丢失 - 2026-08-19
+
+- v13 实机日志确认：1200px 提前触发已经生效，但个人页分页仍会重画旧卡片并重新触发旧海报 fallback。
+- 根因不是 `render()` 或 Frodo 分页，而是 C# `ForwardDoubanSourceResultToShellAsync()` 重新组装 Shell 消息时漏掉了 Provider 原始 payload 的 `dom` 字段。
+- v13 前端 append 条件要求 `message.dom.source === "frodo-api"`；由于 `dom` 被宿主层剥离，该条件永远为 false，个人页继续走 replace/rebuild。
+- 本轮只把 `dom` 原样 Clone 转发给 Shell，使既有 v13 append 条件真正生效；非默认个人筛选的 DOM fallback 仍不会被错误强制 append。
+- 1200px 提前加载、固定 `0/20/40...` Frodo 游标、Provider pending 缓冲、筛选 fallback、详情、评价写入和官方回读均保持不变。
+# Phase 1 个人页无限滚动修正：追加渲染 + 提前加载 - 2026-08-19
+
+- 实机确认 Frodo 固定 20 槽位分页与 20 卡可见批次正确后，修复个人页加载更多仍整网格重绘的问题。
+- 原 Shell 只对 Explore/Search 分页启用 append；Frodo 个人页虽然后端返回累计 20/40/60… items，前端却会清空旧卡片再重画全部内容，造成到底部时闪一下并重复触发旧海报 fallback。
+- Frodo 个人页分页改为 append：仅在 `message.dom.source == "frodo-api"` 时复用现有 SubjectId 去重追加逻辑；个人页 DOM fallback 保持原渲染语义不变。
+- 个人页无限滚动触发距离从底部 720px 提前到 1200px；Explore 继续保持 720px，减少用户真正滚到底部后才等待下一批的割裂感。
+- 不修改 Frodo API 请求、固定 20 槽位游标、Provider pending 缓冲、筛选 fallback、详情、评价写入或官方回读。
+# Phase 1 分页最终修正：固定 20 槽位游标 + 20 卡可见批次 - 2026-08-19
+
+- v11 实机反证了“按 RawCount 推进”：`collect start=16` 立即出现 3 个重复，`wish start=19` 立即出现 1 个重复，说明 `start` 指向固定源槽位而不是“已实际返回多少条”。
+- 最终规则：Frodo 仍请求 `count=20`，下一段按 API 窗口推进；`nextStart = responseStart + ApiCount`，当响应 count 缺失时才回退配置的 PageSize。
+- underfilled 页仍可能只有 16/19 个可见 interests；这类空槽不回退游标、不重复读取，Provider 用 pending 缓冲从后续 20 槽位窗口补齐用户可见批次。
+- Shell 每次仍尽量新增 20 个唯一影片，匹配当前 5 列 × 4 行；真实尾页除外。
+- v11 的 RawCount 游标结论保留为历史试验记录但明确标记已被后续实机纠正。
+- 不修改 Shell UI、Douban Plus、Explore、详情、评价写入、官方回读或 DOM fallback。
+# Phase 1 分页修正（v11 试验，已被后续实机纠正）：按实际返回推进 - 2026-08-19
+
+- 实机确认 `count=20` 时 Frodo 首屏可能只有 `Raw=16`，且 Mapper `Skipped=0 / Duplicates=0`；这不是前端或 Mapper 丢数据。
+- 参考已验证的 Frodo 导出实现：个人 interests 页可能因已下架/删除条目而少于请求 `count`，分页游标必须按实际 `interests` 数量推进，不能按请求 count 跳过。
+- API 请求大小继续保持 20；游标从 `start += ApiCount` 改为 `start += RawCount`，例如首屏 `Raw=16` 后下一次请求从 `start=16` 继续。
+- Provider 新增 pending 缓冲：内部按实际游标继续取数，Shell 每次尽量发布 20 个唯一影片，匹配当前 5 列 × 4 行界面；只有真正到列表末尾才允许不足 20。
+- 去重覆盖已显示和 pending 条目；单次可见批次最多 10 次内部请求，防止异常 API 响应造成死循环。
+- 日志保留逐页诊断，并新增 `Buffered / Published / Pending / InternalRequest / ApiHasMore`，方便确认实际游标和 UI 批次。
+- 不修改 Shell UI、Douban Plus、Explore、详情、评价写入与 DOM fallback。
+# Phase 1 实机修正：Frodo 映射诊断与日志上限 - 2026-08-19
+
+- 实机已确认个人页 `Source=Frodo` 与连续分页可用；新增每页 `Raw / Mapped / Skipped / Duplicates / Added` 统计，区分 API 实际少返回、Mapper 跳过和 SubjectId 去重。
+- Mapper 不再静默吞掉异常记录；仅记录索引、SubjectId、Frodo 状态和短原因，不写整条 API JSON。
+- `diagnostic.log` 单文件限制 10 MiB，最多保留 3 个轮转归档；历史超大日志在升级后首次写入时直接丢弃，避免继续保留数百 MB 旧文件。
+- 单条诊断消息限制 16384 字符，现有 `Payload=` / `ReadResult=` 等超长日志自动截断，避免完整 JSON 持续膨胀日志。
+- 本轮不改 Explore、详情、评价写入、Shell UI 或 DOM fallback；仍在同一 Phase 1 分支上继续实机验收。
+# v1.0 API 迁移 Phase 1：个人页 Frodo 读取 - 2026-08-19
+
+- 个人页默认 `看过 / 想看 / 在看` 改为 Frodo `/api/v2/user/{uid}/interests` 首选读取，不再为首屏等待个人网页 DOM。
+- 新增 `Api/FrodoOptions.cs`、`FrodoSigner.cs`、`FrodoClient.cs`、`FrodoModels.cs`、`FrodoPersonalMapper.cs`、`FrodoPersonalProvider.cs`、`DoubanStatusMapper.cs`。
+- Frodo `done / mark / doing` 在 API 边界统一映射为既有 `collect / wish / do`，不向 Shell 或评价业务泄漏移动端状态名。
+- Frodo 输出保持现有个人页 Shell item/paging/filter payload；API 分页在 C# 累积，继续兼容现有个人页“加载更多”替换式渲染。
+- 非默认个人筛选和 API 失败继续走原 `QbDoubanPersonalSourceBridge` DOM 路线；旧 Douban Plus、Source WebView 与评价写入/官方回读均保留。
+- 本阶段不修改 Explore、详情读取、评价写入或 `ReviewWriteCoordinator`。
+- 真实登录态验收仍是发布门禁；静态检查/编译通过不能替代三状态、连续分页、筛选 fallback 和评价回归实测。
 # v1.0 独立开发版：旧体系清理与头像链路移除 - 2026-08-12
 
 - 保留影片文件名识别、自动绑定缓存、人工更正和 PotPlayer/播放结束提醒入口。
