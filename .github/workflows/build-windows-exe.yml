@@ -1,7 +1,7 @@
 name: Build Windows EXE
 
 on:
-  pull_request:
+  push:
     branches:
       - feature/build-frodo-personal-20260821
 
