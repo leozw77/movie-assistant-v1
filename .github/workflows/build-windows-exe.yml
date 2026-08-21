@@ -1,0 +1,39 @@
+name: Build Windows EXE
+
+on:
+  pull_request:
+    branches:
+      - feature/build-frodo-personal-20260821
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Locate project
+        id: locate
+        shell: pwsh
+        run: |
+          $proj = Get-ChildItem -Path . -Filter *.csproj -Recurse | Select-Object -First 1
+          if (-not $proj) { throw 'No .csproj found' }
+          "project=$($proj.FullName)" >> $env:GITHUB_OUTPUT
+      - name: Restore
+        shell: pwsh
+        run: dotnet restore "${{ steps.locate.outputs.project }}"
+      - name: Build
+        shell: pwsh
+        run: dotnet build "${{ steps.locate.outputs.project }}" -c Release --no-restore
+      - name: Publish Windows x64
+        shell: pwsh
+        run: dotnet publish "${{ steps.locate.outputs.project }}" -c Release -r win-x64 --self-contained true --no-restore -o .\dist\windows
+      - name: Package
+        shell: pwsh
+        run: Compress-Archive -Path .\dist\windows\* -DestinationPath .\movie-assistant-frodo-personal-win-x64.zip -Force
+      - uses: actions/upload-artifact@v4
+        with:
+          name: movie-assistant-frodo-personal-win-x64
+          path: movie-assistant-frodo-personal-win-x64.zip
+          if-no-files-found: error
