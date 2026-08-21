@@ -1,0 +1,13 @@
+name: GitHub Permission Test
+
+on:
+  push:
+    branches:
+      - feature/github-direct-edit-test-20260821
+
+jobs:
+  permission-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify Actions execution
+        run: echo "GitHub Actions permission test succeeded"
