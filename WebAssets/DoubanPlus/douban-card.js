@@ -3,6 +3,8 @@
 
   const STYLE_ID = "qb-douban-card-style";
   const cssText = __QB_DOUBAN_CARD_CSS__;
+  const POSTER_CACHE_LIMIT = 256;
+  const posterNodeCache = new Map();
 
   const addStyle = () => {
     if (document.getElementById(STYLE_ID)) return;
@@ -51,6 +53,33 @@
     };
   };
 
+  const rememberPosterNode = (subjectId, posterUrl, poster) => {
+    if (!subjectId || !poster) return;
+    posterNodeCache.delete(subjectId);
+    posterNodeCache.set(subjectId, { posterUrl, poster });
+    while (posterNodeCache.size > POSTER_CACHE_LIMIT) {
+      const oldest = posterNodeCache.keys().next().value;
+      if (!oldest) break;
+      posterNodeCache.delete(oldest);
+    }
+  };
+
+  const restorePosterMedia = (model, poster) => {
+    if (!model.subjectId) return false;
+    const cached = posterNodeCache.get(model.subjectId);
+    if (!cached || cached.posterUrl !== model.posterUrl || !cached.poster || cached.poster.isConnected) return false;
+    const media = cached.poster.querySelector(":scope > img, :scope > .qb-media-card-poster-fallback");
+    if (!media) return false;
+    if (media.tagName === "IMG") {
+      media.alt = `${model.title}海报`;
+      poster.classList.remove("qb-media-card-poster-placeholder");
+    } else {
+      poster.classList.add("qb-media-card-poster-placeholder");
+    }
+    poster.append(media);
+    return true;
+  };
+
   const render = options => {
     addStyle();
     const settings = options || {};
@@ -68,7 +97,9 @@
     if (settings.posterHref) poster.href = settings.posterHref;
     if (settings.posterAttributes) Object.entries(settings.posterAttributes).forEach(([key, item]) => poster.setAttribute(key, item));
     if (typeof settings.onPosterOpen === "function") poster.addEventListener("click", settings.onPosterOpen);
-    if (model.posterUrl) {
+
+    const posterMediaRestored = restorePosterMedia(model, poster);
+    if (!posterMediaRestored && model.posterUrl) {
       const image = makeNode("img");
       image.src = model.posterUrl;
       image.alt = `${model.title}海报`;
@@ -87,10 +118,11 @@
         poster.classList.add("qb-media-card-poster-placeholder");
       }, { once: true });
       poster.append(image);
-    } else {
+    } else if (!posterMediaRestored) {
       poster.append(makeNode("span", "qb-media-card-poster-fallback", settings.posterFallback || "暂无海报"));
       poster.classList.add("qb-media-card-poster-placeholder");
     }
+    rememberPosterNode(model.subjectId, model.posterUrl, poster);
 
     let comment = null;
     if (model.comment) {
