@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
 
@@ -19,6 +19,7 @@ internal sealed partial class DoubanWebView2Connector : IDoubanConnector, IDispo
     private bool _disposed;
     private bool _loginWindowActive;
     private string _loginStateBeforeVerification = "";
+    private string _verifiedSessionProfileId = "";
     private bool _deleteConfirmationPending;
     private string _deleteSubjectId = "";
 
@@ -49,11 +50,21 @@ internal sealed partial class DoubanWebView2Connector : IDoubanConnector, IDispo
         return true;
     }
 
+    private void ClearVerifiedSessionFastPath(string reason)
+    {
+        if (string.IsNullOrWhiteSpace(_verifiedSessionProfileId)) return;
+        DiagnosticLogger.Write($"WebView={_webViewRole}; Session verify fast path cleared; ProfileId={_verifiedSessionProfileId}; Reason={reason}");
+        _verifiedSessionProfileId = "";
+    }
+
     internal void SetLoginWindowActive(bool active)
     {
         _loginWindowActive = active;
         if (active)
         {
+            // Opening the login UI can switch accounts. Never reuse the prior
+            // in-process identity until a full verification succeeds again.
+            ClearVerifiedSessionFastPath("login-window-opened");
             _loginStateBeforeVerification = _session.LoginState;
             if (!string.Equals(_session.LoginState, "logged-in", StringComparison.OrdinalIgnoreCase))
                 SetSessionState("verifying", "登录窗口已打开");
@@ -87,6 +98,8 @@ internal sealed partial class DoubanWebView2Connector : IDoubanConnector, IDispo
 
     private void SetSessionState(string state, string error)
     {
+        if (!string.Equals(state, "logged-in", StringComparison.OrdinalIgnoreCase))
+            ClearVerifiedSessionFastPath("session-state-" + state);
         if (_session.LoginState == state && string.Equals(_session.LastError, error, StringComparison.Ordinal)) return;
         _session.LoginState = state;
         _session.LastError = error;
@@ -100,6 +113,7 @@ internal sealed partial class DoubanWebView2Connector : IDoubanConnector, IDispo
         _session.LoginState = "logged-in";
         _session.LastVerifiedAt = DateTime.Now;
         _session.LastError = "";
+        _verifiedSessionProfileId = !string.IsNullOrWhiteSpace(profileId) && profileId.All(char.IsDigit) ? profileId : "";
         _store.SaveDoubanSession(_session);
         SessionStatusChanged?.Invoke(ToStatus());
     }
@@ -156,6 +170,7 @@ internal sealed partial class DoubanWebView2Connector : IDoubanConnector, IDispo
             var browserExited = e.ProcessFailedKind == CoreWebView2ProcessFailedKind.BrowserProcessExited;
             DiagnosticLogger.Write($"WebView={_webViewRole}; WebView2 Douban process failed; Kind={e.ProcessFailedKind}; BrowserExited={browserExited}; Recovery={(browserExited ? "delegated-to-host" : "not-required")}");
             if (!browserExited) return;
+            ClearVerifiedSessionFastPath("browser-process-exited");
             _initialized = false;
             try { _browserLifetime.Cancel(); } catch { }
             BrowserProcessFailed?.Invoke(e.ProcessFailedKind);
@@ -226,7 +241,44 @@ internal sealed partial class DoubanWebView2Connector : IDoubanConnector, IDispo
         try
         {
             await EnsureInitializedAsync();
+
+            var fastProfileId = _verifiedSessionProfileId;
+            var fastPathEligible = !_loginWindowActive &&
+                !string.IsNullOrWhiteSpace(fastProfileId) && fastProfileId.All(char.IsDigit) &&
+                string.Equals(_session.LoginState, "logged-in", StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(_session.ProfileId, fastProfileId, StringComparison.Ordinal);
+            if (fastPathEligible)
+            {
+                try
+                {
+                    var cookies = await _worker.CoreWebView2.CookieManager.GetCookiesAsync("https://www.douban.com/");
+                    var hasSessionCookie = cookies.Any(x => x.Name.Equals("dbcl2", StringComparison.OrdinalIgnoreCase));
+                    if (hasSessionCookie)
+                    {
+                        DiagnosticLogger.Write($"WebView={_webViewRole}; Session verify fast path; ProfileId={fastProfileId}; NavigationSkipped=True");
+                        return ToStatus();
+                    }
+
+                    ClearVerifiedSessionFastPath("session-cookie-missing");
+                    SetSessionState("not-logged-in", "未发现豆瓣会话 Cookie");
+                    DiagnosticLogger.Write($"WebView={_webViewRole}; Session verify fast path rejected; Reason=SessionCookieMissing; NavigationSkipped=True");
+                    return ToStatus();
+                }
+                catch (Exception ex)
+                {
+                    ClearVerifiedSessionFastPath("cookie-probe-failed");
+                    DiagnosticLogger.Write($"WebView={_webViewRole}; Session verify fast path probe failed; Fallback=FullVerify; Error={ex.Message}");
+                }
+            }
+            else if (!string.IsNullOrWhiteSpace(fastProfileId))
+            {
+                ClearVerifiedSessionFastPath("identity-state-mismatch");
+            }
+
+            var timer = System.Diagnostics.Stopwatch.StartNew();
             await VerifySessionCoreAsync();
+            timer.Stop();
+            DiagnosticLogger.Write($"WebView={_webViewRole}; Session full verification completed; ProfileId={_session.ProfileId}; LoggedIn={string.Equals(_session.LoginState, "logged-in", StringComparison.OrdinalIgnoreCase)}; ElapsedMs={timer.Elapsed.TotalMilliseconds:F0}");
             return ToStatus();
         }
         catch (Exception ex) { SetSessionState("connection-error", ex.Message); return ToStatus(); }
@@ -1122,6 +1174,7 @@ internal sealed partial class DoubanWebView2Connector : IDoubanConnector, IDispo
     {
         if (_disposed) return;
         _disposed = true;
+        ClearVerifiedSessionFastPath("dispose");
         try { _browserLifetime.Cancel(); } catch { }
         _browserLifetime.Dispose();
         _navigationGate.Dispose();
