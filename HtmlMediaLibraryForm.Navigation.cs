@@ -79,6 +79,23 @@ internal sealed partial class HtmlMediaLibraryForm
         return System.Text.RegularExpressions.Regex.IsMatch(uri.AbsolutePath, "^/subject/\\d+/?$", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
     }
 
+    private static bool IsDoubanSubjectCelebritiesPageUrl(string? url)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps ||
+            !uri.Host.Equals("movie.douban.com", StringComparison.OrdinalIgnoreCase)) return false;
+        return System.Text.RegularExpressions.Regex.IsMatch(uri.AbsolutePath, "^/subject/\\d+/celebrities/?$", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+    }
+
+    private static bool IsDoubanPersonagePageUrl(string? url)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps ||
+            !uri.Host.Equals("www.douban.com", StringComparison.OrdinalIgnoreCase)) return false;
+        return System.Text.RegularExpressions.Regex.IsMatch(uri.AbsolutePath, "^/personage/\\d+/?$", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+    }
+
+    private static bool IsDoubanPlusEnhancedPageUrl(string? url) =>
+        IsDoubanSubjectPageUrl(url) || IsDoubanSubjectCelebritiesPageUrl(url) || IsDoubanPersonagePageUrl(url);
+
     private static bool IsDoubanPlusListPageUrl(string? url) =>
         IsDoubanSearchPageUrl(url) || IsAllowedDoubanPersonalUrl(url) || IsAllowedDoubanExploreOrTvUrl(url);
 
@@ -165,6 +182,8 @@ internal sealed partial class HtmlMediaLibraryForm
   const wrapperHidden = !wrapper || getComputedStyle(wrapper).display === "none";
   const isSearch = location.hostname === "search.douban.com" && /^\/movie\/subject_search\/?$/u.test(location.pathname);
    const isSubject = location.hostname === "movie.douban.com" && /^\/subject\/\d+\/?$/u.test(location.pathname);
+   const isCelebrities = location.hostname === "movie.douban.com" && /^\/subject\/\d+\/celebrities\/?$/u.test(location.pathname);
+   const isPersonage = location.hostname === "www.douban.com" && /^\/personage\/\d+\/?$/u.test(location.pathname);
    const isPersonal = location.hostname === "movie.douban.com" && /^\/people\/\d+\/(?:collect|wish|do)\/?$/u.test(location.pathname);
    const isExplore = location.hostname === "movie.douban.com" && /^\/(?:explore|tv)\/?$/u.test(location.pathname);
    const isTv = location.hostname === "movie.douban.com" && /^\/tv\/?$/u.test(location.pathname);
@@ -172,11 +191,13 @@ internal sealed partial class HtmlMediaLibraryForm
   const searchEmpty = root.querySelector(".atv-search-page-empty") !== null;
   const nativeSubjectLinkCount = isSearch ? (wrapper?.querySelectorAll("a[href*='/subject/']").length || 0) : 0;
   const detailTitle = root.querySelector(".atv-hero-title") !== null;
+  const celebritiesContent = root.querySelector(".atv-celebrities-hero h1, .atv-credit-groups") !== null;
+  const personageContent = root.querySelector(".atv-personage-hero, .atv-personage") !== null;
    const personalContent = root.querySelector(".qb-personal-header, .qb-personal-content, .qb-personal-empty") !== null;
    const exploreContent = root.querySelector(".qb-explore-header, .qb-explore-grid, .qb-explore-empty") !== null;
-   const contentReady = isSearch ? searchCardCount > 0 || (searchEmpty && nativeSubjectLinkCount === 0) : isSubject ? detailTitle : isPersonal ? personalContent : isExplore ? exploreContent : root.childElementCount > 0;
+   const contentReady = isSearch ? searchCardCount > 0 || (searchEmpty && nativeSubjectLinkCount === 0) : isSubject ? detailTitle : isCelebrities ? celebritiesContent : isPersonage ? personageContent : isPersonal ? personalContent : isExplore ? exploreContent : root.childElementCount > 0;
   const ready = enhanced && wrapperHidden && style.display !== "none" && style.visibility !== "hidden" && Number(style.opacity) >= 0.98 && rect.width > 0 && rect.height > 0 && probe.importResolved === true && probe.importRejected !== true && contentReady;
-   return { ready, contentReady, detailTitle, exploreContent, isExplore, isTv, isPersonal, isSearch, isSubject, nativeSubjectLinkCount, personalContent, searchCardCount, searchEmpty };
+   return { ready, celebritiesContent, contentReady, detailTitle, exploreContent, isCelebrities, isExplore, isPersonage, isPersonal, isSearch, isSubject, nativeSubjectLinkCount, personageContent, personalContent, searchCardCount, searchEmpty };
 })()
 """).ConfigureAwait(true);
             DiagnosticLogger.Write($"WebView=DoubanPlus; ContentProbe={result}");
@@ -395,3 +416,4 @@ internal sealed partial class HtmlMediaLibraryForm
     }
     private static void Copy(string value, Action<string> setter) { if (!string.IsNullOrWhiteSpace(value)) setter(value.Trim()); }
 }
+
