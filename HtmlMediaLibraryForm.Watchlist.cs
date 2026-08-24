@@ -281,4 +281,7 @@ internal sealed partial class HtmlMediaLibraryForm
     }
 
     private static bool IsKnownRatingHost(string host, string baseDomain) =>
+        host.Equals(baseDomain, StringComparison.OrdinalIgnoreCase) ||
+        host.EndsWith("." + baseDomain, StringComparison.OrdinalIgnoreCase);
+
 }

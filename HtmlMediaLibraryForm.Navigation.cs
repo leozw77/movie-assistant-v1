@@ -6,9 +6,6 @@ namespace QbPotDoubanAi;
 
 internal sealed partial class HtmlMediaLibraryForm
 {
-        host.Equals(baseDomain, StringComparison.OrdinalIgnoreCase) ||
-        host.EndsWith("." + baseDomain, StringComparison.OrdinalIgnoreCase);
-
     private static string DoubanContentTypeForUrl(string? url) => IsDoubanSearchPageUrl(url) ? "search" : IsAllowedDoubanTvUrl(url) ? "tv" : IsAllowedDoubanPersonalUrl(url) ? "personal" : "movie";
 
     private static string DoubanExploreModeForUrl(string? url) => $"explore-{DoubanContentTypeForUrl(url)}";
