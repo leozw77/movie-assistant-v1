@@ -9,6 +9,8 @@ ROOT = Path(__file__).resolve().parents[1]
 def main() -> None:
     store = (ROOT / "LocalWatchlistStore.cs").read_text(encoding="utf-8")
     host = "\n".join(path.read_text(encoding="utf-8") for path in sorted(ROOT.glob("HtmlMediaLibraryForm*.cs")))
+    watchlist_host_path = ROOT / "HtmlMediaLibraryForm.Watchlist.cs"
+    watchlist_host = watchlist_host_path.read_text(encoding="utf-8") if watchlist_host_path.exists() else host
     script_host = (ROOT / "WatchlistWebView2Script.cs").read_text(encoding="utf-8")
     script = (ROOT / "WebAssets" / "DoubanPlus" / "douban-watchlist.js").read_text(encoding="utf-8")
     css = (ROOT / "WebAssets" / "DoubanPlus" / "douban-watchlist.css").read_text(encoding="utf-8")
@@ -56,7 +58,7 @@ def main() -> None:
     ]
     for pattern in required_host:
         assert pattern in host, f"missing host guard: {pattern}"
-    assert "wish" not in host[host.index("HandleWatchlistMessageAsync"):host.index("IsAllowedWatchlistListSource")]
+    assert "wish" not in watchlist_host[watchlist_host.index("HandleWatchlistMessageAsync"):watchlist_host.index("IsAllowedWatchlistListSource")]
 
     required_script = [
         "qb_watchlist",
