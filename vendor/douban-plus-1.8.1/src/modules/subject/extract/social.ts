@@ -8,10 +8,47 @@ import { $, $$, safeText } from "@/shared/utils/dom";
 
 /**
  * Extract related recommendations from `.recommendations-bd`.
- * Iterates `<dl>` items and pulls title, poster image, and link.
+ * Iterates `<dl>` items and pulls title, poster image, link, and the optional
+ * public score already rendered by the native Douban recommendation markup.
  *
  * @param doc - The parent document to query against.
  */
+const RE_RECOMMENDATION_SCORE =
+  /(?:^|\s)(10(?:\.0)?|[0-9](?:\.[0-9])?)(?:\s*(?:分|\/10))?\s*$/u;
+
+const parseRecommendationScore = (value: string): number | undefined => {
+  const match = value.replace(/\s+/gu, " ").trim().match(RE_RECOMMENDATION_SCORE);
+  if (!match) {
+    return undefined;
+  }
+
+  const score = Number(match[1]);
+  return score > 0 && score <= 10 ? score : undefined;
+};
+
+const extractRecommendationScore = (
+  dl: HTMLDListElement,
+  titleEl: HTMLAnchorElement | null,
+): number | undefined => {
+  const scoreEl = $<HTMLElement>(
+    '.subject-rate, .rating_num, .rating, [class*="subject-rate"], [class*="rating"], [class*="rate"]',
+    dl,
+  );
+  const scoreFromElement = parseRecommendationScore(safeText(scoreEl));
+  if (scoreFromElement !== undefined) {
+    return scoreFromElement;
+  }
+
+  const detailsEl = $<HTMLElement>("dd", dl);
+  if (!detailsEl) {
+    return undefined;
+  }
+
+  const title = safeText(titleEl);
+  const details = safeText(detailsEl);
+  return parseRecommendationScore(title ? details.replace(title, "") : details);
+};
+
 const extractRecommendations = (doc: Document): Recommendation[] =>
   $$<HTMLDListElement>(".recommendations-bd dl", doc)
     .map((dl) => {
@@ -21,10 +58,12 @@ const extractRecommendations = (doc: Document): Recommendation[] =>
       const rawPoster = imgEl
         ? (imgEl as HTMLImageElement).src || imgEl.dataset.src || ""
         : "";
+      const score = extractRecommendationScore(dl, titleEl);
       return {
         link: linkEl ? linkEl.href : "",
         poster: upgradePoster(rawPoster) || "",
         title: safeText(titleEl),
+        ...(score === undefined ? {} : { score }),
       };
     })
     .filter((r) => r.title);
