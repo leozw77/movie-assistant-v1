@@ -4,7 +4,6 @@ on:
   pull_request:
     branches:
       - main
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -13,8 +12,21 @@ jobs:
   build-windows:
     runs-on: windows-latest
     steps:
-      - name: Checkout
+      - name: Checkout PT feature branch
         uses: actions/checkout@v4
+        with:
+          ref: feature/pt-context-search-20260824
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Apply PT context source patch
+        run: python tools/apply-pt-context-search.py
+
+      - name: Validate JavaScript
+        run: node --check WebAssets/DoubanPlus/douban-watchlist.js
 
       - name: Setup .NET 8
         uses: actions/setup-dotnet@v4
@@ -37,17 +49,29 @@ jobs:
         shell: pwsh
         run: dotnet build "${{ steps.locate.outputs.project }}" -c Release --no-restore
 
-      - name: Publish Windows x64
+      - name: Publish Windows x64 framework-dependent
         shell: pwsh
-        run: dotnet publish "${{ steps.locate.outputs.project }}" -c Release -r win-x64 --self-contained true --no-restore -o .\dist\windows
+        run: dotnet publish "${{ steps.locate.outputs.project }}" -c Release -r win-x64 --self-contained false --no-restore -o .\dist\windows
 
-      - name: Package artifact
-        shell: pwsh
-        run: Compress-Archive -Path .\dist\windows\* -DestinationPath .\movie-assistant-win-x64.zip -Force
-
-      - name: Upload artifact
+      - name: Upload compact build
         uses: actions/upload-artifact@v4
         with:
-          name: movie-assistant-win-x64
-          path: movie-assistant-win-x64.zip
+          name: movie-assistant-pt-context-win-x64-framework-dependent
+          path: .\dist\windows\**
           if-no-files-found: error
+          retention-days: 7
+
+      - name: Stage patched source
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path .\patched-source\WebAssets\DoubanPlus -Force | Out-Null
+          Copy-Item .\HtmlMediaLibraryForm.cs .\patched-source\HtmlMediaLibraryForm.cs -Force
+          Copy-Item .\WebAssets\DoubanPlus\douban-watchlist.js .\patched-source\WebAssets\DoubanPlus\douban-watchlist.js -Force
+
+      - name: Upload patched source
+        uses: actions/upload-artifact@v4
+        with:
+          name: pt-context-patched-source
+          path: .\patched-source\**
+          if-no-files-found: error
+          retention-days: 1
