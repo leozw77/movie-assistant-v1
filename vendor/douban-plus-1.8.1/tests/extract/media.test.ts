@@ -30,7 +30,8 @@ describe(extractCelebrities, () => {
     expect(result).toHaveLength(2);
     expect(result[0].name).toBe("蒂姆·罗宾斯");
     expect(result[0].role).toBe("饰 安迪");
-    expect("link" in result[0]).toBe(false);
+    expect(result[0].href).toContain("/celebrity/1054534/");
+    expect(result[1].href).toBeNull();
     expect(result[0].avatar).toContain("u1.jpg");
   });
 
@@ -152,3 +153,4 @@ describe(extractTrailers, () => {
     expect(extractTrailers(doc)).toHaveLength(0);
   });
 });
+
