@@ -83,6 +83,7 @@ type InfoBlock = {
 
 /** Return type of extractCelebrities() */
 type Celebrity = {
+  href: string | null;
   name: string;
   role: string;
   avatar: string;
@@ -342,3 +343,4 @@ export type {
   Trailer,
 };
 export { INTEREST_LABELS };
+
