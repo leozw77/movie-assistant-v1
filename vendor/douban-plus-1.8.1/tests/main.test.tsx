@@ -42,8 +42,8 @@ const makeInfoBlock = (overrides?: Partial<InfoBlock>): InfoBlock => ({
 const makeDoubanData = (overrides?: Partial<DoubanData>): DoubanData => ({
   awards: [],
   celebrities: [
-    { avatar: "", name: "Tim Robbins", role: "" },
-    { avatar: "", name: "Morgan Freeman", role: "" },
+    { avatar: "", href: null, name: "Tim Robbins", role: "" },
+    { avatar: "", href: null, name: "Morgan Freeman", role: "" },
   ],
   comments: [
     {
@@ -817,3 +817,4 @@ describe(SubjectPage, () => {
     }).toStrictEqual({ nav: "讨论", section: "讨论" });
   });
 });
+
