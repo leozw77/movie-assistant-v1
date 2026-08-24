@@ -186,6 +186,12 @@ internal sealed partial class HtmlMediaLibraryForm
         _doubanPlusView.CoreWebView2?.Reload();
     }
 
+    private Task NavigateDoubanHomeAsync()
+    {
+        ShowDoubanShellHome("overlay-home");
+        return Task.CompletedTask;
+    }
+
     private void ShowDoubanNavigationOverlay(string message)
     {
         if (_doubanNavigationOverlay.Tag is Label label) label.Text = message;
