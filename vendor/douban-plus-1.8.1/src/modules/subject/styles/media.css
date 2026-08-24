@@ -229,14 +229,31 @@
   }
 }
 
+.atv-rec-caption {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 12px;
+}
+
 .atv-rec-title {
+  flex: 1 1 auto;
+  min-width: 0;
   display: -webkit-box;
   overflow: hidden;
-  margin-top: 12px;
   -webkit-box-orient: vertical;
   color: var(--atv-text-primary);
   font-size: var(--atv-type-body);
   font-weight: var(--atv-font-weight-semibold);
   -webkit-line-clamp: 2;
   text-overflow: ellipsis;
+}
+
+.atv-rec-score {
+  flex: 0 0 auto;
+  color: var(--atv-rating-gold);
+  font-size: var(--atv-type-body-sm);
+  font-weight: var(--atv-font-weight-semibold);
+  white-space: nowrap;
 }
