@@ -1,0 +1,66 @@
+name: PT Context Search Build
+
+on:
+  push:
+    branches:
+      - feature/pt-context-search-20260824
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: windows-latest
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Apply source patch
+        run: python tools/apply-pt-context-search.py
+
+      - name: Validate JavaScript
+        run: node --check WebAssets/DoubanPlus/douban-watchlist.js
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore "观影助手.csproj"
+
+      - name: Build Release
+        run: dotnet build "观影助手.csproj" -c Release --no-restore
+
+      - name: Commit implemented source to feature branch
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add HtmlMediaLibraryForm.cs WebAssets/DoubanPlus/douban-watchlist.js
+          if (git diff --cached --quiet) {
+            Write-Host "No source changes to commit."
+          } else {
+            git commit -m "feat: add contextual PT search [skip ci]"
+            git push origin HEAD:${{ github.ref_name }}
+          }
+
+      - name: Publish win-x64 framework-dependent
+        run: dotnet publish "观影助手.csproj" -c Release -r win-x64 --self-contained false --no-restore -o publish/pt-context
+
+      - name: Upload compact build
+        uses: actions/upload-artifact@v4
+        with:
+          name: movie-assistant-pt-context-win-x64-framework-dependent
+          path: publish/pt-context/**
+          if-no-files-found: error
+          compression-level: 6
+          retention-days: 7
