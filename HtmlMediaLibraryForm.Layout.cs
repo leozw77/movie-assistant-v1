@@ -130,7 +130,7 @@ internal sealed partial class HtmlMediaLibraryForm
         var refresh = new ToolStripMenuItem("刷新页面");
         refresh.Click += (_, _) => RefreshDoubanPlusPage();
         var home = new ToolStripMenuItem("返回首页");
-        home.Click += async (_, _) => await NavigateDoubanHomeAsync().ConfigureAwait(true);
+        home.Click += (_, _) => ShowDoubanShellHome("context-menu-home");
         _doubanNavigationContextMenu.Items.Add(refresh);
         _doubanNavigationContextMenu.Items.Add(home);
         _doubanNavigationOverlay.ContextMenuStrip = _doubanNavigationContextMenu;
@@ -184,33 +184,6 @@ internal sealed partial class HtmlMediaLibraryForm
 
         DiagnosticLogger.Write($"WebView=DoubanShell; OverlayRefreshRequested=True; Url={_doubanPlusView.Source}; Action=ReloadShellFallback");
         _doubanPlusView.CoreWebView2?.Reload();
-    }
-
-    private async Task NavigateDoubanHomeAsync()
-    {
-        if (_closing) return;
-        var homeUrl = _activeDoubanPersonalPageUrl;
-        if (IsAllowedDoubanPersonalUrl(homeUrl))
-        {
-            var profileMatch = System.Text.RegularExpressions.Regex.Match(homeUrl, @"^https://movie\.douban\.com/people/(\d+)/(?:collect|wish|do)/?$", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
-            if (profileMatch.Success) homeUrl = $"https://movie.douban.com/people/{profileMatch.Groups[1].Value}/collect";
-        }
-        if (!IsAllowedDoubanPersonalUrl(homeUrl))
-        {
-            var session = await _workerConnector.GetSessionStatusAsync().ConfigureAwait(true);
-            if (session.IsLoggedIn && System.Text.RegularExpressions.Regex.IsMatch(session.ProfileId ?? "", "^\\d+$", System.Text.RegularExpressions.RegexOptions.CultureInvariant))
-                homeUrl = $"https://movie.douban.com/people/{session.ProfileId}/collect";
-        }
-        if (!IsAllowedDoubanPersonalUrl(homeUrl))
-        {
-            DiagnosticLogger.Write("WebView=DoubanPlus; OverlayHomeRequested=True; Result=NoAuthenticatedPersonalPage");
-            return;
-        }
-        _activeDoubanPersonalPageUrl = homeUrl;
-        _activeDoubanReturnUrl = "";
-        _pendingDoubanHistoryReturnUrl = "";
-        NavigateDoubanPlusToUrl(homeUrl, "overlay-home");
-        DiagnosticLogger.Write($"WebView=DoubanPlus; OverlayHomeRequested=True; Url={homeUrl}");
     }
 
     private void ShowDoubanNavigationOverlay(string message)
@@ -421,3 +394,4 @@ internal sealed partial class HtmlMediaLibraryForm
     }
 
 }
+
