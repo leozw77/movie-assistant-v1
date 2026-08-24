@@ -32,6 +32,10 @@ jobs:
         shell: pwsh
         run: python .\tests\validate_watchlist.py
 
+      - name: Validate HtmlMediaLibraryForm partial split
+        shell: pwsh
+        run: python .\tests\validate_html_media_library_partials.py
+
       - name: Restore
         shell: pwsh
         run: dotnet restore .\观影助手.csproj
