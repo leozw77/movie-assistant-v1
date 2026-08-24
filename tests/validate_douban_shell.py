@@ -22,6 +22,7 @@ personal_source = (ROOT / "WebAssets/DoubanPlus/douban-personal-source-bridge.js
 source_bridge = (ROOT / "WebAssets/DoubanPlus/douban-source-bridge.js").read_text(encoding="utf-8-sig")
 shell_css = (ROOT / "WebAssets/DoubanPlus/douban-shell.css").read_text(encoding="utf-8-sig")
 host = (ROOT / "HtmlMediaLibraryForm.cs").read_text(encoding="utf-8-sig")
+host_all = "\n".join(path.read_text(encoding="utf-8-sig") for path in ROOT.glob("HtmlMediaLibraryForm*.cs"))
 script_host = (ROOT / "DoubanPlusWebView2Script.cs").read_text(encoding="utf-8-sig")
 
 check("Shell JS 存在", bool(shell_js.strip()))
@@ -72,6 +73,7 @@ check("personal mode can navigate back to movie Explore", 'viewKind === "explore
 check("Shell poster direct-load failure has host fallback", all(token in shell_js + host for token in ("doubanShellPosterFailed", "doubanShellPosterFallback", "TryFetchDoubanPosterDataUriAsync")))
 check("Shell 动态补图保留评分和短评叠加节点", all(token in shell_js for token in ("querySelectorAll(\".qb-media-card-score, .qb-media-card-comment\")", "overlays.forEach(overlay => poster.append(overlay))")))
 check("Explore navigation timeout clears busy state", all(token in shell_js + host for token in ("doubanShellContentTypeError", "MonitorDoubanSourceContentTypeNavigationAsync", "豆瓣探索页面加载超时，请重试。")))
+check("人物详情与全部演职员页纳入稳定探针和恢复", all(token in host_all for token in ("IsDoubanSubjectCelebritiesPageUrl", "IsDoubanPersonagePageUrl", "IsDoubanPlusEnhancedPageUrl", "isCelebrities", "isPersonage", "celebritiesContent", "personageContent")))
 card_js = (ROOT / "WebAssets/DoubanPlus/douban-card.js").read_text(encoding="utf-8-sig")
 card_css = (ROOT / "WebAssets/DoubanPlus/douban-card.css").read_text(encoding="utf-8-sig")
 check("统一卡片支持两行标题和固定信息区", all(token in card_js + card_css for token in ("qb-media-card-title", "-webkit-line-clamp: 2", "qb-media-card-info", "qb-media-card-info-row", "qb-media-card-info-label", "qb-media-card-info-value")))
@@ -128,3 +130,4 @@ else:
 
 print(f"SUMMARY: {len(FAILURES)} failures")
 sys.exit(1 if FAILURES else 0)
+
