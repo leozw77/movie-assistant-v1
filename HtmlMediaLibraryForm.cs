@@ -3545,6 +3545,9 @@ internal sealed class HtmlMediaLibraryForm : Form
                 {
                     var subjectId = RequiredDigits(root, "subjectId");
                     var subjectUrl = RequiredSubjectUrl(root, "subjectUrl");
+                    var clientTitle = ReadBoundedString(root, "title", 300);
+                    var clientSource = ReadBoundedString(root, "source", 60);
+                    DiagnosticLogger.Write($"WebView=DoubanPlus; PtContextSearchRequest; ClientTitle={clientTitle}; ClientSource={clientSource}; SubjectId={subjectId}; SubjectUrl={subjectUrl}; PageSource={source}");
                     if (!IsAllowedWatchlistSubjectSource(source, subjectUrl)) throw new InvalidDataException("PT 搜索请求来源无效。");
                     DoubanSubjectIdentity.Validate(subjectId, subjectUrl, "PT search");
 

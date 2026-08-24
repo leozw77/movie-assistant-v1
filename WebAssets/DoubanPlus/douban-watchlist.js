@@ -365,13 +365,16 @@
   const appendPtSearchAction = (menu, item) => {
     menu.append(menuButton("PT 搜索", async () => {
       hideMenu();
-      showToast("正在读取 IMDb 并打开 PT 搜索…");
+      const targetLabel = item.title ? `${item.title} · ${item.subjectId}` : `豆瓣条目 ${item.subjectId}`;
+      showToast(`正在读取 IMDb · ${targetLabel}`);
       try {
         const response = await request("doubanWatchlistPtSearchRequest", {
           subjectId: item.subjectId,
-          subjectUrl: item.subjectUrl
+          subjectUrl: item.subjectUrl,
+          title: item.title || "",
+          source: item.source || ""
         }, 20000);
-        showToast(response.imdbId ? `已打开 PT 搜索 · ${response.imdbId}` : "已打开 PT 搜索");
+        showToast(response.imdbId ? `已打开 PT 搜索 · ${targetLabel} · ${response.imdbId}` : `已打开 PT 搜索 · ${targetLabel}`);
       } catch (error) {
         showToast(String(error.message || error));
       }
