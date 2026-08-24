@@ -311,7 +311,7 @@ internal sealed partial class HtmlMediaLibraryForm
             if (e.NavigationId != _pendingDoubanSubjectNavigationId) return;
             if (e.NavigationId == _doubanSubjectShownNavigationId) return;
 
-            var stable = e.IsSuccess && await HasStableDoubanSubjectRootAsync().ConfigureAwait(true);
+            var stable = e.IsSuccess && await WaitForStableDoubanSubjectRootAsync(e.NavigationId).ConfigureAwait(true);
             if (stable && e.NavigationId == _pendingDoubanSubjectNavigationId)
             {
                 _doubanSubjectShownNavigationId = e.NavigationId;
@@ -392,6 +392,22 @@ internal sealed partial class HtmlMediaLibraryForm
             DiagnosticLogger.Write($"WebView=DoubanSubject; StableRenderProbeFailed={ex.Message}");
             return false;
         }
+    }
+
+    private async Task<bool> WaitForStableDoubanSubjectRootAsync(ulong navigationId)
+    {
+        for (var attempt = 0; attempt < 60 && navigationId == _pendingDoubanSubjectNavigationId; attempt++)
+        {
+            if (await HasStableDoubanSubjectRootAsync().ConfigureAwait(true))
+            {
+                DiagnosticLogger.Write($"WebView=DoubanSubject; StableRenderProbe=True; NavigationId={navigationId}; Attempt={attempt}");
+                return true;
+            }
+            await Task.Delay(50).ConfigureAwait(true);
+        }
+
+        DiagnosticLogger.Write($"WebView=DoubanSubject; StableRenderProbe=False; NavigationId={navigationId}; TimeoutMs=3000");
+        return false;
     }
 
     private async Task RetryDoubanSubjectNavigationAsync(string url, ulong previousNavigationId)
