@@ -367,11 +367,21 @@ internal sealed partial class HtmlMediaLibraryForm
   const probe = window.__qbDoubanPlusProbe || {};
   const rect = root?.getBoundingClientRect();
   const style = root ? getComputedStyle(root) : null;
+  const isSubject = location.hostname === "movie.douban.com" && /^\/subject\/\d+\/?$/u.test(location.pathname);
+  const isCelebrities = location.hostname === "movie.douban.com" && /^\/subject\/\d+\/celebrities\/?$/u.test(location.pathname);
+  const isPersonage = location.hostname === "www.douban.com" && /^\/personage\/\d+\/?$/u.test(location.pathname);
+  const contentReady = isSubject
+    ? root?.querySelector(".atv-hero-title")
+    : isCelebrities
+      ? root?.querySelector(".atv-celebrities-hero h1, .atv-credit-groups")
+      : isPersonage
+        ? root?.querySelector(".atv-personage-hero, .atv-personage")
+        : root?.querySelector(".atv-hero-title");
   const ready = Boolean(root && document.body && probe.importResolved === true && probe.importRejected !== true &&
     document.body.classList.contains("atv-enhanced") && (!wrapper || getComputedStyle(wrapper).display === "none") &&
     style && style.display !== "none" && style.visibility !== "hidden" && Number(style.opacity) >= 0.98 &&
-    rect && rect.width > 0 && rect.height > 0 && root.querySelector(".atv-hero-title"));
-  return { ready, href: location.href, importResolved: probe.importResolved === true };
+    rect && rect.width > 0 && rect.height > 0 && contentReady);
+  return { ready, href: location.href, isCelebrities, isPersonage, isSubject, importResolved: probe.importResolved === true };
 })()
 """).ConfigureAwait(true);
             using var document = JsonDocument.Parse(result);
