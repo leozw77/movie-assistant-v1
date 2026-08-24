@@ -1,10 +1,20 @@
 from pathlib import Path
 
 
-def replace_once(text: str, old: str, new: str, label: str) -> str:
-    count = text.count(old)
+def require_once(text: str, marker: str, label: str) -> int:
+    count = text.count(marker)
     if count != 1:
-        raise RuntimeError(f"{label}: expected exactly one match, found {count}")
+        nearby = ""
+        token = marker.strip().splitlines()[0][:40]
+        pos = text.find(token[:20])
+        if pos >= 0:
+            nearby = repr(text[max(0, pos - 80):pos + 240])
+        raise RuntimeError(f"{label}: expected exactly one marker, found {count}; nearby={nearby}")
+    return text.index(marker)
+
+
+def replace_once(text: str, old: str, new: str, label: str) -> str:
+    require_once(text, old, label)
     return text.replace(old, new, 1)
 
 
@@ -13,20 +23,16 @@ cs_path = Path("HtmlMediaLibraryForm.cs")
 js = js_path.read_text(encoding="utf-8")
 cs = cs_path.read_text(encoding="utf-8")
 
+# Keep the existing bridge, but allow metadata + browser opening enough time.
 js = replace_once(
     js,
-    '  const request = (type, payload = {}) => new Promise((resolve, reject) => {\n',
-    '  const request = (type, payload = {}, timeoutMs = 8000) => new Promise((resolve, reject) => {\n',
+    "const request = (type, payload = {}) => new Promise",
+    "const request = (type, payload = {}, timeoutMs = 8000) => new Promise",
     "request timeout signature",
 )
-js = replace_once(
-    js,
-    '    }, 8000);\n',
-    '    }, timeoutMs);\n',
-    "request timeout use",
-)
+js = replace_once(js, "}, 8000);", "}, timeoutMs);", "request timeout use")
 
-item_anchor = '  const itemFromTarget = target => {\n'
+item_marker = "  const itemFromTarget = target => {"
 detail_helper = '''  const detailItemFromPage = () => {
     const match = location.pathname.match(/^\\/subject\\/(\\d+)\\/?$/u);
     if (!match) return null;
@@ -39,27 +45,19 @@ detail_helper = '''  const detailItemFromPage = () => {
   };
 
 '''
-js = replace_once(js, item_anchor, detail_helper + item_anchor, "detail page helper")
+item_pos = require_once(js, item_marker, "itemFromTarget marker")
+js = js[:item_pos] + detail_helper + js[item_pos:]
 
-old_hero = '''    const heroPoster = target.closest?.(".atv-poster-card");
-    if (heroPoster) {
-      const match = location.pathname.match(/^\\/subject\\/(\\d+)\\/?$/u);
-      if (match) {
-        return {
-          ...cardSnapshot(target),
-          subjectId: match[1],
-          subjectUrl: subjectUrl(match[1]),
-          title: text(document.querySelector(".atv-hero-title")) || `豆瓣条目 ${match[1]}`,
-          posterSourceUrl: posterSourceUrlFromTarget(target),
-          source: "detail"
-        };
-      }
-    }
-'''
+hero_start_marker = '    const heroPoster = target.closest?.(".atv-poster-card");'
+hero_start = require_once(js, hero_start_marker, "detail poster start")
+hero_end_marker = "    return null;"
+hero_end = js.find(hero_end_marker, hero_start)
+if hero_end < 0:
+    raise RuntimeError("detail poster end marker not found")
 new_hero = '''    const heroPoster = target.closest?.(".atv-poster-card");
     if (heroPoster) {
-      // Detail pages can contain recommendation posters. A poster's own subject
-      // link always wins; only the current hero poster may fall back to the page subject.
+      // Recommendation posters live inside another movie's detail page. Resolve the
+      // poster's own subject link first; only the current hero poster may fall back.
       const linkedSubject = heroPoster.matches?.('a[href*="/subject/"]')
         ? heroPoster
         : (heroPoster.closest?.('a[href*="/subject/"]') || heroPoster.querySelector?.('a[href*="/subject/"]'));
@@ -88,13 +86,9 @@ new_hero = '''    const heroPoster = target.closest?.(".atv-poster-card");
       }
     }
 '''
-js = replace_once(js, old_hero, new_hero, "detail poster resolution")
+js = js[:hero_start] + new_hero + js[hero_end:]
 
-menu_anchor = '''  const appendPageActions = menu => {
-    menu.append(menuButton("刷新页面", refreshPage));
-    menu.append(menuButton("返回首页", goHome));
-  };
-'''
+page_actions_marker = "  const appendPageActions = menu => {"
 pt_menu = '''  const appendPtSearchAction = (menu, item) => {
     menu.append(menuButton("PT 搜索", async () => {
       hideMenu();
@@ -111,59 +105,34 @@ pt_menu = '''  const appendPtSearchAction = (menu, item) => {
     }));
   };
 '''
-js = replace_once(js, menu_anchor, pt_menu + menu_anchor, "PT menu helper")
+page_pos = require_once(js, page_actions_marker, "page actions marker")
+js = js[:page_pos] + pt_menu + js[page_pos:]
 
+loading_line = '    menu.append(menuButton("正在检查待看状态…", () => {}, true));'
+js = replace_once(js, loading_line, loading_line + "\n    appendPtSearchAction(menu, item);", "PT loading menu")
 js = replace_once(
     js,
-    '''    menu.append(menuButton("正在检查待看状态…", () => {}, true));
-    appendPageActions(menu);
-''',
-    '''    menu.append(menuButton("正在检查待看状态…", () => {}, true));
-    appendPtSearchAction(menu, item);
-    appendPageActions(menu);
-''',
-    "PT menu while watchlist state loads",
+    "      appendPageActions(menu);\n    } catch (error) {",
+    "      appendPtSearchAction(menu, item);\n      appendPageActions(menu);\n    } catch (error) {",
+    "PT resolved menu",
 )
 js = replace_once(
     js,
-    '''      }
-      appendPageActions(menu);
-    } catch (error) {
-      if (contextItem === item && document.getElementById(MENU_ID)) {
-        menu.replaceChildren(menuButton(String(error.message || error), hideMenu));
-        appendRefreshButton(menu);
-      }
-''',
-    '''      }
-      appendPtSearchAction(menu, item);
-      appendPageActions(menu);
-    } catch (error) {
-      if (contextItem === item && document.getElementById(MENU_ID)) {
-        menu.replaceChildren(menuButton(String(error.message || error), hideMenu));
-        appendPtSearchAction(menu, item);
-        appendPageActions(menu);
-      }
-''',
-    "PT menu after watchlist state",
+    "        appendRefreshButton(menu);",
+    "        appendPtSearchAction(menu, item);\n        appendPageActions(menu);",
+    "PT error menu",
 )
 
-old_context = '''  document.addEventListener("contextmenu", event => {
-    const item = itemFromTarget(event.target);
-    if (!item) {
-      if (!isSupportedPage()) return;
-      event.preventDefault();
-      event.stopPropagation();
-      showPageMenu(event.clientX, event.clientY);
-      return;
-    }
-    event.preventDefault();
-    event.stopPropagation();
-    showMenu(event.clientX, event.clientY, item);
-  }, true);
-'''
+context_start_marker = '  document.addEventListener("contextmenu", event => {'
+context_start = require_once(js, context_start_marker, "context menu start")
+context_end_marker = "  }, true);"
+context_end = js.find(context_end_marker, context_start)
+if context_end < 0:
+    raise RuntimeError("context menu end not found")
+context_end += len(context_end_marker)
 new_context = '''  document.addEventListener("contextmenu", event => {
-    // Poster identity has priority over the enclosing detail page. This is critical
-    // for recommendation posters shown inside another movie's subject page.
+    // Poster identity always wins over the enclosing detail page. This keeps
+    // recommendation posters bound to their own movie.
     const posterItem = itemFromTarget(event.target);
     if (posterItem) {
       event.preventDefault();
@@ -184,11 +153,10 @@ new_context = '''  document.addEventListener("contextmenu", event => {
     event.preventDefault();
     event.stopPropagation();
     showPageMenu(event.clientX, event.clientY);
-  }, true);
-'''
-js = replace_once(js, old_context, new_context, "poster-first context menu")
+  }, true);'''
+js = js[:context_start] + new_context + js[context_end:]
 
-cs_anchor = '                case "doubanWatchlistAdd":\n'
+cs_anchor = '                case "doubanWatchlistAdd":'
 cs_case = '''                case "doubanWatchlistPtSearchRequest":
                 {
                     var subjectId = RequiredDigits(root, "subjectId");
@@ -221,7 +189,8 @@ cs_case = '''                case "doubanWatchlistPtSearchRequest":
                 }
 
 '''
-cs = replace_once(cs, cs_anchor, cs_case + cs_anchor, "host PT search request")
+cs_pos = require_once(cs, cs_anchor, "host PT search request anchor")
+cs = cs[:cs_pos] + cs_case + cs[cs_pos:]
 
 js_path.write_text(js, encoding="utf-8", newline="\n")
 cs_path.write_text(cs, encoding="utf-8", newline="\n")
