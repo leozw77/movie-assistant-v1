@@ -42,9 +42,22 @@ const CastSection = ({ celebrities, subjectId }: CastSectionProps) =>
           );
 
           return (
-            <div class="atv-cast-card" key={person.name}>
-              {content}
-            </div>
+            person.href ? (
+              <a
+                aria-label={`查看${person.name}的人物详情`}
+                class="atv-cast-card"
+                href={person.href}
+                key={person.name}
+                rel="noopener"
+                target="_blank"
+              >
+                {content}
+              </a>
+            ) : (
+              <div class="atv-cast-card" key={person.name}>
+                {content}
+              </div>
+            )
           );
         })}
       </div>
@@ -53,3 +66,4 @@ const CastSection = ({ celebrities, subjectId }: CastSectionProps) =>
 
 export { CastSection };
 export type { CastSectionProps };
+
