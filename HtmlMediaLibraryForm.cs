@@ -3541,6 +3541,37 @@ internal sealed class HtmlMediaLibraryForm : Form
                     return;
                 }
 
+                case "doubanWatchlistPtSearchRequest":
+                {
+                    var subjectId = RequiredDigits(root, "subjectId");
+                    var subjectUrl = RequiredSubjectUrl(root, "subjectUrl");
+                    if (!IsAllowedWatchlistSubjectSource(source, subjectUrl)) throw new InvalidDataException("PT 搜索请求来源无效。");
+                    DoubanSubjectIdentity.Validate(subjectId, subjectUrl, "PT search");
+
+                    var record = FindOrCreateRecord(subjectId, subjectUrl);
+                    var imdbId = (record.ImdbId ?? "").Trim();
+                    var metadataRead = false;
+                    if (!BrowserCdpService.IsValidImdbId(imdbId))
+                    {
+                        var metadata = await _detailConnector.ReadMetadataAsync(subjectUrl, probeStatusCapabilities: false);
+                        if (metadata.Captcha) throw new InvalidOperationException("豆瓣要求验证码，暂时无法读取 IMDb 编号。");
+                        if (!metadata.LoggedIn) throw new InvalidOperationException("内置豆瓣 Profile 尚未登录，请先扫码登录。");
+                        if (!metadata.IsSuccess) throw new InvalidDataException(string.IsNullOrWhiteSpace(metadata.Error) ? "豆瓣没有返回有效详情。" : metadata.Error);
+                        ApplyMetadata(record, metadata);
+                        imdbId = (record.ImdbId ?? "").Trim();
+                        metadataRead = true;
+                    }
+
+                    if (!BrowserCdpService.IsValidImdbId(imdbId))
+                        throw new InvalidDataException("该影片没有读取到有效 IMDb 编号，无法进行 PT 搜索。");
+
+                    await _cdp.EnsureBackgroundAsync(_preferredBrowser);
+                    await _cdp.OpenPtDepilerSearchAsync(imdbId);
+                    DiagnosticLogger.Write($"WebView=DoubanPlus; PtContextSearch; SubjectId={subjectId}; ImdbId={imdbId}; MetadataRead={metadataRead}; Source={source}");
+                    PostWatchlistResponse(responseView, requestId, true, new { opened = true, imdbId });
+                    return;
+                }
+
                 case "doubanWatchlistAdd":
                 {
                     var subjectId = RequiredDigits(root, "subjectId");

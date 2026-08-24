@@ -47,7 +47,7 @@
     ];
     return candidates.map(validPosterSourceUrl).find(Boolean) || "";
   };
-  const request = (type, payload = {}) => new Promise((resolve, reject) => {
+  const request = (type, payload = {}, timeoutMs = 8000) => new Promise((resolve, reject) => {
     if (!window.chrome?.webview) {
       reject(new Error("待看宿主桥接不可用。"));
       return;
@@ -56,7 +56,7 @@
     const timer = setTimeout(() => {
       pending.delete(requestId);
       reject(new Error("待看操作超时。"));
-    }, 8000);
+    }, timeoutMs);
     pending.set(requestId, { resolve, reject, timer });
     try {
       window.chrome.webview.postMessage({ type, requestId, ...payload });
@@ -170,6 +170,17 @@
     });
   };
 
+  const detailItemFromPage = () => {
+    const match = location.pathname.match(/^\/subject\/(\d+)\/?$/u);
+    if (!match) return null;
+    return {
+      subjectId: match[1],
+      subjectUrl: subjectUrl(match[1]),
+      title: text(document.querySelector(".atv-hero-title, .qb-douban-plus-detail h1, h1")) || `豆瓣条目 ${match[1]}`,
+      source: "detail-page"
+    };
+  };
+
   const itemFromTarget = target => {
     const personalPoster = target.closest?.(".qb-personal-poster");
     if (personalPoster) {
@@ -259,15 +270,32 @@
 
     const heroPoster = target.closest?.(".atv-poster-card");
     if (heroPoster) {
-      const match = location.pathname.match(/^\/subject\/(\d+)\/?$/u);
-      if (match) {
+      // Detail pages can contain recommendation posters. A poster's own subject
+      // link always wins; only the current hero poster may fall back to the page subject.
+      const linkedSubject = heroPoster.matches?.('a[href*="/subject/"]')
+        ? heroPoster
+        : (heroPoster.closest?.('a[href*="/subject/"]') || heroPoster.querySelector?.('a[href*="/subject/"]'));
+      const linkedUrl = validSubjectUrl(linkedSubject?.getAttribute?.("href") || linkedSubject?.href || "");
+      const linkedMatch = linkedUrl.match(/\/subject\/(\d+)\//u);
+      if (linkedUrl && linkedMatch) {
         return {
           ...cardSnapshot(target),
-          subjectId: match[1],
-          subjectUrl: subjectUrl(match[1]),
-          title: text(document.querySelector(".atv-hero-title")) || `豆瓣条目 ${match[1]}`,
+          subjectId: linkedMatch[1],
+          subjectUrl: linkedUrl,
+          title: text(heroPoster.querySelector?.(".atv-poster-card-title, h2, h3")) ||
+            String(heroPoster.querySelector?.("img")?.alt || linkedSubject?.getAttribute?.("title") || "").trim() ||
+            `豆瓣条目 ${linkedMatch[1]}`,
           posterSourceUrl: posterSourceUrlFromTarget(target),
-          source: "detail"
+          source: "detail-poster"
+        };
+      }
+      const detailItem = detailItemFromPage();
+      if (detailItem) {
+        return {
+          ...cardSnapshot(target),
+          ...detailItem,
+          posterSourceUrl: posterSourceUrlFromTarget(target),
+          source: "detail-poster"
         };
       }
     }
@@ -298,6 +326,21 @@
     button.addEventListener("click", handler);
     return button;
   };
+  const appendPtSearchAction = (menu, item) => {
+    menu.append(menuButton("PT 搜索", async () => {
+      hideMenu();
+      showToast("正在读取 IMDb 并打开 PT 搜索…");
+      try {
+        const response = await request("doubanWatchlistPtSearchRequest", {
+          subjectId: item.subjectId,
+          subjectUrl: item.subjectUrl
+        }, 20000);
+        showToast(response.imdbId ? `已打开 PT 搜索 · ${response.imdbId}` : "已打开 PT 搜索");
+      } catch (error) {
+        showToast(String(error.message || error));
+      }
+    }));
+  };
   const appendPageActions = menu => {
     menu.append(menuButton("刷新页面", refreshPage));
     menu.append(menuButton("返回首页", goHome));
@@ -321,6 +364,7 @@
     menu.style.left = `${Math.min(x, Math.max(8, window.innerWidth - 210))}px`;
     menu.style.top = `${Math.min(y, Math.max(8, window.innerHeight - 150))}px`;
     menu.append(menuButton("正在检查待看状态…", () => {}, true));
+    appendPtSearchAction(menu, item);
     appendPageActions(menu);
     document.body.append(menu);
     try {
@@ -346,27 +390,40 @@
           } catch (error) { showToast(String(error.message || error)); }
         }));
       }
+      appendPtSearchAction(menu, item);
       appendPageActions(menu);
     } catch (error) {
       if (contextItem === item && document.getElementById(MENU_ID)) {
         menu.replaceChildren(menuButton(String(error.message || error), hideMenu));
-        appendRefreshButton(menu);
+        appendPtSearchAction(menu, item);
+        appendPageActions(menu);
       }
     }
   };
 
   document.addEventListener("contextmenu", event => {
-    const item = itemFromTarget(event.target);
-    if (!item) {
-      if (!isSupportedPage()) return;
+    // Poster identity has priority over the enclosing detail page. This is critical
+    // for recommendation posters shown inside another movie's subject page.
+    const posterItem = itemFromTarget(event.target);
+    if (posterItem) {
       event.preventDefault();
       event.stopPropagation();
-      showPageMenu(event.clientX, event.clientY);
+      showMenu(event.clientX, event.clientY, posterItem);
       return;
     }
+
+    const detailItem = detailItemFromPage();
+    if (detailItem) {
+      event.preventDefault();
+      event.stopPropagation();
+      showMenu(event.clientX, event.clientY, detailItem);
+      return;
+    }
+
+    if (!isSupportedPage()) return;
     event.preventDefault();
     event.stopPropagation();
-    showMenu(event.clientX, event.clientY, item);
+    showPageMenu(event.clientX, event.clientY);
   }, true);
   document.addEventListener("click", event => {
     if (!event.target.closest?.(`#${MENU_ID}`)) hideMenu();
