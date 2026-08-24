@@ -12,18 +12,21 @@ jobs:
   build-windows:
     runs-on: windows-latest
     steps:
-      - name: Checkout PT feature branch
+      - name: Checkout final PT feature branch
         uses: actions/checkout@v4
         with:
           ref: feature/pt-context-search-20260824
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.x'
-
-      - name: Apply PT context source patch
-        run: python tools/apply-pt-context-search.py
+      - name: Validate PT source is present
+        shell: pwsh
+        run: |
+          $js = Get-Content -Raw -Encoding UTF8 .\WebAssets\DoubanPlus\douban-watchlist.js
+          $cs = Get-Content -Raw -Encoding UTF8 .\HtmlMediaLibraryForm.cs
+          if ($js -notmatch 'doubanWatchlistPtSearchRequest') { throw 'PT JS request is missing' }
+          if ($js -notmatch 'detailItemFromPage') { throw 'Detail page fallback is missing' }
+          if ($js -notmatch 'linkedSubject') { throw 'Recommendation poster subject resolution is missing' }
+          if ($cs -notmatch 'doubanWatchlistPtSearchRequest') { throw 'PT host handler is missing' }
+          Write-Host 'PT source markers verified.'
 
       - name: Validate JavaScript
         run: node --check WebAssets/DoubanPlus/douban-watchlist.js
@@ -60,18 +63,3 @@ jobs:
           path: .\dist\windows\**
           if-no-files-found: error
           retention-days: 7
-
-      - name: Stage patched source
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Path .\patched-source\WebAssets\DoubanPlus -Force | Out-Null
-          Copy-Item .\HtmlMediaLibraryForm.cs .\patched-source\HtmlMediaLibraryForm.cs -Force
-          Copy-Item .\WebAssets\DoubanPlus\douban-watchlist.js .\patched-source\WebAssets\DoubanPlus\douban-watchlist.js -Force
-
-      - name: Upload patched source
-        uses: actions/upload-artifact@v4
-        with:
-          name: pt-context-patched-source
-          path: .\patched-source\**
-          if-no-files-found: error
-          retention-days: 1
