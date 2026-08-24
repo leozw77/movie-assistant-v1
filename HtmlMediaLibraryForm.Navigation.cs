@@ -284,7 +284,7 @@ internal sealed partial class HtmlMediaLibraryForm
 
     private void ReturnToLibrary()
     {
-        if (!_doubanSubjectView.Visible && !IsDoubanSubjectPageUrl(_activeDoubanSubjectNavigationUrl))
+        if (!_doubanSubjectView.Visible && !IsDoubanPlusEnhancedPageUrl(_activeDoubanSubjectNavigationUrl))
         {
             _returnToLibraryButton.Visible = false;
             DiagnosticLogger.Write($"WebView=DoubanSubject; ReturnIgnored=True; CurrentUrl={_activeDoubanSubjectNavigationUrl}; Reason=NoActiveSubjectView");
@@ -292,6 +292,13 @@ internal sealed partial class HtmlMediaLibraryForm
         }
 
         var listUrl = _activeDoubanReturnUrl;
+        ShowDoubanShellHome("detail-return");
+        DiagnosticLogger.Write($"WebView=DoubanSubject; DetailClosed=True; Mode=SwitchToListView; ListUrl={listUrl}; ListViewStateRestore=True; NavigationReused=True");
+    }
+
+    private void ShowDoubanShellHome(string reason)
+    {
+        if (_closing) return;
         _doubanSubjectView.Visible = false;
         _doubanPlusView.Visible = true;
         _doubanPlusView.BringToFront();
@@ -301,7 +308,8 @@ internal sealed partial class HtmlMediaLibraryForm
         _activeDoubanPlusSubjectUrl = "";
         _activeDoubanSubjectNavigationUrl = "";
         _activeDoubanReturnUrl = "";
-        DiagnosticLogger.Write($"WebView=DoubanSubject; DetailClosed=True; Mode=SwitchToListView; ListUrl={listUrl}; ListViewStateRestore=True; NavigationReused=True");
+        HideDoubanNavigationOverlay();
+        DiagnosticLogger.Write($"WebView=DoubanShell; ShellHomeShown=True; Reason={reason}; NavigationReused=True");
     }
 
     private bool TryGoBackToExpectedUrl(string expectedUrl, string reason)
