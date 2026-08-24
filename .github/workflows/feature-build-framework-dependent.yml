@@ -28,6 +28,10 @@ jobs:
         shell: pwsh
         run: node --check .\WebAssets\DoubanPlus\douban-watchlist.js
 
+      - name: Validate Douban Plus bundle JavaScript
+        shell: pwsh
+        run: node --check .\WebAssets\DoubanPlus\douban-plus.user.js
+
       - name: Validate watchlist source
         shell: pwsh
         run: python .\tests\validate_watchlist.py
