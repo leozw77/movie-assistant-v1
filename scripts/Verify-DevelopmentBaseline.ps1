@@ -28,8 +28,10 @@ if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
 $manifest = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
 
 $canonicalSource = Resolve-FullPath $manifest.pairedSource.root
-if (-not [string]::Equals($sourceFull, $canonicalSource, [System.StringComparison]::OrdinalIgnoreCase)) {
-    throw "Source root mismatch. Expected '$canonicalSource', actual '$sourceFull'."
+$activeSource = Resolve-FullPath $manifest.activeDevelopment.root
+$allowedSources = @($canonicalSource, $activeSource) | Select-Object -Unique
+if (-not ($allowedSources | Where-Object { [string]::Equals($sourceFull, $_, [System.StringComparison]::OrdinalIgnoreCase) })) {
+    throw "Source root mismatch. Expected canonical or registered active source, actual '$sourceFull'."
 }
 
 Assert-FileHash 'Canonical stable EXE' (Resolve-FullPath $manifest.canonicalStable.exePath) $manifest.canonicalStable.exeSha256
