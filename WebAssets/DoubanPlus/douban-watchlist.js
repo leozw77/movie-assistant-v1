@@ -5,6 +5,16 @@
   const WATCHLIST_ROOT_ID = "qb-douban-watchlist-content";
   const MENU_ID = "qb-douban-watchlist-menu";
   const TOAST_ID = "qb-douban-watchlist-toast";
+  const POSTER_TARGET_SELECTOR = [
+    ".qb-media-card-poster",
+    ".qb-personal-poster",
+    ".qb-explore-poster",
+    ".atv-search-page-card-poster",
+    ".qb-watchlist-poster",
+    ".atv-poster-card",
+    ".atv-rec-card",
+    ".atv-rec-poster"
+  ].join(", ");
   const cssText = __QB_DOUBAN_WATCHLIST_CSS__;
   const pending = new Map();
   let sequence = 0;
@@ -35,7 +45,7 @@
     }
   };
   const posterSourceUrlFromTarget = target => {
-    const poster = target?.closest?.(".qb-media-card-poster, .atv-poster-card");
+    const poster = target?.closest?.(".qb-media-card-poster, .atv-poster-card, .atv-rec-card, .atv-rec-poster");
     const image = poster?.querySelector("img");
     const candidates = [
       poster?.dataset.posterUrl,
@@ -268,10 +278,36 @@
       }
     }
 
+    const recommendationCard = target.closest?.(".atv-rec-card, .atv-rec-poster");
+    if (recommendationCard) {
+      const card = recommendationCard.matches?.(".atv-rec-card")
+        ? recommendationCard
+        : recommendationCard.closest?.(".atv-rec-card");
+      const linkedSubject = card?.matches?.('a[href*="/subject/"]')
+        ? card
+        : (card?.closest?.('a[href*="/subject/"]') || card?.querySelector?.('a[href*="/subject/"]'));
+      const linkedUrl = validSubjectUrl(linkedSubject?.getAttribute?.("href") || linkedSubject?.href || "");
+      const linkedMatch = linkedUrl.match(/\/subject\/(\d+)\//u);
+      if (linkedUrl && linkedMatch) {
+        return {
+          subjectId: linkedMatch[1],
+          subjectUrl: linkedUrl,
+          title: text(card?.querySelector?.(".atv-rec-title")) ||
+            String(card?.querySelector?.("img")?.alt || linkedSubject?.getAttribute?.("title") || "").trim() ||
+            `豆瓣条目 ${linkedMatch[1]}`,
+          posterSourceUrl: posterSourceUrlFromTarget(target),
+          source: "detail-recommendation"
+        };
+      }
+      // A recommendation without its own subject link must never fall back to
+      // the enclosing detail page subject.
+      return null;
+    }
+
     const heroPoster = target.closest?.(".atv-poster-card");
     if (heroPoster) {
-      // Detail pages can contain recommendation posters. A poster's own subject
-      // link always wins; only the current hero poster may fall back to the page subject.
+      // The hero poster is a button without a subject link. Only this poster may
+      // fall back to the current detail page subject.
       const linkedSubject = heroPoster.matches?.('a[href*="/subject/"]')
         ? heroPoster
         : (heroPoster.closest?.('a[href*="/subject/"]') || heroPoster.querySelector?.('a[href*="/subject/"]'));
@@ -409,6 +445,13 @@
       event.preventDefault();
       event.stopPropagation();
       showMenu(event.clientX, event.clientY, posterItem);
+      return;
+    }
+
+    if (event.target?.closest?.(POSTER_TARGET_SELECTOR)) {
+      event.preventDefault();
+      event.stopPropagation();
+      showToast("这张海报没有可用的豆瓣条目链接，无法进行 PT 搜索。");
       return;
     }
 

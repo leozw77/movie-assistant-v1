@@ -1,0 +1,59 @@
+name: Feature Build Windows Framework Dependent
+
+on:
+  push:
+    branches:
+      - feature/pt-context-search-20260824
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows-framework-dependent:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Validate JavaScript
+        shell: pwsh
+        run: node --check .\WebAssets\DoubanPlus\douban-watchlist.js
+
+      - name: Validate watchlist source
+        shell: pwsh
+        run: python .\tests\validate_watchlist.py
+
+      - name: Restore
+        shell: pwsh
+        run: dotnet restore .\观影助手.csproj
+
+      - name: Build Release
+        shell: pwsh
+        run: dotnet build .\观影助手.csproj -c Release --no-restore
+
+      - name: Publish framework-dependent Windows x64
+        shell: pwsh
+        run: dotnet publish .\观影助手.csproj -c Release -r win-x64 --self-contained false --no-restore -o .\dist\windows-framework-dependent
+
+      - name: Assert no bundled .NET runtime
+        shell: pwsh
+        run: |
+          $runtimeFiles = Get-ChildItem -Path .\dist\windows-framework-dependent -Recurse -File | Where-Object { $_.Name -in @('hostfxr.dll', 'hostpolicy.dll', 'coreclr.dll', 'clrjit.dll') }
+          if ($runtimeFiles) { throw "Framework-dependent output unexpectedly contains .NET runtime files: $($runtimeFiles.Name -join ', ')" }
+
+      - name: Package framework-dependent artifact
+        shell: pwsh
+        run: Compress-Archive -Path .\dist\windows-framework-dependent\* -DestinationPath .\movie-assistant-win-x64-framework-dependent.zip -Force
+
+      - name: Upload framework-dependent artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: movie-assistant-win-x64-framework-dependent
+          path: movie-assistant-win-x64-framework-dependent.zip
+          if-no-files-found: error
