@@ -209,6 +209,7 @@
 }
 
 .atv-rec-poster {
+  position: relative;
   overflow: hidden;
   width: 100%;
   border-radius: var(--atv-radius-sm);
@@ -229,17 +230,7 @@
   }
 }
 
-.atv-rec-caption {
-  display: flex;
-  min-width: 0;
-  align-items: baseline;
-  gap: 8px;
-  margin-top: 12px;
-}
-
 .atv-rec-title {
-  flex: 1 1 auto;
-  min-width: 0;
   display: -webkit-box;
   overflow: hidden;
   -webkit-box-orient: vertical;
@@ -251,9 +242,18 @@
 }
 
 .atv-rec-score {
-  flex: 0 0 auto;
+  position: absolute;
+  z-index: 2;
+  right: 10px;
+  bottom: 10px;
+  margin: 0;
+  padding: 0;
   color: var(--atv-rating-gold);
-  font-size: var(--atv-type-body-sm);
-  font-weight: var(--atv-font-weight-semibold);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1;
   white-space: nowrap;
+  -webkit-text-stroke: 1px #080b0f;
+  paint-order: stroke fill;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 80%);
 }
