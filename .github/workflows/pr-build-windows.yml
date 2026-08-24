@@ -1,0 +1,70 @@
+name: PR Build Windows
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Apply PT context source patch
+        run: python tools/apply-pt-context-search.py
+
+      - name: Validate JavaScript
+        run: node --check WebAssets/DoubanPlus/douban-watchlist.js
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Locate project
+        id: locate
+        shell: pwsh
+        run: |
+          $proj = Get-ChildItem -Path . -Filter *.csproj -Recurse | Select-Object -First 1
+          if (-not $proj) { throw 'No .csproj found' }
+          "project=$($proj.FullName)" >> $env:GITHUB_OUTPUT
+
+      - name: Restore
+        shell: pwsh
+        run: dotnet restore "${{ steps.locate.outputs.project }}"
+
+      - name: Build Release
+        shell: pwsh
+        run: dotnet build "${{ steps.locate.outputs.project }}" -c Release --no-restore
+
+      - name: Publish Windows x64 framework-dependent
+        shell: pwsh
+        run: dotnet publish "${{ steps.locate.outputs.project }}" -c Release -r win-x64 --self-contained false --no-restore -o .\dist\windows
+
+      - name: Upload compact build
+        uses: actions/upload-artifact@v4
+        with:
+          name: movie-assistant-pt-context-win-x64-framework-dependent
+          path: .\dist\windows\**
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload patched source for branch commit
+        uses: actions/upload-artifact@v4
+        with:
+          name: pt-context-patched-source
+          path: |
+            HtmlMediaLibraryForm.cs
+            WebAssets/DoubanPlus/douban-watchlist.js
+          if-no-files-found: error
+          retention-days: 1
