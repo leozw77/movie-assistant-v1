@@ -17,7 +17,7 @@ describe(extractRecommendations, () => {
 <div class="recommendations-bd">
   <dl>
     <dt><a href="/subject/1291546/"><img src="https://img1.doubanio.com/view/photo/s_ratio_poster/public/p6982253.jpg"/></a></dt>
-    <dd><a href="/subject/1291546/">霸王别姬</a></dd>
+    <dd><a href="/subject/1291546/">霸王别姬</a><span class="subject-rate">9.6</span></dd>
   </dl>
   <dl>
     <dt><a href="/subject/1292722/"><img src="https://img1.doubanio.com/view/photo/s_ratio_poster/public/p2192307.jpg"/></a></dt>
@@ -29,7 +29,20 @@ describe(extractRecommendations, () => {
     expect(result).toHaveLength(2);
     expect(result[0].title).toBe("霸王别姬");
     expect(result[0].link).toContain("/subject/1291546/");
+    expect(result[0].score).toBe(9.6);
     expect(result[1].title).toBe("阿甘正传");
+    expect(result[1].score).toBeUndefined();
+  });
+
+  it("extracts a score appended to the native recommendation text", () => {
+    const doc = buildDoc(`<!DOCTYPE html>
+<div class="recommendations-bd">
+  <dl>
+    <dt><a href="/subject/1/"><img src="https://img1.doubanio.com/1.jpg"/></a></dt>
+    <dd><a href="/subject/1/">测试电影</a> 8.7分</dd>
+  </dl>
+</div>`);
+    expect(extractRecommendations(doc)[0].score).toBe(8.7);
   });
 
   it("filters out items with empty title", () => {
