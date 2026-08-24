@@ -21,8 +21,14 @@ const backgroundImageUrls = (style: string): string[] =>
 const extractCelebrities = (doc: Document): Celebrity[] =>
   $$<HTMLLIElement>("#celebrities li.celebrity", doc)
     .map((li) => {
+      const profileLink =
+        $<HTMLAnchorElement>(".info .name a[href]", li) ??
+        $<HTMLAnchorElement>(
+          'a[href*="/personage/"], a[href*="/celebrity/"]',
+          li
+        );
       const nameEl =
-        $<HTMLAnchorElement>(".info .name a", li) ??
+        profileLink ??
         $<HTMLElement>(".info .name", li);
       const roleEl = $<HTMLElement>(".info .role", li);
       const avatarEl = $<HTMLElement>(".avatar", li);
@@ -33,6 +39,7 @@ const extractCelebrities = (doc: Document): Celebrity[] =>
       }
       return {
         avatar: encodeURI(avatar),
+        href: profileLink?.href ?? null,
         name: safeText(nameEl),
         role: safeText(roleEl),
       };
@@ -81,3 +88,4 @@ const extractTrailers = (doc: Document): Trailer[] =>
 /* ── Exports ──────────────────────────────────────────── */
 
 export { extractCelebrities, extractPhotos, extractTrailers };
+
