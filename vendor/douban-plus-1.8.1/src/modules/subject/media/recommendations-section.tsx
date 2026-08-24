@@ -23,7 +23,12 @@ const RecommendationsSection = ({
               <div class="atv-rec-poster">
                 <PosterImage alt={item.title} poster={item.poster} />
               </div>
-              <div class="atv-rec-title">{item.title}</div>
+              <div class="atv-rec-caption">
+                <div class="atv-rec-title">{item.title}</div>
+                {item.score !== undefined ? (
+                  <div class="atv-rec-score">{item.score.toFixed(1)}</div>
+                ) : null}
+              </div>
             </>
           );
 
