@@ -327,16 +327,16 @@ internal sealed partial class HtmlMediaLibraryForm
                 return;
             }
 
-            if (_doubanSubjectRecoveryAttempts < 1 && IsDoubanSubjectPageUrl(_activeDoubanSubjectNavigationUrl))
+            if (_doubanSubjectRecoveryAttempts < 1 && IsDoubanPlusEnhancedPageUrl(_activeDoubanSubjectNavigationUrl))
             {
                 _doubanSubjectRecoveryAttempts++;
                 _doubanSubjectRecoveryUrl = _activeDoubanSubjectNavigationUrl;
-                ShowDoubanNavigationOverlay("影片详情正在恢复，请稍候…");
+                ShowDoubanNavigationOverlay("豆瓣页面正在恢复，请稍候…");
                 _ = RetryDoubanSubjectNavigationAsync(_doubanSubjectRecoveryUrl, e.NavigationId);
             }
             else
             {
-                ShowDoubanNavigationOverlay("影片详情加载失败，请右键刷新或返回列表。");
+                ShowDoubanNavigationOverlay("豆瓣页面加载失败，请右键刷新或返回列表。");
                 DiagnosticLogger.Write($"WebView=DoubanSubject; CurrentDocumentShown=False; StableRender=False; ContentRecoveryExhausted=True; NavigationId={e.NavigationId}");
             }
         };
@@ -549,3 +549,4 @@ internal sealed partial class HtmlMediaLibraryForm
     }
 
 }
+
