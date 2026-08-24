@@ -110,6 +110,8 @@ type Recommendation = {
   title: string;
   poster: string;
   link: string;
+  /** Douban's public score shown in the native recommendation item, when available. */
+  score?: number;
 };
 
 /** A native Douban group topic associated with the current subject. */
