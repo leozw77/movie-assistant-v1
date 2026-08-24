@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def main() -> None:
     store = (ROOT / "LocalWatchlistStore.cs").read_text(encoding="utf-8")
-    host = (ROOT / "HtmlMediaLibraryForm.cs").read_text(encoding="utf-8")
+    host = "\n".join(path.read_text(encoding="utf-8") for path in sorted(ROOT.glob("HtmlMediaLibraryForm*.cs")))
     script_host = (ROOT / "WatchlistWebView2Script.cs").read_text(encoding="utf-8")
     script = (ROOT / "WebAssets" / "DoubanPlus" / "douban-watchlist.js").read_text(encoding="utf-8")
     css = (ROOT / "WebAssets" / "DoubanPlus" / "douban-watchlist.css").read_text(encoding="utf-8")
