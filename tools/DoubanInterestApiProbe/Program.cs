@@ -6,6 +6,6 @@ internal static class Program
     private static void Main()
     {
         ApplicationConfiguration.Initialize();
-        Application.Run(new CaptureForm());
+        Application.Run(new DirectDeleteForm());
     }
 }
