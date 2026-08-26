@@ -9,6 +9,7 @@ on:
       - '.github/workflows/douban-interest-api-probe.yml'
   workflow_dispatch:
 
+# v2 layout rebuild trigger: controls moved to fixed top bar for DPI safety.
 jobs:
   build:
     runs-on: windows-latest
