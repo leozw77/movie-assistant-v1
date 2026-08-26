@@ -10,11 +10,11 @@ internal sealed class MainForm : Form
     private const string MovieBase = "https://movie.douban.com";
 
     private readonly WebView2 _webView = new() { Dock = DockStyle.Fill };
-    private readonly TextBox _subjectId = new() { Dock = DockStyle.Fill, PlaceholderText = "例如 1295644" };
-    private readonly ComboBox _status = new() { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDownList };
+    private readonly TextBox _subjectId = new() { Width = 120, PlaceholderText = "例如 1295644" };
+    private readonly ComboBox _status = new() { Width = 110, DropDownStyle = ComboBoxStyle.DropDownList };
     private readonly CheckBox _submitRating = new() { Text = "提交评分", AutoSize = true };
-    private readonly NumericUpDown _rating = new() { Minimum = 1, Maximum = 5, Value = 5, Width = 70 };
-    private readonly CheckBox _submitComment = new() { Text = "提交短评（勾选后空文本也会提交）", AutoSize = true };
+    private readonly NumericUpDown _rating = new() { Minimum = 1, Maximum = 5, Value = 5, Width = 60 };
+    private readonly CheckBox _submitComment = new() { Text = "提交短评", AutoSize = true, Checked = true };
     private readonly TextBox _comment = new() { Multiline = true, Dock = DockStyle.Fill, ScrollBars = ScrollBars.Vertical };
     private readonly TextBox _log = new()
     {
@@ -38,11 +38,11 @@ internal sealed class MainForm : Form
 
     public MainForm()
     {
-        Text = "豆瓣评价 API 写入探针";
+        Text = "豆瓣评价 API 写入探针 v2";
         StartPosition = FormStartPosition.CenterScreen;
         Width = 1450;
         Height = 900;
-        MinimumSize = new Size(1100, 720);
+        MinimumSize = new Size(1000, 700);
 
         _status.Items.Add(new StatusItem("想看", "wish"));
         _status.Items.Add(new StatusItem("在看", "do"));
@@ -62,88 +62,78 @@ internal sealed class MainForm : Form
 
     private Control BuildLayout()
     {
-        var split = new SplitContainer
-        {
-            Dock = DockStyle.Fill,
-            Orientation = Orientation.Vertical,
-            SplitterDistance = 900,
-            FixedPanel = FixedPanel.Panel2
-        };
-        split.Panel1.Controls.Add(_webView);
-
-        var right = new TableLayoutPanel
+        var root = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
-            RowCount = 0,
-            Padding = new Padding(12)
+            RowCount = 5,
+            Padding = new Padding(8)
         };
-        right.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 82));
+        root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 170));
 
-        AddRow(right, new Label
+        var toolbar = new FlowLayoutPanel
         {
-            Text = "直接 HTTP 写入测试（不会打开豆瓣评价状态窗口）",
+            Dock = DockStyle.Fill,
             AutoSize = true,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = true,
+            Padding = new Padding(2, 2, 2, 4)
+        };
+        toolbar.Controls.Add(new Label
+        {
+            Text = "Subject ID",
+            AutoSize = true,
+            Margin = new Padding(0, 7, 4, 0),
             Font = new Font(Font, FontStyle.Bold)
         });
-        AddRow(right, new Label
-        {
-            Text = "左侧先登录豆瓣。程序只读取当前 WebView2 会话 Cookie，不显示/保存 Cookie 值。",
-            AutoSize = true,
-            MaximumSize = new Size(450, 0)
-        });
-        AddRow(right, MakeButtonRow(_openHome, _checkLogin));
-        AddRow(right, new Label { Text = "豆瓣 Subject ID", AutoSize = true });
-        AddRow(right, _subjectId);
-        AddRow(right, new Label { Text = "状态", AutoSize = true });
-        AddRow(right, _status);
+        toolbar.Controls.Add(_subjectId);
+        toolbar.Controls.Add(new Label { Text = "状态", AutoSize = true, Margin = new Padding(12, 7, 4, 0) });
+        toolbar.Controls.Add(_status);
+        toolbar.Controls.Add(_submitRating);
+        toolbar.Controls.Add(new Label { Text = "星级", AutoSize = true, Margin = new Padding(5, 7, 2, 0) });
+        toolbar.Controls.Add(_rating);
+        toolbar.Controls.Add(_submitComment);
+        toolbar.Controls.Add(_write);
+        toolbar.Controls.Add(_remove);
+        toolbar.Controls.Add(_checkLogin);
+        toolbar.Controls.Add(_openSubject);
+        toolbar.Controls.Add(_openHome);
+        toolbar.Controls.Add(_clearLog);
+        root.Controls.Add(toolbar, 0, 0);
 
-        var ratingRow = new FlowLayoutPanel
+        var commentBox = new TableLayoutPanel
         {
-            AutoSize = true,
             Dock = DockStyle.Fill,
-            FlowDirection = FlowDirection.LeftToRight,
-            WrapContents = false
+            ColumnCount = 1,
+            RowCount = 2,
+            Margin = new Padding(0, 2, 0, 6)
         };
-        ratingRow.Controls.Add(_submitRating);
-        ratingRow.Controls.Add(new Label { Text = "星级", AutoSize = true, Margin = new Padding(16, 6, 2, 0) });
-        ratingRow.Controls.Add(_rating);
-        AddRow(right, ratingRow);
-
-        AddRow(right, _submitComment);
-        AddRow(right, _comment, new RowStyle(SizeType.Absolute, 110));
-        AddRow(right, MakeButtonRow(_write, _remove));
-        AddRow(right, MakeButtonRow(_openSubject, _clearLog));
-        AddRow(right, new Label
+        commentBox.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        commentBox.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        commentBox.Controls.Add(new Label
         {
-            Text = "诊断日志（HTTP 200 只表示请求返回，不代表最终写入成功；请以豆瓣网页人工确认为准）",
-            AutoSize = true,
-            MaximumSize = new Size(450, 0)
-        });
-        AddRow(right, _log, new RowStyle(SizeType.Percent, 100));
+            Text = "短评内容（勾选“提交短评”后会随写入请求一起提交）",
+            AutoSize = true
+        }, 0, 0);
+        commentBox.Controls.Add(_comment, 0, 1);
+        root.Controls.Add(commentBox, 0, 1);
 
-        split.Panel2.Controls.Add(right);
-        return split;
-    }
+        root.Controls.Add(_webView, 0, 2);
 
-    private static void AddRow(TableLayoutPanel table, Control control, RowStyle? style = null)
-    {
-        var row = table.RowCount++;
-        table.RowStyles.Add(style ?? new RowStyle(SizeType.AutoSize));
-        table.Controls.Add(control, 0, row);
-    }
-
-    private static FlowLayoutPanel MakeButtonRow(params Button[] buttons)
-    {
-        var panel = new FlowLayoutPanel
+        root.Controls.Add(new Label
         {
+            Text = "诊断日志：先在中间豆瓣页面登录，再点顶部“检查登录状态”。HTTP 2xx 不等于最终成功，请最后去豆瓣网页版人工确认。",
             AutoSize = true,
-            Dock = DockStyle.Fill,
-            FlowDirection = FlowDirection.LeftToRight,
-            WrapContents = true
-        };
-        panel.Controls.AddRange(buttons);
-        return panel;
+            Margin = new Padding(0, 6, 0, 3)
+        }, 0, 3);
+        root.Controls.Add(_log, 0, 4);
+
+        return root;
     }
 
     private async Task InitializeWebViewAsync()
@@ -160,7 +150,7 @@ internal sealed class MainForm : Form
             await _webView.EnsureCoreWebView2Async(env);
             _webReady = true;
             _webView.CoreWebView2.Navigate(MovieBase + "/");
-            Log("WebView2 已初始化。请在左侧完成豆瓣登录，然后点“检查登录状态”。");
+            Log("WebView2 已初始化。请在中间页面完成豆瓣登录，然后点顶部“检查登录状态”。");
         }
         catch (Exception ex)
         {
@@ -179,7 +169,7 @@ internal sealed class MainForm : Form
             Log($"Cookie 数量: {auth.CookieNames.Count}; Cookie 名称: {names}");
             Log(auth.HasCk
                 ? "检测到 ck：具备调用写入接口所需的 CSRF token。"
-                : "未检测到 ck：请先在左侧登录/访问豆瓣电影页面。所有写入按钮会拒绝执行。");
+                : "未检测到 ck：请先登录/访问豆瓣电影页面。所有写入按钮会拒绝执行。");
             Log(auth.HasDbcl2
                 ? "检测到 dbcl2：看起来已有豆瓣登录会话。"
                 : "未检测到 dbcl2：可能尚未登录，或当前会话 Cookie 结构不同。");
@@ -201,7 +191,7 @@ internal sealed class MainForm : Form
             var auth = await ReadAuthContextAsync();
             if (!auth.HasCk)
             {
-                MessageBox.Show(this, "没有检测到 ck Cookie。请先在左侧登录豆瓣，然后再试。", "未登录", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show(this, "没有检测到 ck Cookie。请先在豆瓣页面登录，然后再试。", "未登录", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 Log("写入已取消：缺少 ck。没有发送任何 POST 请求。");
                 return;
             }
