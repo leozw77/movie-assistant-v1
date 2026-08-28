@@ -468,8 +468,21 @@ internal sealed class ReadbackProbeForm : Form
                   if (status === "none") status = s;
                 }
               }
+              const checkedInterest = scanRoot.querySelector("input[name='interest']:checked");
+              const checkedInterestStatus = String(checkedInterest?.value || "");
+              if (checkedInterestStatus === "wish" || checkedInterestStatus === "do" || checkedInterestStatus === "collect") {
+                status = checkedInterestStatus;
+                candidates.unshift({ status: checkedInterestStatus, text: "checked input[name=interest]", className: String(checkedInterest.className || "") });
+              }
               const rating = scanRoot.querySelector("#n_rating, input[name='rating']");
               const date = scanRoot.querySelector(".collection_date");
+              const textareas = [...scanRoot.querySelectorAll("textarea")];
+              const commentControl = scanRoot.querySelector("textarea[name='comment'], #comment, textarea");
+              const controlCommentRaw = String(commentControl?.value || commentControl?.textContent || "").trim();
+              const controlPlaceholder = String(commentControl?.getAttribute("placeholder") || "").trim();
+              const controlComment = controlCommentRaw && controlCommentRaw !== controlPlaceholder && !isCommentPrompt(controlCommentRaw)
+                ? controlCommentRaw
+                : "";
               let comment = "";
               const commentElements = [...scanRoot.querySelectorAll(".j.a_stars span")];
               for (let index = commentElements.length - 1; index >= 0; index -= 1) {
@@ -479,6 +492,7 @@ internal sealed class ReadbackProbeForm : Form
                 const value = directText(element);
                 if (value && !statusOf(value) && !isCommentPrompt(value)) { comment = value; break; }
               }
+              if (controlComment) comment = controlComment;
               let tags = "";
               for (const element of scanRoot.querySelectorAll(".color_gray")) {
                 const match = /^标签\s*[:：]\s*(.+)$/.exec(text(element));
@@ -499,11 +513,24 @@ internal sealed class ReadbackProbeForm : Form
                 const value = directText(element);
                 return element.tagName.toLowerCase() + "." + String(element.className || "") + ":len=" + value.length;
               }).join(" | ");
+              const textareaSummary = textareas.slice(0, 12).map((element) => {
+                const key = [element.id, element.name].filter(Boolean).join("/");
+                const value = String(element.value || element.textContent || "").trim();
+                const placeholder = String(element.getAttribute("placeholder") || "").trim();
+                return key + ":valueLen=" + value.length + ",placeholderLen=" + placeholder.length;
+              }).join(" | ");
+              const dateCandidates = [...scanRoot.querySelectorAll("[class*='date'], [id*='date'], [class*='collection'], [id*='collection']")];
+              const dateCandidateSummary = dateCandidates.slice(0, 20).map((element) => {
+                return element.tagName.toLowerCase() + "." + String(element.className || "") + ":textLen=" + text(element).length;
+              }).join(" | ");
               return JSON.stringify({
                 comment,
                 commentCandidateCount: commentElements.length,
                 commentSummary,
+                controlComment,
                 date: text(date),
+                dateCandidateCount: dateCandidates.length,
+                dateCandidateSummary,
                 hasInterestRoot: !!root,
                 htmlLength: source.length,
                 inputCount: inputs.length,
@@ -515,6 +542,9 @@ internal sealed class ReadbackProbeForm : Form
                 status,
                 statusCandidates: candidates.slice(0, 12),
                 tags,
+                checkedInterestStatus,
+                textareaCount: textareas.length,
+                textareaSummary,
                 title: doc.title || ""
               });
             })()
@@ -544,6 +574,8 @@ internal sealed class ReadbackProbeForm : Form
         Log($"[subject HTML] status={snapshot.SubjectHtml.Status}; rating={DisplayValue(snapshot.SubjectHtml.RatingRaw)}; comment={DisplayValue(snapshot.SubjectHtml.Comment)}; date={DisplayValue(snapshot.SubjectHtml.Date)}; root={snapshot.SubjectHtml.HasInterestRoot}");
         Log($"[JSON html DOM] selector={snapshot.ApiHtml.RootSelector}; rootTextLength={snapshot.ApiHtml.RootTextLength}; inputs={snapshot.ApiHtml.InputCount}; dates={snapshot.ApiHtml.CollectionDateCount}; commentCandidates={snapshot.ApiHtml.CommentCandidateCount}");
         Log($"[subject HTML DOM] selector={snapshot.SubjectHtml.RootSelector}; rootTextLength={snapshot.SubjectHtml.RootTextLength}; inputs={snapshot.SubjectHtml.InputCount}; dates={snapshot.SubjectHtml.CollectionDateCount}; commentCandidates={snapshot.SubjectHtml.CommentCandidateCount}");
+        Log($"[JSON html form] checkedInterest={snapshot.ApiHtml.CheckedInterestStatus}; textareaCount={snapshot.ApiHtml.TextareaCount}; commentControl={DisplayValue(snapshot.ApiHtml.ControlComment)}; dateCandidates={snapshot.ApiHtml.DateCandidateCount}");
+        Log($"[subject HTML form] checkedInterest={snapshot.SubjectHtml.CheckedInterestStatus}; textareaCount={snapshot.SubjectHtml.TextareaCount}; commentControl={DisplayValue(snapshot.SubjectHtml.ControlComment)}; dateCandidates={snapshot.SubjectHtml.DateCandidateCount}");
         if (_showFieldSamples.Checked)
         {
             Log("[JSON] 顶层字段：" + (snapshot.Json.Fields.Count == 0
@@ -556,6 +588,10 @@ internal sealed class ReadbackProbeForm : Form
             Log("[JSON html] input 摘要：" + DisplayValue(snapshot.ApiHtml.InputSummary));
             Log("[subject HTML] input 摘要：" + DisplayValue(snapshot.SubjectHtml.InputSummary));
             Log("[subject HTML] 短评候选：" + DisplayValue(snapshot.SubjectHtml.CommentSummary));
+            Log("[JSON html] textarea 摘要：" + DisplayValue(snapshot.ApiHtml.TextareaSummary));
+            Log("[subject HTML] textarea 摘要：" + DisplayValue(snapshot.SubjectHtml.TextareaSummary));
+            Log("[JSON html] 日期节点：" + DisplayValue(snapshot.ApiHtml.DateCandidateSummary));
+            Log("[subject HTML] 日期节点：" + DisplayValue(snapshot.SubjectHtml.DateCandidateSummary));
         }
         Log("字段结论：当前 Probe 同时保留缺失、空值和解析值；只有字段实际存在且解析成功，才可以纳入精确匹配。");
     }
@@ -748,14 +784,20 @@ internal sealed class ReadbackProbeForm : Form
         int CollectionDateCount,
         int CommentCandidateCount,
         string CommentSummary,
+        string ControlComment,
+        int DateCandidateCount,
+        string DateCandidateSummary,
         string RootSelector,
         int RootTextLength,
         string Status,
         IReadOnlyList<StatusCandidate> StatusCandidates,
         string Tags,
-        string Title)
+        string Title,
+        string CheckedInterestStatus,
+        int TextareaCount,
+        string TextareaSummary)
     {
-        public static HtmlObservation Empty(string reason) => new("", "", false, 0, 0, "", Array.Empty<string>(), "", 0, 0, "", "", 0, "unknown", Array.Empty<StatusCandidate>(), "", reason);
+        public static HtmlObservation Empty(string reason) => new("", "", false, 0, 0, "", Array.Empty<string>(), "", 0, 0, "", "", 0, "", "", 0, "unknown", Array.Empty<StatusCandidate>(), "", reason, "", 0, "");
     }
 
     private sealed record ReadbackSnapshot(
