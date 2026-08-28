@@ -599,11 +599,11 @@ internal sealed class ReadbackProbeForm : Form
     private void LogExpectedComparison(ReadbackSnapshot snapshot, string expectedStatus, int? expectedRating, string? expectedComment)
     {
         var statusMatch = string.Equals(snapshot.Json.Status, expectedStatus, StringComparison.Ordinal)
-            && string.Equals(snapshot.SubjectHtml.Status, expectedStatus, StringComparison.Ordinal);
+            && string.Equals(snapshot.ApiHtml.Status, expectedStatus, StringComparison.Ordinal);
         var ratingMatch = !expectedRating.HasValue
-            || string.Equals(snapshot.SubjectHtml.RatingRaw, expectedRating.Value.ToString(), StringComparison.Ordinal);
-        var commentMatch = expectedComment is null || string.Equals(snapshot.SubjectHtml.Comment, expectedComment.Trim(), StringComparison.Ordinal);
-        Log($"写入后匹配：状态 {(statusMatch ? "双端一致" : "不一致/未知")}；评分 {(ratingMatch ? "影片页一致或未断言" : "不一致/未知")}；短评 {(commentMatch ? "影片页一致或未断言" : "不一致/未知")}");
+            || string.Equals(snapshot.ApiHtml.RatingRaw, expectedRating.Value.ToString(), StringComparison.Ordinal);
+        var commentMatch = expectedComment is null || string.Equals(snapshot.ApiHtml.Comment, expectedComment.Trim(), StringComparison.Ordinal);
+        Log($"写入后匹配（权威源为兴趣 JSON + JSON 内嵌表单；subject HTML 仅作诊断）：状态 {(statusMatch ? "一致" : "不一致/未知")}；评分 {(ratingMatch ? "一致或未断言" : "不一致/未知")}；短评 {(commentMatch ? "一致或未断言" : "不一致/未知")}");
     }
 
     private static string FormatCandidates(IReadOnlyList<StatusCandidate> candidates) => candidates.Count == 0
